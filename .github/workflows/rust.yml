@@ -272,7 +272,6 @@ jobs:
       run: |
         cd ${{ github.workspace }}/daemon && cargo deb --no-build --no-strip --target ${{ matrix.target }}
         cd ${{ github.workspace }}/client && cargo deb --no-build --no-strip --target ${{ matrix.target }}
-        cp ${{ github.workspace }}/target/debian/*.deb ${{ github.workspace }}/target/
 
     - name: Store CI artifacts
       uses: actions/upload-artifact@v2
@@ -280,5 +279,5 @@ jobs:
         name: dsfd-${{ matrix.target }}
         path: |
           target/*.tgz
-          target/*.deb
+          target/debian/*.deb
 
