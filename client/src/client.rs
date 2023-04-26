@@ -1,8 +1,9 @@
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::{SinkExt, StreamExt};
@@ -10,8 +11,6 @@ use humantime::Duration as HumanDuration;
 use log::{debug, error, trace, warn};
 use tokio::select;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::UnixStream,
     task::{self, JoinHandle},
     time::timeout,
 };
@@ -22,6 +21,7 @@ use dsf_core::wire::Container;
 use dsf_rpc::*;
 use dsf_rpc::{Request as RpcRequest, Response as RpcResponse};
 
+use crate::driver::{Driver, UnixDriver};
 use crate::error::Error;
 
 type RequestMap = Arc<Mutex<HashMap<u64, mpsc::Sender<ResponseKind>>>>;
@@ -54,7 +54,7 @@ impl Options {
 
 /// DSF client connector
 #[derive(Debug)]
-pub struct Client {
+pub struct Client<D: Driver = UnixDriver> {
     addr: String,
     sink: mpsc::Sender<RpcRequest>,
     requests: RequestMap,
@@ -63,6 +63,7 @@ pub struct Client {
 
     _rx_handle: JoinHandle<()>,
     _stream_handle: JoinHandle<()>,
+    _d: PhantomData<D>,
 }
 
 impl Client {
@@ -74,31 +75,21 @@ impl Client {
         debug!("Client connecting (address: {})", options.daemon_socket);
 
         // Connect to stream
-        let mut socket = UnixStream::connect(&options.daemon_socket).await?;
+        let mut driver = UnixDriver::new(&options.daemon_socket).await?;
 
         // Create internal streams
         let (tx_sink, mut tx_stream) = mpsc::channel::<RpcRequest>(0);
         let (mut rx_sink, mut rx_stream) = mpsc::channel::<RpcResponse>(0);
 
-        // Task to encode/decode messages on the unix socket
+        // Route messages between streams and driver
         let stream_handle = task::spawn(async move {
-            trace!("started client io task");
-
-            let (mut unix_stream, mut unix_sink) = socket.split();
-            let mut buff = [0u8; 10 * 1024];
-
             loop {
                 select! {
-                    // Read and decode incoming responses
-                    Ok(n) = unix_stream.read(&mut buff) => {
-                        if let Ok(req) = serde_json::from_slice(&buff[..n]) {
-                            rx_sink.send(req).await.unwrap();
-                        }
+                    Some(resp) = driver.next() => {
+                        rx_sink.send(resp).await.unwrap();
                     },
-                    // Encode and write outgoing requests
                     Some(m) = tx_stream.next() => {
-                        let v = serde_json::to_vec(&m).unwrap();
-                        unix_sink.write(&v).await.unwrap();
+                        driver.send(m).await.unwrap();
                     }
                 }
             }
@@ -128,6 +119,7 @@ impl Client {
             timeout: *options.timeout,
             _rx_handle: rx_handle,
             _stream_handle: stream_handle,
+            _d: PhantomData,
         })
     }
 

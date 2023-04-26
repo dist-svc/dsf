@@ -10,3 +10,5 @@ pub mod error;
 pub use error::Error;
 
 pub mod prelude;
+
+pub mod driver;
