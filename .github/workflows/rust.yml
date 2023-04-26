@@ -8,51 +8,88 @@ on:
     branches: [ main ]
 
 jobs:
-  # Lint and check source code
+  # Check and lint source code
   check:
     runs-on: ubuntu-latest
     continue-on-error: true
     
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-          components: rustfmt, clippy
+    - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        override: true
+        components: rustfmt, clippy
 
-      - name: Restore cache
-        uses: actions/cache/restore@v3
-        with:
-          key: core
-          path: |
-            ~/.cargo
-            ./target
+    - name: Restore cache
+      uses: actions/cache/restore@v3
+      with:
+        key: core
+        path: |
+          ~/.cargo
+          ./target
 
-      - name: Run cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
+    - name: Run cargo check
+      uses: actions-rs/cargo@v1
+      with:
+        command: check
 
-      - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -- --check
+    - name: Run cargo fmt
+      uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: -- --check
 
-      - name: Update cache for builds on main
-        if: ${{ github.ref == 'refs/heads/main' }}
-        uses: actions/cache/save@v3
-        with:
-          key: core
-          path: |
-            ~/.cargo
-            ./target
+    - name: Update cache for builds on main
+      if: ${{ github.ref == 'refs/heads/main' }}
+      uses: actions/cache/save@v3
+      with:
+        key: core
+        path: |
+          ~/.cargo
+          ./target
+
+  # Pre-build test assets
+  build-tests:
+    runs-on: ubuntu-latest
+ 
+    steps:
+    - uses: actions/checkout@v3
+      
+    - name: Setup toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        override: true
+
+    - name: Restore cache
+      uses: actions/cache/restore@v3
+      with:
+        key: test
+        path: |
+          ~/.cargo
+          ./target
+      
+    - name: Pre-build tests
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --tests
+
+    - name: Update cache for builds on main
+      if: ${{ github.ref == 'refs/heads/main' }}
+      uses: actions/cache/save@v3
+      with:
+        key: test
+        path: |
+          ~/.cargo
+          ./target
 
   # Run per-package tests
   test:
     name: "test ${{ matrix.package }}"
     runs-on: ubuntu-latest
+    needs: [ "build-tests" ]
     continue-on-error: true
 
     strategy:
@@ -61,27 +98,126 @@ jobs:
         package: [ core, rpc, client, engine, daemon ]
 
     steps:
-      - uses: actions/checkout@v2
-        
-      - name: Setup toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
+    - uses: actions/checkout@v3
+      
+    - name: Setup toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        override: true
 
-      - name: Restore cache
-        uses: actions/cache/restore@v3
-        with:
-          key: core
-          path: |
-            ~/.cargo
-            ./target
-        
-      - name: Run cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -p dsf-${{ matrix.package }}
+    - name: Restore cache
+      uses: actions/cache/restore@v3
+      with:
+        key: test
+        path: |
+          ~/.cargo
+          ./target
+      
+    - name: Run cargo test
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: -p dsf-${{ matrix.package }}
 
-  # TODO: build binaries
+  # Build release binaries
+  build:
+    runs-on: ${{ matrix.os }}
+    needs: [ "check", "test" ]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - target: x86_64-unknown-linux-gnu
+          os: ubuntu-latest
+          use_cross: true
+        - target: x86_64-unknown-linux-musl
+          os: ubuntu-latest
+          use_cross: true
+        - target: armv7-unknown-linux-gnueabihf 
+          os: ubuntu-latest
+          use_cross: true
+        - target: armv7-unknown-linux-musleabihf
+          os: ubuntu-latest
+          use_cross: true
+        - target: aarch64-unknown-linux-gnu
+          os: ubuntu-latest
+          use_cross: true
+        - target: aarch64-unknown-linux-musl
+          os: ubuntu-latest
+          use_cross: true
+        - target: x86_64-apple-darwin
+          os: macos-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: FranzDiebold/github-env-vars-action@v2
+
+    - name: Configure toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        target:  ${{ matrix.target }}
+        override: true
+
+    - name: Install cargo-deb
+      if: ${{ matrix.os == 'ubuntu-latest' }}
+      uses: actions-rs/install@v0.1
+      with:
+        crate: cargo-deb
+        version: latest
+    
+    - name: Restore global cache
+      uses: actions/cache/restore@v3
+      with:
+        key: core
+        path: |
+          ~/.cargo
+
+    - name: Restore target cache
+      uses: actions/cache/restore@v3
+      with:
+        key: build-${{ matrix.target }}
+        path: |
+          ./target
+    
+    - name: Set cross compilation flag if required
+      if: ${{ matrix.use_cross }}
+      run: |
+        echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+
+    - name: Build release
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: ${{ matrix.use_cross }}
+        command: build
+        args: --release --target ${{ matrix.target }}
+
+    - name: Update target cache
+      if: ${{ github.ref == 'refs/heads/main' }}
+      uses: actions/cache/save@v3
+      with:
+        key: build-${{ matrix.target }}
+        path: |
+          ./target
+    
+    - name: Create .tgz archive
+      run: |
+        tar -cvf target/dsf-${{ matrix.target }}.tgz -C target/${{ matrix.target }}/release/ dsfd dsfc
+
+    - name: Create .deb archive for ubuntu/debian targets
+      if: ${{ matrix.os == 'ubuntu-latest' }}
+      run: |
+        cd daemon && cargo deb --no-build --no-strip --target ${{ matrix.target }}
+        cd client && cargo deb --no-build --no-strip --target ${{ matrix.target }}
+        cp target/debian/*.deb target/
+
+    - name: Store CI artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: dsfd-${{ matrix.target }}
+        path: |
+          target/*.tgz
+          target/*.deb
 
