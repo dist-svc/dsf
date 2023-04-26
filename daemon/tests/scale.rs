@@ -13,7 +13,7 @@ use indicatif::ProgressBar;
 use tempdir::TempDir;
 
 use dsf_client::{Client, Options as ClientOptions};
-use dsf_daemon::engine::{Engine, EngineOptions as EngineOptions};
+use dsf_daemon::engine::{Engine, EngineOptions};
 use dsf_rpc::{self as rpc};
 
 #[tokio::test]

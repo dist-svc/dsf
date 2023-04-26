@@ -9,7 +9,7 @@ use tracing_subscriber::{filter::LevelFilter, FmtSubscriber};
 use indicatif::ProgressBar;
 use tempdir::TempDir;
 
-use dsf_daemon::engine::{Engine, EngineOptions as EngineOptions};
+use dsf_daemon::engine::{Engine, EngineOptions};
 
 use dsf_client::{Client, Options as ClientOptions};
 

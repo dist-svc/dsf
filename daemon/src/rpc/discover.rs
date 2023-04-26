@@ -1,4 +1,3 @@
-
 use std::convert::TryFrom;
 use std::future::Future;
 use std::pin::Pin;
@@ -12,8 +11,9 @@ use tracing::{span, Level};
 
 use dsf_core::options::Options;
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, ServiceInfo, DiscoverOptions};
+use dsf_rpc::{self as rpc, DiscoverOptions, ServiceInfo};
 
+use super::ops::*;
 use crate::{
     core::peers::Peer,
     core::services::ServiceState,
@@ -21,8 +21,6 @@ use crate::{
     daemon::{net::NetIf, Dsf},
     error::Error as DsfError,
 };
-use super::ops::*;
-
 
 pub struct DiscoverOp {
     pub(crate) opts: DiscoverOptions,
@@ -83,7 +81,6 @@ where
         Ok(DiscoverFuture { rx })
     }
 
-
     pub fn poll_rpc_discover(
         &mut self,
         req_id: u64,
@@ -120,7 +117,7 @@ where
                 ctx.waker().clone().wake();
 
                 Ok(false)
-            },
+            }
             DiscoverState::Pending(b) => {
                 match b.poll_unpin(ctx) {
                     Poll::Ready(v) => {
@@ -140,10 +137,10 @@ where
                         ctx.waker().clone().wake();
 
                         Ok(false)
-                    },
+                    }
                     _ => Ok(false),
                 }
-            },
+            }
             DiscoverState::Done => Ok(true),
             DiscoverState::Error => Ok(true),
         }

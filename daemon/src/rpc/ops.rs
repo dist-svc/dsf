@@ -19,10 +19,10 @@ use super::create::{CreateOp, CreateState};
 use super::locate::{LocateOp, LocateState};
 use super::register::{RegisterOp, RegisterState};
 
+use super::discover::{DiscoverOp, DiscoverState};
 use super::publish::{PublishOp, PublishState};
 use super::push::{PushOp, PushState};
 use super::subscribe::{SubscribeOp, SubscribeState};
-use super::discover::{DiscoverOp, DiscoverState};
 
 use super::bootstrap::{BootstrapOp, BootstrapState};
 
@@ -40,17 +40,17 @@ pub struct RpcOperation {
 pub enum RpcKind {
     Connect(ConnectOp),
     Lookup(LookupOp),
-    
+
     Create(CreateOp),
     Register(RegisterOp),
     Publish(PublishOp),
-    
+
     Discover(DiscoverOp),
     Locate(LocateOp),
     Subscribe(SubscribeOp),
 
     Push(PushOp),
-   
+
     Bootstrap(BootstrapOp),
 }
 

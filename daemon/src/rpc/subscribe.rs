@@ -1,4 +1,4 @@
-//! Subscribe operation, used to subscribe to a known service, 
+//! Subscribe operation, used to subscribe to a known service,
 //! optionally creating a service replica
 
 use std::future::Future;

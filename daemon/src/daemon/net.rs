@@ -313,7 +313,7 @@ where
     }
 
     /// Create a network operation for the given request
-    /// 
+    ///
     /// This sends the provided request to the listed peers with retries and timeouts.
     pub fn net_op(&mut self, peers: Vec<Peer>, req: net::Request) -> NetFuture {
         let req_id = req.id;
@@ -377,10 +377,7 @@ where
 
         // Issue request
         // TODO: select broadcast address' based on availabile interfaces?
-        let targets = [
-            (IPV4_BROADCAST.into(), None),
-            (IPV6_BROADCAST.into(), None),
-        ];
+        let targets = [(IPV4_BROADCAST.into(), None), (IPV6_BROADCAST.into(), None)];
         if let Err(e) = self.net_send(&targets, net::Message::Request(req)) {
             error!("FATAL network send error: {:?}", e);
         }
@@ -439,7 +436,7 @@ where
                 );
             }
 
-            return Ok(())
+            return Ok(());
         };
 
         // Look for matching broadcast requests
@@ -448,10 +445,10 @@ where
                 trace!("Found pending broadcast request for id {}", req_id);
                 a.resps.insert(from, resp);
 
-                return Ok(())
+                return Ok(());
             }
 
-            return Ok(())
+            return Ok(());
         }
 
         error!("Received response id {} with no pending request", req_id);

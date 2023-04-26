@@ -1,10 +1,10 @@
 use futures::prelude::*;
 use futures::{executor::block_on, future::try_join_all};
 
-use log::error;
-use clap::Parser;
-use tracing_futures::Instrument;
 use async_signals::Signals;
+use clap::Parser;
+use log::error;
+use tracing_futures::Instrument;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::FmtSubscriber;
 

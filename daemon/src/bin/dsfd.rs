@@ -1,14 +1,14 @@
 //! DSF Daemon (dsfd)
-//! 
-//! 
+//!
+//!
 
+use async_signals::Signals;
 use clap::Parser;
-use tokio::task;
 use futures::prelude::*;
 use log::info;
+use tokio::task;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::FmtSubscriber;
-use async_signals::Signals;
 
 use dsf_daemon::engine::{Engine, EngineOptions};
 

@@ -357,7 +357,7 @@ impl Engine {
             Ok(v) => v,
             Err(e) => {
                 warn!("Failed to decode RPC request: {:?}", e);
-                return Ok(())
+                return Ok(());
             }
         };
 
