@@ -21,12 +21,31 @@ jobs:
         override: true
         components: rustfmt, clippy
 
+    - name: Install cargo-deb
+      uses: actions-rs/install@v0.1
+      with:
+        crate: cargo-deb
+        version: latest
+
+    - name: Install cargo-sweep
+      uses: actions-rs/install@v0.1
+      with:
+        crate: cargo-sweep
+        version: latest
+
     - name: Restore core cache
       uses: actions/cache/restore@v3
       with:
         key: core
         path: |
           ~/.cargo
+          target/
+
+    - name: Track target/ cache files for cleanup
+      uses: actions-rs/cargo@v1
+      with:
+        command: sweep
+        args: --stamp
 
     - name: Run cargo check
       uses: actions-rs/cargo@v1
@@ -39,6 +58,12 @@ jobs:
         command: fmt
         args: -- --check
 
+    - name: Clean up target cache
+      uses: actions-rs/cargo@v1
+      with:
+        command: sweep
+        args: --file
+
     - name: Update core cache for builds on main
       if: ${{ github.ref == 'refs/heads/main' }}
       uses: actions/cache/save@v3
@@ -46,6 +71,7 @@ jobs:
         key: core-${{ github.run_id }}
         path: |
           ~/.cargo
+          target/
 
   # Pre-build test assets
   build-tests:
@@ -189,13 +215,14 @@ jobs:
       with:
         crate: cargo-deb
         version: latest
-    
+
     - name: Restore global cache
+      if: ${{ matrix.os == 'ubuntu-latest' }}
       uses: actions/cache/restore@v3
       with:
         key: core
         path: |
-          ~/.cargo
+          ~/.cargo/registry
 
     - name: Restore target cache
       uses: actions/cache/restore@v3
