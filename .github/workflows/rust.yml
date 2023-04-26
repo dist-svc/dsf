@@ -1,0 +1,87 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # Lint and check source code
+  check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rustfmt, clippy
+
+      - name: Restore cache
+        uses: actions/cache/restore@v3
+        with:
+          key: core
+          path: |
+            ~/.cargo
+            ./target
+
+      - name: Run cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -- --check
+
+      - name: Update cache for builds on main
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@v3
+        with:
+          key: core
+          path: |
+            ~/.cargo
+            ./target
+
+  # Run per-package tests
+  test:
+    name: "test ${{ matrix.package }}"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [ core, rpc, client, engine, daemon ]
+
+    steps:
+      - uses: actions/checkout@v2
+        
+      - name: Setup toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+
+      - name: Restore cache
+        uses: actions/cache/restore@v3
+        with:
+          key: core
+          path: |
+            ~/.cargo
+            ./target
+        
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p dsf-${{ matrix.package }}
+
+  # TODO: build binaries
+

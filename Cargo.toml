@@ -1,0 +1,18 @@
+
+[workspace]
+members = [
+    "core",
+    "client",
+    "daemon",
+    "engine",
+    "rpc",
+]
+
+[patch.crates-io]
+dsf-core = { path = "./core" }
+dsf-client = { path = "./client" }
+dsf-daemon = { path = "./daemon" }
+dsf-engine = { path = "./engine" }
+dsf-rpc = { path = "./rpc" }
+
+kad = { git = "https://github.com/ryankurte/rust-kad", branch = "main" }

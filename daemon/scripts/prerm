@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# Stop service in case it's running
+systemctl stop dsfd

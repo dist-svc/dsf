@@ -1,0 +1,13 @@
+[Unit]
+Description=Distributed Service Framework (DSF) Daemon
+
+[Service]
+User=dsfd
+Group=dsfd
+EnvironmentFile=/etc/dsf/dsfd.env
+ExecStart=/usr/bin/dsfd
+
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

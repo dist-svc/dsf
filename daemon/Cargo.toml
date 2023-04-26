@@ -1,0 +1,131 @@
+[package]
+name = "dsf-daemon"
+repository = "https://github.com/dist-svc/dsf-daemon"
+description = "Distributed Service Framework (DSF) Daemon"
+version = "0.1.3"
+authors = ["ryan <ryan@kurte.nz>"]
+edition = "2018"
+license = "GPL-3.0"
+readme = "README.md"
+
+default-run = "dsfd"
+
+[features]
+profile = []
+jemalloc = ["jemallocator"]
+store = []
+default = ["store", "no_deadlocks", "libsqlite3-sys/bundled"] 
+
+# Debian packaging metadata (for cargo-deb)
+[package.metadata.deb]
+priority = "optional"
+depends = "libc6, openssl"
+assets = [
+    ["target/release/dsfd", "/usr/bin/dsfd",                    "0755"],
+    ["dsfd.env",            "/etc/dsf/dsfd.env",                "0644"],
+    ["dsfd.service",        "/lib/systemd/system/dsfd.service", "0644"],
+]
+conf-files = [
+  "/etc/dsfd/dsfd.env",
+]
+maintainer-scripts = "scripts/"
+
+[dependencies]
+anyhow = "1.0.34"
+async-signals = "0.3.1"
+async-trait = "0.1.21"
+base64 = { version = "0.12.3", features = [ "alloc", "std" ] }
+bitflags = "1.2.1"
+bytes = "1.0.1"
+chrono-humanize = "0.0.11"
+clap = { version = "4.2.1", features = [ "derive", "env" ] }
+color-backtrace = "0.5.1"
+colored = "1.9.0"
+ctor = "0.1.21"
+ctrlc = "3.1.3"
+derivative = "2.2.0"
+flame = "0.2.2"
+flamer = "0.4.0"
+futures = "0.3.4"
+futures_codec = "0.3.4"
+get_if_addrs = "0.5.3"
+jemallocator = { version = "0.3.2", optional = true }
+libc = "0.2.80"
+libmdns = "0.2.4"
+mdns = "1.0.0"
+no_deadlocks = { version = "1.1.1", optional = true }
+portpicker = "0.1.1"
+rand = "0.7.3"
+serde_json = "1.0.44"
+strum = "0.24.1"
+strum_macros = "0.20.1"
+tempdir = "0.3.7"
+tokio = { version = "1.26.0", features = [ "full" ] }
+tracing-futures = "0.2.4"
+tracing-subscriber = "0.2.15"
+
+[dependencies.chrono]
+features = ["serde"]
+version = "0.4.6"
+
+[dependencies.diesel]
+features = ["sqlite", "extras", "chrono", "r2d2"]
+version = "1.4.5"
+
+[dependencies.dsf-core]
+version = "0.2.0"
+features = ["serde", "std"]
+
+[dependencies.dsf-rpc]
+version = "0.2.0"
+features = ["std"]
+
+[dependencies.humantime]
+version = "2.0.0"
+
+[dependencies.igd]
+version = "0.10.0"
+features = ["aio"]
+
+[dependencies.kad]
+version = "0.6.0"
+
+[dependencies.libsqlite3-sys]
+version = "0.9.1"
+
+[dependencies.log]
+features = ["max_level_trace", "release_max_level_trace"]
+version = "0.4.6"
+
+[dependencies.serde]
+features = ["derive"]
+version = "1.0"
+
+[dependencies.tracing]
+features = ["max_level_trace", "release_max_level_trace"]
+version = "0.1.22"
+
+[dev-dependencies]
+dsf-client = "0.2.0"
+indicatif = "0.16.2"
+rand = "0.7.3"
+rr-mux = "0.10.1"
+simplelog = "0.11.1"
+tempdir = "0.3.7"
+
+[profile.release]
+debug = true
+
+[[bin]]
+name = "dsfd"
+path = "src/bin/dsfd.rs"
+
+[[bin]]
+name = "dsfm"
+path = "src/bin/dsfm.rs"
+
+[patch.crates-io]
+dsf-core = { git = "https://github.com/dist-svc/dsf-core" }
+dsf-rpc = { git = "https://github.com/dist-svc/dsf-rpc" }
+sodiumoxide = { git = "https://github.com/sodiumoxide/sodiumoxide" }
+kad = { git = "https://github.com/ryankurte/rust-kad" }

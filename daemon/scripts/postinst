@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Create dsfd user
+useradd dsfd
+
+# Create dsfd data directory
+mkdir -p /var/dsfd/
+chown -R dsfd:root /var/dsfd
+chmod -R 770 /var/dsfd
+
+# Create dsfd socket directory
+mkdir -p /var/run/dsfd
+chown -R dsfd:dsfd /var/run/dsfd
+chmod -R 770 /var/run/dsfd
