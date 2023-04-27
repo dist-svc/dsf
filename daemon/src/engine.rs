@@ -1,11 +1,13 @@
 use std::convert::TryFrom;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use bytes::Bytes;
 use clap::Parser;
 use futures::channel::mpsc;
 use futures::{prelude::*, select, StreamExt};
+use home::home_dir;
 use log::{debug, error, info, trace, warn};
 use tokio::task::{self, JoinHandle};
 use tokio::{sync::mpsc::channel, time::interval};
@@ -37,7 +39,7 @@ pub struct EngineOptions {
 
     #[clap(
         long = "database-file",
-        default_value = "/var/dsfd/dsf.db",
+        default_value_t = EngineOptions::default().database_file,
         env = "DSF_DB_FILE"
     )]
     /// Database file for storage by the daemon
@@ -46,7 +48,7 @@ pub struct EngineOptions {
     #[clap(
         short = 's',
         long = "daemon-socket",
-        default_value = "/var/run/dsfd/dsf.sock",
+        default_value_t = EngineOptions::default().daemon_socket,
         env = "DSF_SOCK"
     )]
     /// Unix socket for communication with the daemon
@@ -62,13 +64,23 @@ pub struct EngineOptions {
 
 impl Default for EngineOptions {
     fn default() -> Self {
+        // Resolve home dir if available
+        let h = match home_dir() {
+            Some(h) => h.join(".dsfd/"),
+            None => PathBuf::from("/var/dsfd/"),
+        };
+
+        // Build socket and database paths
+        let daemon_socket = h.join("dsf.sock");
+        let database_file = h.join("dsf.db");
+
         Self {
             bind_addresses: vec![SocketAddr::new(
                 IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
                 10100,
             )],
-            daemon_socket: DEFAULT_UNIX_SOCKET.to_string(),
-            database_file: DEFAULT_DATABASE_FILE.to_string(),
+            daemon_socket: daemon_socket.to_string_lossy().to_string(),
+            database_file: database_file.to_string_lossy().to_string(),
             no_bootstrap: false,
             daemon_options: DaemonOptions {
                 dht: DhtConfig::default(),
@@ -119,6 +131,13 @@ impl Engine {
     /// Create a new daemon instance
     pub async fn new(options: EngineOptions) -> Result<Self, Error> {
         // Create new local data store
+        info!("Creating / connecting to database: {}", options.database_file);
+        // Ensure directory exists
+        if let Some(p) = PathBuf::from(&options.database_file).parent() {
+            if !p.exists() {
+                let _ = std::fs::create_dir(p);
+            }
+        }
         let store = Store::new(&options.database_file)?;
 
         // Fetch or create new peer service
@@ -158,6 +177,12 @@ impl Engine {
 
         // Create new unix socket connector
         info!("Creating unix socket: {}", options.daemon_socket);
+        // Ensure directory exists
+        if let Some(p) = PathBuf::from(&options.daemon_socket).parent() {
+            if !p.exists() {
+                let _ = std::fs::create_dir(p);
+            }
+        }
         let unix = match Unix::new(&options.daemon_socket).await {
             Ok(u) => u,
             Err(e) => {

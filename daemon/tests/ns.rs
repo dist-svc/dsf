@@ -38,7 +38,7 @@ async fn test_nameserver() {
     let _h = e.start().await.expect("Error launching engine");
 
     // Setup client connector
-    let mut client = Client::new(&ClientOptions::new(&daemon_socket, Duration::from_secs(5)))
+    let mut client = Client::new(&ClientOptions::new(Some(&daemon_socket), Duration::from_secs(5)))
         .await
         .expect("Error creating client");
 

@@ -80,14 +80,14 @@ async fn main() -> Result<(), anyhow::Error> {
     // Create client connector
     debug!(
         "Connecting to client socket: '{}'",
-        &opts.options.daemon_socket
+        &opts.options.daemon_socket()
     );
     let mut c = match Client::new(&opts.options).await {
         Ok(c) => c,
         Err(e) => {
             return Err(anyhow::anyhow!(
                 "Error connecting to daemon on '{}': {:?}",
-                &opts.options.daemon_socket,
+                &opts.options.daemon_socket(),
                 e
             ));
         }

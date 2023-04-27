@@ -7,6 +7,7 @@ use clap::Parser;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::{SinkExt, StreamExt};
+use home::home_dir;
 use humantime::Duration as HumanDuration;
 use log::{debug, error, trace, warn};
 use tokio::select;
@@ -32,11 +33,12 @@ pub struct Options {
     #[clap(
         short,
         long,
-        default_value = "/var/run/dsfd/dsf.sock",
         env = "DSF_SOCK"
     )]
-    /// Specify the socket to bind the DSF daemon
-    pub daemon_socket: String,
+    /// Override default daemon socket
+    /// (otherwise this will attempt to connect to user then
+    /// global scoped sockets)
+    pub daemon_socket: Option<String>,
 
     /// Timeout for RPC requests
     #[clap(long, default_value = "10s")]
@@ -44,13 +46,32 @@ pub struct Options {
 }
 
 impl Options {
-    pub fn new(address: &str, timeout: Duration) -> Self {
+    pub fn new(address: Option<&str>, timeout: Duration) -> Self {
         Self {
-            daemon_socket: address.to_string(),
+            daemon_socket: address.map(|v| v.to_string() ),
             timeout: timeout.into(),
         }
     }
+
+    pub fn daemon_socket(&self) -> String {
+        // Use override if provided
+        if let Some(s) = &self.daemon_socket {
+            return s.clone();
+        }
+
+        // Use local / user socket if available
+        if let Some(h) = home_dir() {
+            let p = h.join(".dsfd/dsf.sock");
+            if p.exists() {
+                return p.to_string_lossy().to_string();
+            }
+        }
+    
+        // Otherwise fallback to system socket
+        "/var/dsfd/dsf.sock".to_string()
+    }
 }
+
 
 /// DSF client connector
 #[derive(Debug)]
@@ -69,13 +90,15 @@ pub struct Client<D: Driver = UnixDriver> {
 impl Client {
     /// Create a new client
     pub async fn new(options: &Options) -> Result<Self, Error> {
-        let span = span!(Level::DEBUG, "client", "{}", options.daemon_socket);
+        let daemon_socket = options.daemon_socket();
+
+        let span = span!(Level::DEBUG, "client", "{}", daemon_socket);
         let _enter = span.enter();
 
-        debug!("Client connecting (address: {})", options.daemon_socket);
+        debug!("Client connecting (address: {})", daemon_socket);
 
         // Connect to stream
-        let mut driver = UnixDriver::new(&options.daemon_socket).await?;
+        let mut driver = UnixDriver::new(&daemon_socket).await?;
 
         // Create internal streams
         let (tx_sink, mut tx_stream) = mpsc::channel::<RpcRequest>(0);
@@ -114,7 +137,7 @@ impl Client {
 
         Ok(Client {
             sink: tx_sink,
-            addr: options.daemon_socket.to_owned(),
+            addr: daemon_socket,
             requests,
             timeout: *options.timeout,
             _rx_handle: rx_handle,

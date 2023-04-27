@@ -236,7 +236,7 @@ impl Connection {
                                     break
                                 }
 
-                                debug!("RX: {:?}", &buff[..n]);
+                                trace!("RX: {:?}", &buff[..n]);
 
                                 let mut u = UnixMessage::new(index, Bytes::copy_from_slice(&buff[..n]));
                                 u.sink = tx.clone();

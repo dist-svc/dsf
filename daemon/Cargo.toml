@@ -49,6 +49,7 @@ flamer = "0.4.0"
 futures = "0.3.4"
 futures_codec = "0.3.4"
 get_if_addrs = "0.5.3"
+home = "0.5.5"
 jemallocator = { version = "0.3.2", optional = true }
 libc = "0.2.80"
 libmdns = "0.2.4"
