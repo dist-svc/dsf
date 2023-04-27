@@ -16,21 +16,27 @@ use super::header::WireHeader;
 use super::{offsets, HEADER_LEN};
 
 /// Init state, no data set
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Init;
 
 /// SetBody state, has header and ID
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SetBody;
 
 /// SetPrivateOptions state, has Body and previous (SetBody)
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SetPrivateOptions;
 
 /// Encrypt state, has body and private options
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Encrypt;
 
 /// SetPublicOptions state, has PrivateOptions and previous (SetPrivateOptions)
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SetPublicOptions;
 
 /// Sign state, has PublicOptions and previous (SetPublicOptions)
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Sign;
 
 /// Internal trait to support encoding of optionally encrypted objects in a generic buffer
@@ -44,6 +50,7 @@ pub trait EncodeEncrypted {
 
 /// Builder provides a low-level wire protocol builder object.
 /// This is generic over buffer types and uses type-state mutation to ensure created objects are valid
+#[derive(Debug)]
 pub struct Builder<S, T: MutableData> {
     /// internal data buffer
     buf: T,
@@ -55,6 +62,118 @@ pub struct Builder<S, T: MutableData> {
     encrypted: bool,
 
     _s: PhantomData<S>,
+}
+
+pub struct WireBuilder<'a, B: Encode> {
+    id: &'a Id,
+    header: &'a Header,
+
+    body: B,
+
+    public_options: &'a [Options],
+    private_options: &'a [Options],
+}
+
+pub enum SigningOpt {
+    Public(PrivateKey),
+    Private(SecretKey),
+    Signed(Signature),
+}
+
+impl <'a, B: Encode> WireBuilder<'a, B> {
+    pub fn encode(&self, buff: &mut [u8], secret_key: Option<&SecretKey>, signer: SigningOpt) -> Result<usize, Error> {
+        let mut n = HEADER_LEN;
+
+        // Write the object ID
+        buff[HEADER_LEN..HEADER_LEN + ID_LEN].clone_from_slice(self.id);
+        n += ID_LEN;
+
+        // Write the object data
+        let body_len = self.body.encode(&mut buff[n..])
+            .map_err(|_| Error::EncodeFailed)?;
+        n += body_len;
+
+        // Write private options
+        let private_options_len = self.private_options.encode(&mut buff[n..])
+            .map_err(|_| Error::EncodeFailed)?;
+        n += private_options_len;
+
+        // Apply encryption if enabled
+        if let Some(secret_key) = secret_key {
+            // Calculate range for encryption
+            let o = HEADER_LEN + ID_LEN;
+            let l = body_len + private_options_len;
+
+            let block = &mut buff[o..][..l];
+            let tag = Crypto::sk_encrypt(secret_key, None, block).unwrap();
+
+            trace!("Encrypted block: {:?}", block.hex_dump());
+            trace!("Encryption tag: {:?}", tag.hex_dump());
+
+            // Attach secret key to object
+            buff[HEADER_LEN + ID_LEN + body_len + private_options_len..][..SECRET_KEY_TAG_LEN]
+                .clone_from_slice(&tag);
+            n += SECRET_KEY_TAG_LEN;
+        }
+
+        // Write public options
+        let public_options_len = self.public_options.encode(&mut buff[n..])
+            .map_err(|_| Error::EncodeFailed)?;
+        n += public_options_len;
+
+        // Write header
+        let mut h = WireHeader::new(&mut buff[..HEADER_LEN]);
+        h.encode(&self.header);
+        h.set_data_len(body_len);
+        h.set_private_options_len(private_options_len);
+        h.set_public_options_len(public_options_len);
+
+        // Sign object
+        match signer {
+            // Generate public key signature over whole object
+            SigningOpt::Public(pri_key) => {
+                // Generate signature
+                let sig = Crypto::pk_sign(&pri_key, &buff[..n]).unwrap();
+
+                trace!(
+                    "Sign {} byte object, new index: {}",
+                    n,
+                    n + SIGNATURE_LEN
+                );
+
+                // Write signature to object
+                (&mut buff[n..][..SIGNATURE_LEN]).copy_from_slice(&sig);
+                n += SIGNATURE_LEN;
+            },
+            // Perform secret key AEAD over header + body
+            SigningOpt::Private(sec_key) => {
+                // Split header and body sections
+                let (header, body) = buff[..n].split_at_mut(HEADER_LEN + ID_LEN);
+
+                // Generate AEAD tag
+                let tag = Crypto::sk_encrypt(&sec_key, Some(header), body).unwrap();
+
+                trace!(
+                    "Encrypt {} byte object, new index: {}, MAC: {}",
+                    n,
+                    n + SIGNATURE_LEN,
+                    tag,
+                );
+
+                buff[n..][..tag.len()].copy_from_slice(&tag);
+                // TODO: this superflously pads out to signature length
+                n += SIGNATURE_LEN;
+            },
+            // Append existing signature
+            SigningOpt::Signed(sig) => {
+                buff[n..][..sig.len()].copy_from_slice(&sig);
+                // TODO: this superflously pads out to signature length
+                n += SIGNATURE_LEN;
+            }
+        }
+
+        Ok(n)
+    }
 }
 
 // Implementations that are always available
@@ -195,6 +314,8 @@ impl<T: MutableData> Builder<SetPrivateOptions, T> {
     ) -> Result<Builder<Encrypt, T>, Error> {
         let b = self.buf.as_mut();
 
+        trace!("Add private options: {:?}", options);
+
         let n = Options::encode_iter(options.into_iter(), &mut b[self.n..])?;
         self.n += n;
 
@@ -226,7 +347,7 @@ impl<T: MutableData> Builder<SetPrivateOptions, T> {
 
         self.header_mut().set_private_options_len(o.len());
 
-        trace!(
+        debug!(
             "Add raw private options, {} bytes, new index: {}",
             o.len(),
             self.n
@@ -371,6 +492,8 @@ impl<T: MutableData> Builder<SetPublicOptions, T> {
     ) -> Result<Builder<SetPublicOptions, T>, Error> {
         let b = self.buf.as_mut();
 
+        debug!("Public options: {:?}", options);
+
         let n = Options::encode_iter(options.into_iter(), &mut b[self.n..])?;
         self.n += n;
         self.c += n;
@@ -378,7 +501,7 @@ impl<T: MutableData> Builder<SetPublicOptions, T> {
 
         self.header_mut().set_public_options_len(c);
 
-        trace!("Add public options {} bytes, new index: {}", n, self.n);
+        debug!("Add public options {} bytes, new index: {}", n, self.n);
 
         Ok(self)
     }

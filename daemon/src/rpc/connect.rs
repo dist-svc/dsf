@@ -156,7 +156,7 @@ where
 
                         // Publish peer page to closest N peers
 
-                        let mut buff = vec![0u8; 1024];
+                        let mut buff = vec![0u8; 2048];
                         let (n, mut primary_page) = self.primary(&mut buff).unwrap();
 
                         let our_id = self.id();

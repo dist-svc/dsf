@@ -153,6 +153,11 @@ impl Engine {
             }
         };
 
+        // Clear expired options
+        service.update(|_, o, _| {
+            o.clear();
+        })?;
+
         // Generate updated peer page
         let buff = vec![0u8; 2048];
         let (_n, page) = service.publish_primary(Default::default(), buff)?;

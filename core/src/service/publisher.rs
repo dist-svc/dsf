@@ -215,6 +215,8 @@ where
             ..Default::default()
         };
 
+        debug!("Header: {:?}", header);
+
         let private_opts = match &self.private_options {
             MaybeEncrypted::Cleartext(o) => &o[..],
             MaybeEncrypted::None => &[],
@@ -264,6 +266,8 @@ where
 
         // Then finally attach public options
         let b = b.public_options(self.public_options.iter())?;
+
+        debug!("Builder: {:?}", b);
 
         // Sign generated object
         let c = self.sign(b)?;

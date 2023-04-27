@@ -95,6 +95,18 @@ where
 
                 Some(ResponseKind::Peers(peers))
             }
+            RequestKind::Peer(PeerCommands::Info(options)) => {
+                match self.resolve_peer_identifier(&options) {
+                    Ok(id) => {
+                        let p = self.peers().info(&id);
+                        match p {
+                            Some(p) => Some(ResponseKind::Peer(p)),
+                            None => Some(ResponseKind::None),
+                        }
+                    }
+                    Err(_e) => Some(ResponseKind::None),
+                }
+            }
             RequestKind::Peer(PeerCommands::Remove(options)) => {
                 match self.resolve_peer_identifier(&options) {
                     Ok(id) => {
