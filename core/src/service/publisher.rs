@@ -257,7 +257,7 @@ where
 
         // Attach issued if provided
         if let Some(iss) = options.issued {
-            b = b.public_options([Options::expiry(iss)].iter())?;
+            b = b.public_options([Options::issued(iss)].iter())?;
         }
         // Attach expiry if provided
         if let Some(exp) = options.expiry {
@@ -265,6 +265,7 @@ where
         }
 
         // Then finally attach public options
+        // TODO: filter / update issued and expiry if included?
         let b = b.public_options(self.public_options.iter())?;
 
         debug!("Builder: {:?}", b);

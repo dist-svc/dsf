@@ -50,7 +50,6 @@ pub trait EncodeEncrypted {
 
 /// Builder provides a low-level wire protocol builder object.
 /// This is generic over buffer types and uses type-state mutation to ensure created objects are valid
-#[derive(Debug)]
 pub struct Builder<S, T: MutableData> {
     /// internal data buffer
     buf: T,
@@ -62,6 +61,18 @@ pub struct Builder<S, T: MutableData> {
     encrypted: bool,
 
     _s: PhantomData<S>,
+}
+
+impl <S, T: MutableData> Debug for Builder<S, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Builder")
+            .field("buf", &self.as_ref())
+            .field("n", &self.n)
+            .field("c", &self.c)
+            .field("encrypted", &self.encrypted)
+            .field("state", &self._s)
+            .finish()
+    }
 }
 
 pub struct WireBuilder<'a, B: Encode> {

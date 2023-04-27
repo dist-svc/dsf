@@ -153,7 +153,7 @@ impl Engine {
             }
         };
 
-        // Clear expired options
+        // Clear old / expired options
         service.update(|_, o, _| {
             o.clear();
         })?;
