@@ -434,7 +434,7 @@ where
         };
 
         #[cfg(not(feature = "defmt"))]
-        debug!("Received object: {:02x?}", base);
+        trace!("Received object: {:02x?}", base);
 
         // Ignore our own packets
         if base.id() == self.svc.id() {
@@ -773,8 +773,8 @@ where
                     .map_err(EngineError::Store)?;
 
                 // Attempt to decode page body
-                match A::Info::decode(page.body_raw()) {
-                    Ok(i) => info!("Decode: {:?}", i),
+                let _body = match A::Info::decode(page.body_raw()) {
+                    Ok(i) => debug!("Decode: {:?}", i),
                     Err(e) => error!("Failed to decode info: {:?}", e),
                 };
 

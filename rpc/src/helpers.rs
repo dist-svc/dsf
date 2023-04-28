@@ -5,6 +5,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::str::FromStr;
 use std::time::Duration;
 
+use dsf_core::prelude::DsfError;
 use humantime::Duration as HumanDuration;
 
 pub fn try_parse_sock_addr(from: &str) -> Result<SocketAddr, IoError> {
@@ -19,18 +20,15 @@ pub fn try_parse_sock_addr(from: &str) -> Result<SocketAddr, IoError> {
     }
 }
 
-pub fn try_load_file(from: &str) -> Result<Vec<u8>, IoError> {
+pub fn try_load_file(from: &str) -> Result<Vec<u8>, DsfError> {
     let data = fs::read(from)?;
     Ok(data)
 }
 
-pub fn try_parse_key_value(from: &str) -> Result<(String, String), IoError> {
+pub fn try_parse_key_value(from: &str) -> Result<(String, String), DsfError> {
     let split: Vec<_> = from.split(':').collect();
     if split.len() != 2 {
-        return Err(IoError::new(
-            IoErrorKind::Other,
-            "key:value pair parsing failed",
-        ));
+        return Err(DsfError::KeyValueParseError);
     }
 
     Ok((split[0].to_owned(), split[1].to_owned()))

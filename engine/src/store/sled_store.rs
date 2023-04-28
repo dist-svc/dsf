@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use dsf_core::prelude::*;
 
 use super::*;
@@ -5,7 +7,8 @@ use crate::log::Debug;
 
 pub struct SledStore<Addr: Clone + Debug> {
     db: sled::Db,
-    peers: std::collections::HashMap<Id, Peer<Addr>>,
+    peers: HashMap<Id, Peer<Addr>>,
+    services: HashMap<Id, Service>,
     _addr: PhantomData<Addr>,
 }
 
@@ -18,11 +21,13 @@ impl<Addr: Clone + Debug> SledStore<Addr> {
             .flush_every_ms(Some(1_000))
             .open()?;
 
-        let peers = std::collections::HashMap::new();
+        let peers = HashMap::new();
+        let services = HashMap::new();
 
         Ok(Self {
             db,
             peers,
+            services,
             _addr: PhantomData,
         })
     }
@@ -153,6 +158,22 @@ impl<Addr: Clone + Debug + 'static> Store for SledStore<Addr> {
             }
             None => Ok(None),
         }
+    }
+
+    // Fetch service information
+    fn get_service(&self, id: &Id) -> Result<Option<Service>, Self::Error> {
+        let s = self.services.get(id);
+        Ok(s.map(|s| s.clone()))
+    }
+
+    // Update a specified service
+    fn update_service<R: Debug, F: Fn(&mut Service) -> R>(
+        &mut self,
+        id: &Id,
+        f: F,
+    ) -> Result<R, Self::Error> {
+        let s = self.services.entry(id.clone()).or_default();
+        Ok(f(s))
     }
 }
 

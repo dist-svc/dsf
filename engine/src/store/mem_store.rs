@@ -9,6 +9,7 @@ pub struct MemoryStore<Addr: Clone + Debug = std::net::SocketAddr> {
     pub(crate) last_sig: Option<ObjectInfo>,
     pub(crate) peers: HashMap<Id, Peer<Addr>>,
     pub(crate) pages: HashMap<Signature, Container>,
+    pub(crate) services: HashMap<Id, Service>,
 }
 
 impl<Addr: Clone + Debug> MemoryStore<Addr> {
@@ -18,6 +19,7 @@ impl<Addr: Clone + Debug> MemoryStore<Addr> {
             last_sig: None,
             peers: HashMap::new(),
             pages: HashMap::new(),
+            services: HashMap::new(),
         }
     }
 }
@@ -91,6 +93,22 @@ impl<Addr: Clone + Debug + 'static> Store for MemoryStore<Addr> {
             }
             None => Ok(None),
         }
+    }
+
+    // Fetch service information
+    fn get_service(&self, id: &Id) -> Result<Option<Service>, Self::Error> {
+        let s = self.services.get(id);
+        Ok(s.map(|s| s.clone()))
+    }
+
+    // Update a specified service
+    fn update_service<R: Debug, F: Fn(&mut Service) -> R>(
+        &mut self,
+        id: &Id,
+        f: F,
+    ) -> Result<R, Self::Error> {
+        let s = self.services.entry(id.clone()).or_default();
+        Ok(f(s))
     }
 }
 

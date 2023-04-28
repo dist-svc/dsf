@@ -1,3 +1,6 @@
+#[cfg(feature = "std")]
+use std::net::SocketAddrV4;
+
 use crate::comms::Comms;
 
 /// [Comms] implementation for [std::net::UdpSocket]
@@ -23,17 +26,15 @@ impl Comms for std::net::UdpSocket {
     fn broadcast(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         use std::net::{Ipv4Addr, SocketAddr};
 
-        let a = match self.local_addr()? {
-            SocketAddr::V4(mut v4) => {
-                v4.set_ip(Ipv4Addr::new(255, 255, 255, 255));
-                v4
-            }
-            _ => unimplemented!(),
-        };
+        // Local broadcast with default DSF addr
+        let addr = SocketAddr::V4(SocketAddrV4::new(
+            Ipv4Addr::new(255, 255, 255, 255),
+            10100,
+        ));
 
-        log::debug!("Broadcast {} bytes to: {}", data.len(), a);
+        log::debug!("Broadcast {} bytes to: {}", data.len(), addr);
 
-        self.send_to(data, a)?;
+        self.send_to(data, addr)?;
 
         Ok(())
     }

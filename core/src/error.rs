@@ -21,6 +21,7 @@ pub enum Error {
     UnexpectedServiceId,
     UnexpectedApplicationId,
     InvalidServiceVersion,
+    KeyValueParseError,
     NoPrivateKey,
     NoPublicKey,
     NoSignature,

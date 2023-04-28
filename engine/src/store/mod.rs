@@ -27,7 +27,10 @@ bitflags::bitflags! {
         const SIGS  = 0b0000_0010;
         const PAGES = 0b0000_0100;
 
-        const ALL = Self::PAGES.bits() | Self::SIGS.bits() | Self::KEYS.bits();
+        const PEERS = 0b0000_1000;
+        const SERVICES = 0b0001_0000;
+
+        const ALL = Self::PAGES.bits() | Self::SIGS.bits() | Self::KEYS.bits() | Self::PEERS.bits() | Self::SERVICES.bits();
     }
 }
 
@@ -83,6 +86,16 @@ pub trait Store: KeySource {
         sig: &Signature,
         buff: T,
     ) -> Result<Option<Container<T>>, Self::Error>;
+
+    // Fetch service information
+    fn get_service(&self, id: &Id) -> Result<Option<Service>, Self::Error>;
+
+    // Update a specified service
+    fn update_service<R: Debug, F: Fn(&mut Service) -> R>(
+        &mut self,
+        id: &Id,
+        f: F,
+    ) -> Result<R, Self::Error>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
