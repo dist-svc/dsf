@@ -4,6 +4,7 @@
 
 use std::convert::TryFrom;
 
+use dsf_core::base::Empty;
 use dsf_core::wire::Container;
 use futures::{future, Future, FutureExt};
 use log::{debug, error, info, warn};
@@ -12,11 +13,11 @@ use serde::{Deserialize, Serialize};
 use dsf_core::error::Error as CoreError;
 use dsf_core::options::{self, Filters};
 use dsf_core::prelude::{DsfError, Options, PageInfo};
-use dsf_core::service::Registry;
+use dsf_core::service::{Registry, ServiceBuilder, Publisher};
 use dsf_core::types::{CryptoHash, Flags, Id, PageKind};
 
 use dsf_rpc::{
-    LocateOptions, NsRegisterInfo, NsRegisterOptions, NsSearchOptions, Response, ServiceIdentifier,
+    LocateOptions, NsRegisterInfo, NsRegisterOptions, NsSearchOptions, Response, ServiceIdentifier, ServiceInfo, NsCreateOptions,
 };
 
 use crate::daemon::Dsf;
@@ -28,6 +29,9 @@ use super::ops::{Engine, OpKind, RpcKind};
 
 #[async_trait::async_trait]
 pub trait NameService {
+    /// Create a new name service
+    async fn ns_create(&self, opts: NsCreateOptions) -> Result<ServiceInfo, DsfError>;
+
     /// Search for a service or block by hashed value
     async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<Container>, DsfError>;
 
@@ -37,6 +41,59 @@ pub trait NameService {
 
 #[async_trait::async_trait]
 impl<T: Engine> NameService for T {
+
+    /// Create a new name service
+    async fn ns_create(&self, opts: NsCreateOptions) -> Result<ServiceInfo, DsfError> {
+        debug!("Creating new nameservice (opts: {:?})", opts);
+
+        // Create nameservice instance
+        let mut sb = ServiceBuilder::<Vec<u8>>::ns(&opts.name);
+        sb = sb.kind(PageKind::Name);
+
+        // If the service is not public, encrypt the object
+        if !opts.public {
+            sb = sb.encrypt();
+        }
+
+        debug!("Generating service");
+        let mut service = match sb.build() {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Failed to build name service: {:?}", e);
+                return Err(e)
+            }
+        };
+
+        // Generate primary page for NS
+        debug!("Generating service page");
+        // TODO: revisit this
+        let buff = vec![0u8; 1024];
+        let (_n, primary_page) = service.publish_primary(Default::default(), buff).unwrap();
+
+        // Persist service and page to local store
+        debug!("Storing service instance");
+        let id = service.id();
+        match self.service_create(service, primary_page.clone()).await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Failed to create service: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        // Register in DHT
+        debug!("Registering service in DHT");
+        if let Err(e) = self.dht_put(id.clone(), vec![primary_page]).await {
+            error!("Failed to register service: {:?}", e);
+        }
+        
+        debug!("Created NameService {}", id);
+
+        let info = self.service_get(id).await?;
+
+        Ok(info)
+    }
+
     /// Search for a matching service using the provided (or relevant) nameserver
     async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<Container>, DsfError> {
         debug!("Locating nameservice for search: {:?}", opts);
@@ -177,7 +234,8 @@ impl<T: Engine> NameService for T {
 
         debug!("Locating target for register: {:?}", opts);
 
-        // Lookup service for registering
+        // Lookup service to be registered
+        // TODO: fallback / use DHT if required?
         let t = match self.service_resolve(opts.target.into()).await {
             Ok(s) => s,
             Err(e) => {
@@ -469,7 +527,7 @@ mod test {
             }),
             // Register newly discovered service
             Box::new(move |op, _ns, t| match op {
-                OpKind::ServiceCreate(id, p) if id == t.id() => {
+                OpKind::ServiceRegister(id, p) if id == t.id() => {
                     Ok(Res::ServiceInfo(target_info.clone()))
                 }
                 _ => panic!(

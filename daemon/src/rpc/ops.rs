@@ -135,7 +135,8 @@ pub enum OpKind {
 
     ServiceResolve(ServiceIdentifier),
     ServiceGet(Id),
-    ServiceCreate(Id, Vec<Container>),
+    ServiceCreate(Service, Container),
+    ServiceRegister(Id, Vec<Container>),
     ServiceUpdate(Id, UpdateFn),
 
     PeerGet(Id),
@@ -152,7 +153,8 @@ impl core::fmt::Debug for OpKind {
 
             Self::ServiceResolve(arg0) => f.debug_tuple("ServiceResolve").field(arg0).finish(),
             Self::ServiceGet(id) => f.debug_tuple("ServiceGet").field(id).finish(),
-            Self::ServiceCreate(id, _pages) => f.debug_tuple("ServiceCreate").field(id).finish(),
+            Self::ServiceCreate(s, _p) => f.debug_tuple("ServiceCreate").field(&s.id()).finish(),
+            Self::ServiceRegister(id, _pages) => f.debug_tuple("ServiceRegister").field(id).finish(),
             Self::ServiceUpdate(id, _f) => f.debug_tuple("ServiceUpdate").field(id).finish(),
 
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
@@ -232,13 +234,25 @@ pub trait Engine: Sync + Send {
         }
     }
 
+    /// Create a new service
+    async fn service_create(
+        &self,
+        service: Service,
+        primary_page: Container,
+    ) -> Result<ServiceInfo, CoreError> {
+        match self.exec(OpKind::ServiceCreate(service, primary_page)).await? {
+            Res::ServiceInfo(s) => Ok(s),
+            _ => Err(CoreError::Unknown),
+        }
+    }
+
     /// Register a newly discovered service from the provided pages
     async fn service_register(
         &self,
-        service: Id,
+        id: Id,
         pages: Vec<Container>,
     ) -> Result<ServiceInfo, CoreError> {
-        match self.exec(OpKind::ServiceCreate(service, pages)).await? {
+        match self.exec(OpKind::ServiceRegister(id, pages)).await? {
             Res::ServiceInfo(s) => Ok(s),
             _ => Err(CoreError::Unknown),
         }

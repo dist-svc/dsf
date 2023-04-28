@@ -8,11 +8,26 @@ use crate::ServiceIdentifier;
 /// Name service commands
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Subcommand)]
 pub enum NsCommands {
+    /// Create a new name service
+    Create(NsCreateOptions),
+
     /// Search using the specified name service
     Search(NsSearchOptions),
 
     /// Register using the specified name service
     Register(NsRegisterOptions),
+}
+
+/// Options used to create a name service
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Parser)]
+pub struct NsCreateOptions {
+    #[clap(long)]
+    /// Namespace for new name service
+    pub name: String,
+
+    #[clap(long)]
+    /// Create a name service for public use
+    pub public: bool,
 }
 
 /// Options used for name searching

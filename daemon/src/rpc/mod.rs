@@ -1,4 +1,4 @@
-use std::task::{Context, Poll};
+use std::{task::{Context, Poll}, time::SystemTime};
 
 use dsf_core::wire::Container;
 use kad::store::Datastore;
@@ -217,6 +217,23 @@ where
             RequestKind::Data(DataCommands::Publish(opts)) => RpcKind::publish(opts),
             //RequestKind::Data(DataCommands::Query(options)) => unimplemented!(),
             //RequestKind::Debug(DebugCommands::Update) => self.update(true).await.map(|_| ResponseKind::None)?,
+            RequestKind::Ns(NsCommands::Create(opts)) => {
+                let exec = self.exec();
+
+                tokio::task::spawn(async move {
+                    debug!("Starting async ns create");
+                    let i = match exec.ns_create(opts).await {
+                        Ok(i) => ResponseKind::Service(i),
+                        Err(e) => ResponseKind::Error(e),
+                    };
+                    warn!("Async ns create result: {:?}", i);
+                    if let Err(e) = done.clone().try_send(Response::new(req_id, i)) {
+                        error!("Failed to send RPC response: {:?}", e);
+                    }
+                    warn!("Async ns create response sent");
+                });
+                return Ok(());
+            },
             RequestKind::Ns(NsCommands::Register(opts)) => {
                 let exec = self.exec();
                 tokio::task::spawn(async move {
@@ -412,7 +429,22 @@ where
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
-                OpKind::ServiceCreate(id, pages) => {
+                OpKind::ServiceCreate(service, primary_page) => {
+                    let r = self
+                        .services()
+                        .register(
+                            service, &primary_page, ServiceState::Created,
+                            Some(SystemTime::now()),
+                        )
+                        .map(|i| Ok(Res::ServiceInfo(i)))
+                        // TODO: fix this error type
+                        .unwrap_or(Err(CoreError::Unknown));
+
+                    if let Err(e) = op.done.try_send(r) {
+                        error!("Failed to send operation response: {:?}", e);
+                    }
+                }
+                OpKind::ServiceRegister(id, pages) => {
                     let r = self
                         .service_register(&id, pages)
                         .map(|i| Ok(Res::ServiceInfo(i)))

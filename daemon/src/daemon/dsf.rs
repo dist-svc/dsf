@@ -278,7 +278,7 @@ where
         }
     }
 
-    /// Run an update of the daemom and all managed services
+    /// Run an update of the daemon and all managed services
     pub async fn update(&mut self, force: bool) -> Result<(), Error> {
         info!("DSF update (forced: {:?})", force);
 
@@ -461,6 +461,7 @@ where
 
         // Update listed replicas
         for (peer_id, page) in &replicas {
+            // TODO: handle this properly
             self.replicas.create_or_update(id, peer_id, page);
         }
 
