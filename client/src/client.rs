@@ -425,13 +425,13 @@ impl Client {
     pub async fn ns_search(
         &mut self,
         options: name::NsSearchOptions,
-    ) -> Result<Vec<Container>, Error> {
+    ) -> Result<Vec<LocateInfo>, Error> {
         let req = RequestKind::Ns(NsCommands::Search(options));
 
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Pages(info) => Ok(info),
+            ResponseKind::Located(info) => Ok(info),
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }

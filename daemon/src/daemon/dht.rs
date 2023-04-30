@@ -311,11 +311,13 @@ mod test {
 
     #[test]
     fn test_reduce_tertiary() {
-        let mut ns1 = setup();
-        let mut ns2 = setup();
+        let ns1 = setup();
+        let ns2 = setup();
+
+        let target_id = Id::from(rand::random::<[u8; 32]>());
 
         let name = Options::name("test-name");
-        let id = ns1.resolve(&name).unwrap();
+        let tid = ns1.resolve(&name).unwrap();
 
         let mut tertiary_opts = TertiaryOptions {
             index: 0,
@@ -325,19 +327,19 @@ mod test {
 
         // Generate two pages
         let (_, t1a) = ns1
-            .publish_tertiary_buff::<256, _>(id.clone().into(), tertiary_opts.clone(), &name)
+            .publish_tertiary_buff::<256>(target_id.clone().into(), tertiary_opts.clone(), tid.clone())
             .unwrap();
 
         tertiary_opts.index = 1;
         let (_, t1b) = ns1
-            .publish_tertiary_buff::<256, _>(id.clone().into(), tertiary_opts.clone(), &name)
+            .publish_tertiary_buff::<256>(target_id.clone().into(), tertiary_opts.clone(), tid.clone())
             .unwrap();
 
         let pages = vec![t1a.to_owned(), t1b.to_owned()];
 
         // Reduce should leave only the _later_ tertiary page
         // TODO: could sort by time equally as well as index?
-        let mut r = dht_reducer(&id, &pages);
+        let mut r = dht_reducer(&tid, &pages);
 
         let mut e = vec![t1b.to_owned()];
 

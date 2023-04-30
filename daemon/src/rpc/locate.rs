@@ -65,6 +65,8 @@ where
 
         let (tx, rx) = mpsc::channel(1);
 
+        info!("Locate ({}): {:?}", req_id, options);
+
         // Create connect object
         let op = RpcOperation {
             req_id,
@@ -90,10 +92,13 @@ where
 
         match state {
             LocateState::Init => {
+                debug!("Start service locate");
+
                 // Short-circuit for owned services
                 match self.services().find(&opts.id) {
                     Some(service_info) if service_info.origin => {
                         let i = LocateInfo {
+                            id: opts.id.clone(),
                             origin: true,
                             updated: false,
                             page_version: service_info.index as u16,
@@ -104,7 +109,7 @@ where
                         };
 
                         let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![i]));
-                        done.try_send(resp).unwrap();
+                        let _ = done.try_send(resp);
 
                         *state = LocateState::Done;
                     }
@@ -115,7 +120,7 @@ where
                 let (search, _) = match self.dht_mut().search(opts.id.clone()) {
                     Ok(r) => r,
                     Err(e) => {
-                        error!("DHT store error: {:?}", e);
+                        error!("Locate search error: {:?}", e);
                         return Err(DsfError::Unknown);
                     }
                 };
@@ -126,7 +131,7 @@ where
             LocateState::Pending(search) => {
                 match search.poll_unpin(ctx) {
                     Poll::Ready(Ok(v)) => {
-                        debug!("DHT search complete! {:?}", v);
+                        debug!("Locate search complete! {:?}", v);
 
                         // Register or update service
                         let service_info = match self.service_register(&opts.id, v) {
@@ -142,6 +147,7 @@ where
                         // Return info
                         // TODO: only return updated when _new_ data is returned
                         let info = LocateInfo {
+                            id: opts.id.clone(),
                             origin: false,
                             updated: true,
                             page_version: service_info.index as u16,
@@ -151,19 +157,21 @@ where
                                 .flatten(),
                         };
                         let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![info]));
-                        done.try_send(resp).unwrap();
+
+                        let _ = done.try_send(resp);
 
                         *state = LocateState::Done;
 
                         Ok(false)
                     }
                     Poll::Ready(Err(e)) => {
-                        error!("DHT search error: {:?}", e);
+                        error!("Locate search failed: {:?}", e);
 
                         // Check local registry
                         if let Some(i) = self.services().find(&opts.id) {
                             // Return info
                             let info = LocateInfo {
+                                id: opts.id.clone(),
                                 origin: false,
                                 updated: false,
                                 page_version: i.index as u16,
@@ -173,7 +181,8 @@ where
                                     .flatten(),
                             };
                             let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![info]));
-                            done.try_send(resp).unwrap();
+
+                            let _ = done.try_send(resp);
 
                             *state = LocateState::Done;
 
@@ -185,7 +194,8 @@ where
                             req_id,
                             rpc::ResponseKind::Error(dsf_core::error::Error::Unknown),
                         );
-                        done.try_send(resp).unwrap();
+                        
+                        let _ = done.try_send(resp);
 
                         *state = LocateState::Error;
 
@@ -220,6 +230,7 @@ impl<T: Engine> ServiceRegistry for T {
                 };
 
                 Some(LocateInfo {
+                    id: opts.id.clone(),
                     origin: i.origin,
                     updated: false,
                     page_version: i.index as u16,
@@ -245,21 +256,28 @@ impl<T: Engine> ServiceRegistry for T {
             }
             (Err(e), _) => {
                 error!("DHT search failed: {:?}", e);
-                return Err(e.into());
+                return Err(DsfError::NotFound);
             }
         };
 
         debug!("Found pages: {:?}", pages);
 
-        debug!("Registering service {}", opts.id);
+        debug!("Adding service {} to store", opts.id);
 
         // Add located service to local tracking
-        let i = self.service_register(opts.id.clone(), pages).await?;
+        let i = self.service_register(opts.id.clone(), pages.clone()).await?;
 
-        debug!("Registered: {:?}", i);
+        debug!("Stored service: {:?}", i);
 
+        // Map primary page using returned pages or datastore
         let primary_page = match i.primary_page {
-            Some(sig) => Some(self.object_get(opts.id.clone(), sig).await?),
+            Some(sig) => {
+                if let Some(p) = pages.iter().find(|p| sig == p.signature()) {
+                    Some(p.clone())
+                } else {
+                    Some(self.object_get(opts.id.clone(), sig).await?)
+                }
+            },
             None => None,
         };
 
@@ -267,6 +285,7 @@ impl<T: Engine> ServiceRegistry for T {
 
         // Return info
         let info = LocateInfo {
+            id: opts.id,
             origin: i.origin,
             updated: true,
             page_version: i.index as u16,

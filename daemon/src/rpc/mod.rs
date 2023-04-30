@@ -1,7 +1,7 @@
 use std::{task::{Context, Poll}, time::SystemTime};
 
 use dsf_core::wire::Container;
-use kad::store::Datastore;
+use kad::{store::Datastore, prelude::DhtError};
 use log::{debug, error, info, warn};
 use tracing::{span, Level};
 
@@ -16,7 +16,7 @@ use crate::{
     daemon::{net::{NetIf, NetFuture}, Dsf},
     error::{CoreError, Error},
     rpc::lookup::PeerRegistry,
-    rpc::ns::NameService,
+    rpc::{ns::NameService, locate::ServiceRegistry},
 };
 
 // Generic / shared operation types
@@ -211,7 +211,24 @@ where
             }
             RequestKind::Service(ServiceCommands::Create(opts)) => RpcKind::create(opts),
             RequestKind::Service(ServiceCommands::Register(opts)) => RpcKind::register(opts),
-            RequestKind::Service(ServiceCommands::Locate(opts)) => RpcKind::locate(opts),
+            //RequestKind::Service(ServiceCommands::Locate(opts)) => RpcKind::locate(opts),
+            RequestKind::Service(ServiceCommands::Locate(opts)) => {
+                let exec = self.exec();
+
+                tokio::task::spawn(async move {
+                    debug!("Starting async locate create");
+                    let i = match exec.service_locate(opts).await {
+                        Ok(i) => ResponseKind::Located(vec![i]),
+                        Err(e) => ResponseKind::Error(e),
+                    };
+                    warn!("Async service locate result: {:?}", i);
+                    if let Err(e) = done.clone().try_send(Response::new(req_id, i)) {
+                        error!("Failed to send RPC response: {:?}", e);
+                    }
+                    warn!("Async service locate response sent");
+                });
+                return Ok(());
+            },
             RequestKind::Service(ServiceCommands::Subscribe(opts)) => RpcKind::subscribe(opts),
             RequestKind::Service(ServiceCommands::Discover(opts)) => RpcKind::discover(opts),
             RequestKind::Data(DataCommands::Publish(opts)) => RpcKind::publish(opts),
@@ -421,8 +438,8 @@ where
                 OpKind::ServiceGet(id) => {
                     let r = self
                         .services()
-                        .find_copy(&id)
-                        .map(|s| Ok(Res::Service(s)))
+                        .find(&id)
+                        .map(|s| Ok(Res::ServiceInfo(s)))
                         .unwrap_or(Err(CoreError::NotFound));
 
                     if let Err(e) = op.done.try_send(r) {
@@ -611,7 +628,7 @@ impl core::fmt::Debug for Op {
     }
 }
 
-/// Operation state storage for DHT interactions
+/// Operation state storage for async interactions
 enum OpState {
     None,
     DhtLocate(kad::dht::LocateFuture<Id, Peer>),
@@ -628,12 +645,12 @@ impl Future for OpState {
             OpState::None => unreachable!(),
             OpState::DhtLocate(locate) => match locate.poll_unpin(ctx) {
                 Poll::Ready(Ok(peer)) => Ok(Res::Peers(vec![peer.info().clone()])),
-                Poll::Ready(Err(_e)) => Err(CoreError::Unknown),
+                Poll::Ready(Err(e)) => Err(dht_to_core_error(e)),
                 _ => return Poll::Pending,
             },
             OpState::DhtSearch(get) => match get.poll_unpin(ctx) {
                 Poll::Ready(Ok(pages)) => Ok(Res::Pages(pages)),
-                Poll::Ready(Err(_e)) => Err(CoreError::Unknown),
+                Poll::Ready(Err(e)) => Err(dht_to_core_error(e)),
                 _ => return Poll::Pending,
             },
             OpState::DhtPut(put) => match put.poll_unpin(ctx) {
@@ -641,7 +658,7 @@ impl Future for OpState {
                     let peers = peers.iter().map(|e| e.info().clone()).collect();
                     Ok(Res::Peers(peers))
                 }
-                Poll::Ready(Err(_e)) => Err(CoreError::Unknown),
+                Poll::Ready(Err(e)) => Err(dht_to_core_error(e)),
                 _ => return Poll::Pending,
             },
             OpState::Net(send) => match send.poll_unpin(ctx) {
@@ -651,6 +668,20 @@ impl Future for OpState {
         };
 
         Poll::Ready(r)
+    }
+}
+
+/// Map from [kad::Error] to [dsf_core::error::Error] type
+fn dht_to_core_error(e: DhtError) -> CoreError {
+    match e {
+        DhtError::Unimplemented => CoreError::Unimplemented,
+        DhtError::InvalidResponse => CoreError::InvalidResponse,
+        DhtError::InvalidResponseId => CoreError::InvalidResponse,
+        DhtError::Timeout => CoreError::Timeout,
+        DhtError::NoPeers => CoreError::NoPeersFound,
+        DhtError::NotFound => CoreError::NotFound,
+        DhtError::Io(_) => CoreError::IO,
+        _ => CoreError::Unknown,
     }
 }
 

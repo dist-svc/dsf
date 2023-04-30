@@ -176,7 +176,7 @@ where
                         ctx.waker().clone().wake();
                     }
                     Poll::Ready(Err(e)) => {
-                        warn!("DHT connect error: {:?}", e);
+                        warn!("Connect locate error: {:?}", e);
 
                         let resp = rpc::Response::new(
                             req_id,
@@ -217,7 +217,7 @@ where
                         Ok(true)
                     }
                     Poll::Ready(Err(e)) => {
-                        error!("DHT store error: {:?}", e);
+                        error!("Connect update error: {:?}", e);
 
                         let resp = rpc::Response::new(
                             req_id,

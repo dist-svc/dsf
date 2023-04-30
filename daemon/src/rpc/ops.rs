@@ -187,7 +187,7 @@ pub enum Res {
     Sig(Signature),
 }
 
-/// Core engine imeplementation providing primitive operations for the construction of RPCs
+/// Core engine implementation providing primitive operations for the construction of RPCs
 #[async_trait::async_trait]
 pub trait Engine: Sync + Send {
     //type Output: Future<Output=Result<Res, CoreError>> + Send;

@@ -13,7 +13,7 @@ use dsf_daemon::engine::{Engine, EngineOptions};
 use dsf_rpc::{self as rpc};
 
 #[tokio::test]
-async fn test_nameserver() {
+async fn test_ns() {
     let _ = FmtSubscriber::builder()
         .with_max_level(LevelFilter::DEBUG)
         .try_init();
@@ -73,7 +73,7 @@ async fn test_nameserver() {
             ns: ServiceIdentifier::from(ns.id.clone()),
             target: s.id.clone(),
             name: Some(n.to_string()),
-            hash: vec![],
+            hashes: vec![],
         })
         .await
         .unwrap();
@@ -93,7 +93,7 @@ async fn test_nameserver() {
     println!("Found service(s) {:?}", found);
 
     // Check result
-    assert_eq!(found[0].id(), s.id);
+    assert_eq!(found[0].id, s.id);
 
     // Ensure engine stays up until now
     let _ = e;

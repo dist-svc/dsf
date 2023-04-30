@@ -164,7 +164,7 @@ impl<T: Engine> NameService for T {
             debug!("Using info: {:?}", info);
 
             // Check page is of tertiary kind
-            let mut r = match info {
+            match info {
                 // Fetch information for linked service
                 Ok(PageInfo::ServiceLink(s)) if s.peer_id == ns.id() => {
                     // Check whether service can be locally resolved
@@ -439,7 +439,7 @@ mod test {
 
             match expect.pop_front() {
                 Some(f) => f(op, ns, target),
-                None => panic!("No remaining expectations"),
+                None => panic!("No remaining expectations for op: {:?}", op),
             }
         }
     }
@@ -472,6 +472,21 @@ mod test {
                     ns.id()
                 ),
             }),
+            // Store NS data block
+            Box::new(|op, ns, t| {
+                match op {
+                    OpKind::ObjectPut(info, _object) => {
+                        // TODO: check object contains expected NS information
+                        Ok(Res::Sig(info.signature))
+                    },
+                    _ => panic!(
+                        "Unexpected operation: {:?}, expected object put {}",
+                        op,
+                        ns.id()
+                    ),
+                }
+            }),
+            // TODO: distribute updates to subscribers
             // Publish pages to DHT
             Box::new(|op, ns, t| {
                 match op {
@@ -515,7 +530,7 @@ mod test {
     async fn test_search() {
         let (e, ns_id, target_id) = MockEngine::setup();
 
-        let target_info = ServiceInfo::from(&e.inner.lock().unwrap().target);
+        let mut target_info = ServiceInfo::from(&e.inner.lock().unwrap().target);
 
         // Pre-generate registration page
         let (name, primary, tertiary) = e.with(|ns, t| {
@@ -533,7 +548,9 @@ mod test {
 
             (name, primary.to_owned(), tertiary.to_owned())
         });
+        let t = target_id.clone();
         let p = primary.clone();
+        target_info.primary_page = Some(p.signature());
 
         e.expect(vec![
             // Lookup NS
@@ -552,9 +569,18 @@ mod test {
                     ns.id()
                 ),
             }),
+            // Lookup linked service locally
+            Box::new(move |op, ns, _t| match op {
+                OpKind::ServiceGet(_id) => Err(DsfError::NotFound),
+                _ => panic!(
+                    "Unexpected operation: {:?}, expected DhtSearch for primary page {}",
+                    op,
+                    ns.id()
+                ),
+            }),
             // Lookup primary pages for linked service
             Box::new(move |op, ns, _t| match op {
-                OpKind::DhtSearch(id) if id == target_id => Ok(Res::Pages(vec![primary.clone()])),
+                OpKind::DhtSearch(id) if id == t => Ok(Res::Pages(vec![primary.clone()])),
                 _ => panic!(
                     "Unexpected operation: {:?}, expected DhtSearch for primary page {}",
                     op,
@@ -585,6 +611,6 @@ mod test {
 
         // Returns pages for located service
         assert_eq!(&r, &[LocateInfo{
-            origin: todo!(), updated: todo!(), page_version: todo!(), page: todo!() }]);
+            id: target_id, origin: true, updated: true, page_version: 0, page: Some(p) }]);
     }
 }

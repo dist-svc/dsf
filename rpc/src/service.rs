@@ -222,6 +222,7 @@ pub struct DiscoverOptions {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct LocateInfo {
+    pub id: Id,
     pub origin: bool,
     pub updated: bool,
     pub page_version: u16,

@@ -382,7 +382,7 @@ where
         id: &Id,
         pages: Vec<Container>,
     ) -> Result<ServiceInfo, Error> {
-        debug!("Registering service: {}", id);
+        debug!("Adding service: {} to store", id);
 
         debug!("found {} pages", pages.len());
         // Fetch primary page
@@ -465,7 +465,7 @@ where
             self.replicas.create_or_update(id, peer_id, page);
         }
 
-        debug!("Service registered!");
+        debug!("Service registered: {:?}", info);
 
         Ok(info)
     }
