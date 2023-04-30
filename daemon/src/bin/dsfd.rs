@@ -7,7 +7,7 @@ use clap::Parser;
 use futures::prelude::*;
 use log::info;
 use tokio::task;
-use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use tracing_subscriber::FmtSubscriber;
 
 use dsf_daemon::engine::{Engine, EngineOptions};
@@ -30,8 +30,14 @@ async fn main() -> Result<(), anyhow::Error> {
     let opts = Args::parse();
 
     // Initialise logging
+    let filter = EnvFilter::from_default_env()
+        .add_directive(opts.log_level.into())
+        .add_directive("kad::dht=info".parse()?);
+
     let _ = FmtSubscriber::builder()
+        .compact()
         .with_max_level(opts.log_level)
+        .with_env_filter(filter)
         .try_init();
 
     // Bind exit handler

@@ -210,7 +210,7 @@ pub enum ResponseKind {
     Service(ServiceInfo),
     Services(Vec<ServiceInfo>),
     Registered(RegisterInfo),
-    Located(LocateInfo),
+    Located(Vec<LocateInfo>),
 
     Subscribed(Vec<SubscriptionInfo>),
 

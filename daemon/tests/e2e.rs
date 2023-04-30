@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use log::info;
 
-use futures::executor::block_on;
 use tracing_subscriber::{filter::LevelFilter, FmtSubscriber};
 
 use indicatif::ProgressBar;
@@ -24,6 +23,7 @@ async fn end_to_end() {
     let d = d.path().to_str().unwrap().to_string();
 
     let _ = FmtSubscriber::builder()
+        .compact()
         .with_max_level(LevelFilter::DEBUG)
         .try_init();
 

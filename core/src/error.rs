@@ -54,6 +54,7 @@ pub enum Error {
     EncodeFailed,
     BufferLength,
     InvalidUtf8,
+    Encrypted,
 }
 
 #[cfg(feature = "std")]

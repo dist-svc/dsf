@@ -40,7 +40,7 @@ pub struct LocateFuture {
 }
 
 impl Future for LocateFuture {
-    type Output = Result<LocateInfo, DsfError>;
+    type Output = Result<Vec<LocateInfo>, DsfError>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         let resp = match self.rx.poll_next_unpin(ctx) {
@@ -103,7 +103,7 @@ where
                                 .flatten(),
                         };
 
-                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(i));
+                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![i]));
                         done.try_send(resp).unwrap();
 
                         *state = LocateState::Done;
@@ -150,7 +150,7 @@ where
                                 .filter(&opts.id, |s| s.primary_page.clone())
                                 .flatten(),
                         };
-                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(info));
+                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![info]));
                         done.try_send(resp).unwrap();
 
                         *state = LocateState::Done;
@@ -172,7 +172,7 @@ where
                                     .filter(&opts.id, |s| s.primary_page.clone())
                                     .flatten(),
                             };
-                            let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(info));
+                            let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![info]));
                             done.try_send(resp).unwrap();
 
                             *state = LocateState::Done;
@@ -201,7 +201,7 @@ where
 
 #[async_trait::async_trait]
 pub trait ServiceRegistry {
-    /// Lookup a peer
+    /// Lookup a service
     async fn service_locate(&self, options: LocateOptions) -> Result<LocateInfo, DsfError>;
 }
 
@@ -253,7 +253,7 @@ impl<T: Engine> ServiceRegistry for T {
 
         debug!("Registering service {}", opts.id);
 
-        // Register new service
+        // Add located service to local tracking
         let i = self.service_register(opts.id.clone(), pages).await?;
 
         debug!("Registered: {:?}", i);

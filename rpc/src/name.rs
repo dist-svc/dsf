@@ -61,8 +61,8 @@ pub struct NsRegisterOptions {
     pub name: Option<String>,
 
     #[clap(long)]
-    /// Hashes to associate with this service
-    pub hash: Vec<CryptoHash>,
+    /// Hashes to associate with this service (input to TID derivation)
+    pub hashes: Vec<CryptoHash>,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]

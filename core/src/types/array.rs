@@ -9,7 +9,7 @@ use core::{
     str::FromStr,
 };
 
-use encdec::{Decode, Encode};
+use encdec::{Decode, DecodeOwned, Encode};
 
 #[cfg(feature = "serde")]
 use serde::{
@@ -109,12 +109,12 @@ impl<K, const N: usize> Encode for Array<K, N> {
     }
 }
 
-impl<'a, K, const N: usize> Decode<'a> for Array<K, N> {
+impl<K, const N: usize> DecodeOwned for Array<K, N> {
     type Output = Self;
 
     type Error = encdec::Error;
 
-    fn decode(buff: &'a [u8]) -> Result<(Self::Output, usize), Self::Error> {
+    fn decode_owned(buff: &[u8]) -> Result<(Self::Output, usize), Self::Error> {
         if buff.len() < N {
             return Err(encdec::Error::Length);
         }

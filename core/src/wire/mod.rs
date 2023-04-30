@@ -57,7 +57,7 @@ fn validate<T: MutableData>(
 
     // Attempt to use secret key mode if available
     let valid = if flags.contains(Flags::SYMMETRIC_MODE) {
-        debug!("Using symmetric signing mode");
+        trace!("Using symmetric signing mode");
 
         // Ensure symmetric mode is only used for messages
         if !kind.is_message() {
@@ -73,7 +73,7 @@ fn validate<T: MutableData>(
             }
         };
 
-        debug!("Decrypt/Verify(AEAD) with key: {}", sk);
+        trace!("Decrypt/Verify(AEAD) with key: {}", sk);
 
         // Validate / decrypt object
 
@@ -83,7 +83,7 @@ fn validate<T: MutableData>(
 
     // Otherwise use public key
     } else {
-        debug!("Using asymmetric mode");
+        trace!("Using asymmetric mode");
 
         // Check for matching public key
         let pub_key = match &keys.pub_key {

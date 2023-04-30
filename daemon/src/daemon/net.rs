@@ -825,10 +825,10 @@ where
 
                 tokio::task::spawn(async move {
                     let resp = match loc.await {
-                        Ok(v) => {
-                            if let Some(p) = v.page {
-                                info!("Locate ok (index: {})", v.page_version);
-                                net::ResponseBody::ValuesFound(service_id, vec![p])
+                        Ok(ref v) => {
+                            if let Some(p) = v.get(0).map(|i| i.page.as_ref()).flatten() {
+                                info!("Locate ok (index: {})", p.header().index() );
+                                net::ResponseBody::ValuesFound(service_id, vec![p.to_owned()])
                             } else {
                                 error!("Locate failed, no page found");
                                 net::ResponseBody::Status(Status::Failed)

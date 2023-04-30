@@ -401,7 +401,7 @@ where
 impl<B: PageBody> Service<B> {
     /// Encrypt the data and private options in the provided container builder
     pub(super) fn encrypt<T: MutableData>(
-        &mut self,
+        &self,
         b: Builder<Encrypt, T>,
     ) -> Result<Builder<SetPublicOptions, T>, Error> {
         // Apply internal encryption if enabled

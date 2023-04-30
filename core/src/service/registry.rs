@@ -1,6 +1,8 @@
 use core::ops::Add;
 
-use crate::base::PageBody;
+use encdec::{Encode, Decode, DecodeOwned};
+
+use crate::base::{PageBody, DataBody};
 use crate::options::Options;
 
 use crate::crypto::{Crypto, Hash as _};
@@ -12,27 +14,27 @@ use crate::wire::{Builder, Container};
 use super::Service;
 
 pub trait Registry {
-    /// Generate ID for registry lookup
+    /// Generate ID for registry lookup from a queryable field
     fn resolve(&self, q: impl Queryable) -> Result<Id, Error>;
 
     /// Generates a tertiary page for the provided service ID and options
-    fn publish_tertiary<Q: Queryable, T: MutableData>(
-        &mut self,
+    fn publish_tertiary<T: MutableData>(
+        &self,
         link: TertiaryLink,
         opts: TertiaryOptions,
-        q: Q,
+        tid: Id,
         buff: T,
     ) -> Result<(usize, Container<T>), Error>;
 
     /// Generates a tertiary page for the provided service ID and options
-    fn publish_tertiary_buff<const N: usize, Q: Queryable>(
-        &mut self,
+    fn publish_tertiary_buff<const N: usize>(
+        &self,
         link: TertiaryLink,
         opts: TertiaryOptions,
-        q: Q,
+        tid: Id,
     ) -> Result<(usize, Container<[u8; N]>), Error> {
         let buff = [0u8; N];
-        self.publish_tertiary(link, opts, q, buff)
+        self.publish_tertiary(link, opts, tid, buff)
     }
 }
 
@@ -62,6 +64,15 @@ pub struct TertiaryOptions {
     pub expiry: DateTime,
 }
 
+/// Tertiary data block, published during registration
+#[derive(Clone, PartialEq, Debug, Encode, DecodeOwned)]
+pub struct TertiaryData {
+    /// List of TIDs for registry linking
+    pub tids: Vec<Id>,
+}
+
+impl DataBody for TertiaryData {}
+
 #[cfg(feature = "std")]
 impl Default for TertiaryOptions {
     /// Create a tertiary page with default 1 day expiry
@@ -88,19 +99,13 @@ impl<B: PageBody> Registry for Service<B> {
         }
     }
 
-    fn publish_tertiary<Q: Queryable, T: MutableData>(
-        &mut self,
+    fn publish_tertiary<T: MutableData>(
+        &self,
         link: TertiaryLink,
         opts: TertiaryOptions,
-        q: Q,
+        tid: Id,
         buff: T,
     ) -> Result<(usize, Container<T>), Error> {
-        // Generate TID
-        let tid = match Crypto::hash_tid(self.id(), &self.keys(), q) {
-            Ok(tid) => Id::from(tid.as_bytes()),
-            Err(_) => return Err(Error::CryptoError),
-        };
-
         // Setup flags
         let mut flags = Flags::TERTIARY;
         if self.encrypted {
@@ -136,8 +141,14 @@ impl<B: PageBody> Registry for Service<B> {
             Options::expiry(opts.expiry),
         ])?;
 
-        // Sign generated object
-        let c = self.sign(b)?;
+        // Sign generated object (without updating last sig)
+        let c = match &self.private_key {
+            Some(pk) => b.sign_pk(pk)?,
+            None => {
+                error!("No public key for object signing");
+                return Err(Error::NoPrivateKey);
+            }
+        };
 
         Ok((c.len(), c))
     }
@@ -161,12 +172,15 @@ mod test {
 
         let (_n, _c) = c.publish_primary_buff(Default::default()).unwrap();
 
+        // Compute TID
+        let tid = Registry::resolve(&mut r, &Options::name(opt_name)).unwrap();
+
         // Generate page for name entry
-        let (_n, p1) = Registry::publish_tertiary_buff::<512, _>(
+        let (_n, p1) = Registry::publish_tertiary_buff::<512>(
             &mut r,
             c.id().into(),
             TertiaryOptions::default(),
-            &Options::name(opt_name),
+            tid,
         )
         .unwrap();
 

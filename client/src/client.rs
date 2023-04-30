@@ -354,9 +354,9 @@ impl Client {
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Located(info) => {
+            ResponseKind::Located(info) if info.len() == 1 => {
                 let handle = ServiceHandle { id: id.clone() };
-                Ok((handle, info))
+                Ok((handle, info[0].clone()))
             }
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),

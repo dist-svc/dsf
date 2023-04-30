@@ -1,11 +1,14 @@
 //! Operations used in the construction of higher-level RPCs
 
+use std::collections::HashMap;
+
 use dsf_core::wire::Container;
 use futures::channel::mpsc;
 use futures::Future;
 
 use dsf_core::prelude::{DsfError as CoreError, Id, Service};
 use dsf_core::types::{CryptoHash, Signature};
+use dsf_core::net::{Response as NetResponse, Request as NetRequest};
 
 use dsf_rpc::*;
 
@@ -142,6 +145,9 @@ pub enum OpKind {
     PeerGet(Id),
 
     ObjectGet(Id, Signature),
+    ObjectPut(DataInfo, Container),
+
+    Net(NetRequest, Vec<Peer>),
 }
 
 impl core::fmt::Debug for OpKind {
@@ -160,6 +166,8 @@ impl core::fmt::Debug for OpKind {
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
 
             Self::ObjectGet(id, sig) => f.debug_tuple("ObjectGet").field(id).field(sig).finish(),
+            Self::ObjectPut(id, o) => f.debug_tuple("ObjectPut").field(id).field(o).finish(),
+            Self::Net(req, peers) => f.debug_tuple("Net").field(req).field(peers).finish(),
         }
     }
 }
@@ -175,6 +183,8 @@ pub enum Res {
     Pages(Vec<Container>),
     Peers(Vec<Peer>),
     Ids(Vec<Id>),
+    Responses(HashMap<Id, NetResponse>),
+    Sig(Signature),
 }
 
 /// Core engine imeplementation providing primitive operations for the construction of RPCs
@@ -263,11 +273,27 @@ pub trait Engine: Sync + Send {
         self.exec(OpKind::ServiceUpdate(service, f)).await
     }
 
-    /// Fetch an object with the specified signature
+    /// Fetch an object with the provided signature
     async fn object_get(&self, service: Id, sig: Signature) -> Result<Container, CoreError> {
         match self.exec(OpKind::ObjectGet(service, sig)).await? {
             Res::Pages(p) if p.len() == 1 => Ok(p[0].clone()),
             _ => Err(CoreError::NotFound),
+        }
+    }
+
+    /// Store an object for the associated service
+    async fn object_put(&self, info: DataInfo, data: Container) -> Result<Signature, CoreError> {
+        match self.exec(OpKind::ObjectPut(info, data)).await? {
+            Res::Sig(s) => Ok(s),
+            _ => Err(CoreError::NotFound),
+        }
+    }
+
+    /// Issue a network request to the specified peers
+    async fn net_req(&self, req: NetRequest, peers: Vec<Peer>) -> Result<HashMap<Id, NetResponse>, CoreError> {
+        match self.exec(OpKind::Net(req, peers)).await? {
+            Res::Responses(r) => Ok(r),
+            _ => Err(CoreError::Unknown),
         }
     }
 }

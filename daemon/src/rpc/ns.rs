@@ -3,6 +3,7 @@
 //!
 
 use std::convert::TryFrom;
+use std::time::Duration;
 
 use dsf_core::base::Empty;
 use dsf_core::wire::Container;
@@ -13,11 +14,11 @@ use serde::{Deserialize, Serialize};
 use dsf_core::error::Error as CoreError;
 use dsf_core::options::{self, Filters};
 use dsf_core::prelude::{DsfError, Options, PageInfo};
-use dsf_core::service::{Registry, ServiceBuilder, Publisher};
-use dsf_core::types::{CryptoHash, Flags, Id, PageKind};
+use dsf_core::service::{Registry, ServiceBuilder, Publisher, DataOptions, TertiaryData, TertiaryLink, TertiaryOptions};
+use dsf_core::types::{CryptoHash, Flags, Id, PageKind, DateTime};
 
 use dsf_rpc::{
-    LocateOptions, NsRegisterInfo, NsRegisterOptions, NsSearchOptions, Response, ServiceIdentifier, ServiceInfo, NsCreateOptions,
+    LocateOptions, NsRegisterInfo, NsRegisterOptions, NsSearchOptions, Response, ServiceIdentifier, ServiceInfo, NsCreateOptions, DataInfo, LocateInfo,
 };
 
 use crate::daemon::Dsf;
@@ -33,7 +34,7 @@ pub trait NameService {
     async fn ns_create(&self, opts: NsCreateOptions) -> Result<ServiceInfo, DsfError>;
 
     /// Search for a service or block by hashed value
-    async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<Container>, DsfError>;
+    async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<LocateInfo>, DsfError>;
 
     /// Register a service by name
     async fn ns_register(&self, opts: NsRegisterOptions) -> Result<NsRegisterInfo, DsfError>;
@@ -95,7 +96,7 @@ impl<T: Engine> NameService for T {
     }
 
     /// Search for a matching service using the provided (or relevant) nameserver
-    async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<Container>, DsfError> {
+    async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<LocateInfo>, DsfError> {
         debug!("Locating nameservice for search: {:?}", opts);
 
         // Resolve nameserver using provided options
@@ -126,7 +127,7 @@ impl<T: Engine> NameService for T {
         info!("NS query for {} via {}", lookup, ns.id());
 
         // Issue query for tertiary pages
-        let tertiary_pages = match self.dht_search(lookup).await {
+        let mut tertiary_pages = match self.dht_search(lookup).await {
             Ok(p) => p,
             Err(e) => {
                 error!("DHT lookup failed: {:?}", e);
@@ -134,7 +135,7 @@ impl<T: Engine> NameService for T {
             }
         };
 
-        debug!("Located tertiary pages: {:?}", tertiary_pages);
+        debug!("Located {} tertiary pages", tertiary_pages.len());
 
         // TODO: should we reduce the response pages here?
         // Possible to have > 1 service link pages where target services are different
@@ -144,37 +145,46 @@ impl<T: Engine> NameService for T {
         // Collapse resolved pages
         let mut resolved = vec![];
 
-        for p in tertiary_pages {
+        for p in &mut tertiary_pages {
+            // Decrypt responses if required
+            // TODO: check we have the keys for encrypted NS' before starting this
+            if p.encrypted() {
+                if let Some(sk) = ns.secret_key() {
+                    if let Err(e) = p.decrypt(&sk) {
+                        error!("Failed to decrypt tertiary page: {:?}", e);
+                        continue;
+                    }
+                } else {
+                    warn!("Received encrypted tertiary page with no decryption key");
+                    continue;
+                }
+            }
+
+            let info = p.info();
+            debug!("Using info: {:?}", info);
+
             // Check page is of tertiary kind
-            let mut r = match p.info() {
+            let mut r = match info {
                 // Fetch information for linked service
                 Ok(PageInfo::ServiceLink(s)) if s.peer_id == ns.id() => {
-                    // Lookup service pages
-                    let pages = match self.dht_search(s.target_id.clone()).await {
-                        Ok(p) => p,
-                        Err(e) => {
-                            error!("Failed to find pages for service {}: {:?}", s.target_id, e);
-                            continue;
-                        }
-                    };
-
-                    // Update service using pages
-                    let i = match self
-                        .service_register(s.target_id.clone(), pages.clone())
-                        .await
-                    {
+                    // Check whether service can be locally resolved
+                    let i = match self.service_locate(LocateOptions{
+                        id: s.target_id.clone(),
+                        local_only: false,
+                    }).await {
                         Ok(i) => i,
                         Err(e) => {
-                            error!("Failed to register new service {}: {:?}", s.target_id, e);
+                            error!("Failed to locate service {}: {:?}", s.target_id, e);
                             continue;
                         }
                     };
 
                     debug!("Located service: {:?}", i);
 
-                    pages
+                    resolved.push(i);
                 }
                 // Fetch linked block
+                // TODO: remove this function for now
                 Ok(PageInfo::BlockLink(b)) if b.peer_id == ns.id() => {
                     // Lookup data blocks
                     todo!()
@@ -187,19 +197,16 @@ impl<T: Engine> NameService for T {
                 _ => continue,
             };
 
-            // TODO: check response matches query
-
-            // Store response object
-            resolved.append(&mut r);
+            // TODO: verify services matches request filters
+            // _if_ this is possible with opaque hashes..?
         }
 
-        // Return pages / blocks for resolved service
-        // TODO: could we separate these better?
+        // Return resolved service information
         Ok(resolved)
     }
 
     async fn ns_register(&self, opts: NsRegisterOptions) -> Result<NsRegisterInfo, DsfError> {
-        debug!("Locating nameserver for register: {:?}", opts);
+        debug!("Locating nameservice for register: {:?}", opts);
 
         // Resolve nameserver using provided options
         let ns = self.service_resolve(opts.ns.clone()).await;
@@ -209,20 +216,22 @@ impl<T: Engine> NameService for T {
         let ns = match ns {
             Ok(ns) => ns,
             Err(_e) => {
-                error!("No matching name service found");
+                error!("No matching nameservice found");
                 return Err(DsfError::NotFound);
             }
         };
 
+        debug!("Using nameservice: {}", ns.id());
+
         // Ensure this _is_ a name service
         if ns.kind() != PageKind::Name {
-            error!("Service {} not a name service ({:?})", ns.id(), ns);
+            error!("Service {} not a nameservice ({:?})", ns.id(), ns);
             return Err(DsfError::Unknown);
         }
 
         // Check we can use this for publishing
         if !ns.is_origin() {
-            error!("Publishing to remote name services not implemented");
+            error!("Publishing to remote name services not yet supported");
             return Err(DsfError::Unimplemented);
         }
 
@@ -232,11 +241,11 @@ impl<T: Engine> NameService for T {
             _ => None,
         });
 
-        debug!("Locating target for register: {:?}", opts);
+        debug!("Locating target service for register operation: {:?}", opts);
 
         // Lookup service to be registered
-        // TODO: fallback / use DHT if required?
-        let t = match self.service_resolve(opts.target.into()).await {
+        // TODO: fallback / use DHT if service is not known locally?
+        let target = match self.service_resolve(opts.target.into()).await {
             Ok(s) => s,
             Err(e) => {
                 error!("No matching target service found: {:?}", e);
@@ -246,57 +255,83 @@ impl<T: Engine> NameService for T {
 
         info!(
             "Registering service: {} via ns: {} ({:?}) ",
-            t.id(),
+            target.id(),
             ns.id(),
             prefix
         );
 
-        let (name, hashes) = (opts.name.clone(), opts.hash.clone());
+        // Generate TIDs from provided options and hashes
+        let mut tids = vec![];
+        if let Some(n) = &opts.name {
+            tids.push(ns.resolve(&Options::name(n))?);
+        }
+        for h in &opts.hashes {
+            tids.push(ns.resolve(h)?);
+        }
 
-        // Generate pages for registration
-        let pages = self
+        // TODO: setup issued / expiry times to be consistent
+        let issued = DateTime::now();
+        let expiry = issued + Duration::from_secs(60 * 60);        
+
+        // Generate name service data block
+        let body = Some(TertiaryData{
+            tids: tids.clone(),
+        });
+        let res = self
             .service_update(
                 ns.id(),
                 Box::new(move |s| {
-                    let mut pages = vec![];
-
-                    // Create page for name if provided
-                    if let Some(n) = &name {
-                        if let Some((_n, p)) = s
-                            .publish_tertiary_buff::<256, _>(
-                                t.id().into(),
-                                Default::default(),
-                                &Options::name(&n),
-                            )
-                            .ok()
-                        {
-                            pages.push(p.to_owned());
+                    // First, create a data block for the new registration
+                    let (_, d) = s.publish_data_buff::<TertiaryData>(
+                        DataOptions{
+                            data_kind: PageKind::Name.into(),
+                            body: body.clone(),
+                            issued: Some(issued.clone()),
+                            public_options: &[
+                                Options::expiry(expiry.clone())
+                            ],
+                            ..Default::default()
                         }
-                    }
+                    )?;
 
-                    // Create pages for provided hashes
-                    for h in &hashes {
-                        if let Some((_n, p)) = s
-                            .publish_tertiary_buff::<256, _>(
-                                t.id().into(),
-                                Default::default(),
-                                h.clone(),
-                            )
-                            .ok()
-                        {
-                            pages.push(p.to_owned());
-                        }
-                    }
-
-                    Ok(Res::Pages(pages))
+                    Ok(Res::Pages(vec![d.to_owned()]))
                 }),
             )
             .await?;
-
-        let pages = match pages {
-            Res::Pages(p) => p,
+        let data = match res {
+            Res::Pages(p) if p.len() == 1 => p[0].clone(),
             _ => unreachable!(),
         };
+
+        // Store data block
+
+        // TODO: remove info, doesn't provide any particular utility
+        let info = DataInfo::try_from(&data).unwrap();
+        self.object_put(info.clone(), data.clone()).await?;
+
+        // TODO: Lookup subscribers and distribute update
+        // self.net_req(req, peers)
+
+        // Generate tertiary pages
+        let mut pages = vec![];
+        for t in tids {
+            let r = ns.publish_tertiary_buff::<256>(
+                TertiaryLink::Service(target.id()),
+                TertiaryOptions{
+                    index: info.index,
+                    issued: issued,
+                    expiry: expiry,
+                },
+                t,
+            );
+
+            match r {
+                Ok((_n, p)) => pages.push(p.to_owned()),
+                Err(e) => {
+                    error!("Failed to generate tertiary page: {:?}", e);
+                }
+            }
+        }
 
         // Publish pages to database
         for p in pages {
@@ -311,7 +346,7 @@ impl<T: Engine> NameService for T {
             ns: ns.id(),
             prefix,
             name: opts.name,
-            hashes: opts.hash,
+            hashes: opts.hashes,
         };
 
         Ok(i)
@@ -470,7 +505,7 @@ mod test {
                 ns: ServiceIdentifier::id(ns_id),
                 target: target_id,
                 name: Some("something".to_string()),
-                hash: vec![],
+                hashes: vec![],
             })
             .await
             .unwrap();
@@ -487,11 +522,12 @@ mod test {
             let (_n, primary) = t.publish_primary_buff(Default::default()).unwrap();
 
             let name = t.public_options().iter().name().unwrap();
+            let tid = ns.resolve(&Options::name(&name)).unwrap();
             let (_, tertiary) = ns
-                .publish_tertiary_buff::<256, _>(
+                .publish_tertiary_buff::<256>(
                     t.id().into(),
                     Default::default(),
-                    Options::name(&name),
+                    tid,
                 )
                 .unwrap();
 
@@ -548,6 +584,7 @@ mod test {
             .unwrap();
 
         // Returns pages for located service
-        assert_eq!(&r, &[p]);
+        assert_eq!(&r, &[LocateInfo{
+            origin: todo!(), updated: todo!(), page_version: todo!(), page: todo!() }]);
     }
 }

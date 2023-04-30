@@ -13,10 +13,10 @@ use dsf_rpc::*;
 
 use crate::{
     core::peers::Peer,
-    daemon::{net::NetIf, Dsf},
+    daemon::{net::{NetIf, NetFuture}, Dsf},
     error::{CoreError, Error},
     rpc::lookup::PeerRegistry,
-    rpc::search::NameService,
+    rpc::ns::NameService,
 };
 
 // Generic / shared operation types
@@ -54,7 +54,7 @@ pub mod subscribe;
 pub mod bootstrap;
 
 // Search using nameservices
-pub mod search;
+pub mod ns;
 
 // Debug commands
 pub mod debug;
@@ -255,7 +255,7 @@ where
                 tokio::task::spawn(async move {
                     debug!("Starting async ns search");
                     let i = match exec.ns_search(opts).await {
-                        Ok(p) => ResponseKind::Pages(p),
+                        Ok(s) => ResponseKind::Located(s),
                         Err(e) => ResponseKind::Error(e),
                     };
                     warn!("Async ns search result: {:?}", i);
@@ -540,7 +540,27 @@ where
                     if let Err(e) = op.done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
-                }
+                },
+                OpKind::ObjectPut(info, data) => {
+                    // TODO: Lookup matching service
+                    
+                    // Write data to local store
+                    let r = match self.data().store_data(&info, &data) {
+                        Ok(_) => Ok(Res::Sig(info.signature)),
+                        Err(_) => {
+                            error!("Failed to store data: {:?}", info);
+                            Err(CoreError::Unknown)
+                        },
+                    };
+                    if let Err(e) = op.done.try_send(r) {
+                        error!("Failed to send operation response: {:?}", e);
+                    };
+                },
+                OpKind::Net(ref req, ref peers) => {
+                    let s = self.net_op(peers.clone(), req.clone());
+                    op.state = OpState::Net(s);
+                    self.ops.insert(op_id, op);
+                },
             }
         }
 
@@ -597,6 +617,7 @@ enum OpState {
     DhtLocate(kad::dht::LocateFuture<Id, Peer>),
     DhtSearch(kad::dht::SearchFuture<Container>),
     DhtPut(kad::dht::StoreFuture<Id, Peer>),
+    Net(NetFuture),
 }
 
 impl Future for OpState {
@@ -623,6 +644,10 @@ impl Future for OpState {
                 Poll::Ready(Err(_e)) => Err(CoreError::Unknown),
                 _ => return Poll::Pending,
             },
+            OpState::Net(send) => match send.poll_unpin(ctx) {
+                Poll::Ready(r) => Ok(Res::Responses(r)),
+                _ => return Poll::Pending,
+            }
         };
 
         Poll::Ready(r)
@@ -636,6 +661,7 @@ impl core::fmt::Debug for OpState {
             Self::DhtLocate(_) => f.debug_tuple("DhtLocate").finish(),
             Self::DhtSearch(_) => f.debug_tuple("DhtSearch").finish(),
             Self::DhtPut(_) => f.debug_tuple("DhtPut").finish(),
+            Self::Net(_) => f.debug_tuple("Net").finish(),
         }
     }
 }

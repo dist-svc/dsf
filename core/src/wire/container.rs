@@ -457,7 +457,10 @@ impl<'a, T: ImmutableData> Container<T> {
 
             PageInfo::secondary(peer_id)
         } else if kind.is_page() && flags.contains(Flags::TERTIARY) {
-            // Handle tertiary page parsing
+            // Handle tertiary page parsing (requires access to page body)
+            if self.encrypted() {
+                return Err(Error::Encrypted)
+            }
 
             let peer_id = self.public_options_iter().find_map(|o| match o {
                 Options::PeerId(peer_id) => Some(peer_id.clone()),
