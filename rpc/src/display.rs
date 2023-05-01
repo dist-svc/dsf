@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 use std::net::SocketAddr;
 
 use colored::Colorize;
+use dsf_core::prelude::MaybeEncrypted;
 
 use crate::{DataInfo, PeerInfo, ServiceInfo};
 use dsf_core::base::Body;
@@ -54,46 +55,42 @@ impl Display for PeerInfo {
 
 impl Display for DataInfo {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        if f.sign_plus() {
-            write!(f, "index: {}", self.index)?;
-        } else {
-            write!(f, "{}", self.index)?;
-        }
-
-        if f.sign_plus() {
-            write!(f, "\n  - service id: {}", self.service)?;
-        } else {
-            write!(f, "{}", self.service)?;
-        }
+        write!(f, "index: {}", self.index)?;
+        write!(f, "\n  - service id: {}", self.service)?;
 
         let body = match &self.body {
-            Body::Cleartext(v) => format!("{:?}", v).green(),
+            Body::Cleartext(v) => base64::encode_config(&v, base64::URL_SAFE).green(),
             Body::Encrypted(_) => "Encrypted".to_string().red(),
             Body::None => "None".to_string().blue(),
         };
+        write!(f, "\n  - body: {}", body)?;
 
-        if f.sign_plus() {
-            write!(f, "\n  - body: {}", body)?;
-        } else {
-            write!(f, "{}", body)?;
+        write!(f, "\n  - private_options: ")?;
+        match &self.private_options {
+            MaybeEncrypted::None => write!(f, "Empty")?,
+            MaybeEncrypted::Cleartext(options) => {
+                if options.len() == 0 {
+                    write!(f, "Empty")?;
+                }
+                for o in options {
+                    write!(f, "\n    - {}, ", o)?;
+                }
+            },
+            MaybeEncrypted::Encrypted(_) => write!(f, "{}", "Encrypted".to_string().red())?,
+        }
+       
+        write!(f, "\n  - public_options: ")?;
+        for o in &self.public_options {
+            write!(f, "\n    - {}, ", o)?;
         }
 
-        let parent = match &self.previous {
+        let previous = match &self.previous {
             Some(p) => format!("{}", p).green(),
             None => "None".to_string().red(),
         };
+        write!(f, "\n  - previous: {}", previous)?;
 
-        if f.sign_plus() {
-            write!(f, "\n  - parent: {}", parent)?;
-        } else {
-            write!(f, "{}", parent)?;
-        }
-
-        if f.sign_plus() {
-            write!(f, "\n  - signature: {}", self.signature)?;
-        } else {
-            write!(f, "{}", self.signature)?;
-        }
+        write!(f, "\n  - signature: {}", self.signature)?;
 
         Ok(())
     }

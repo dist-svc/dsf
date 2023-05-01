@@ -170,7 +170,7 @@ impl<'a, T: MutableData> Container<T> {
         // Fetch public options
         let mut peer_id = None;
         let mut pub_key = None;
-        let mut parent = None;
+        let mut prev = None;
 
         for o in container.public_options_iter() {
             match o {
@@ -181,7 +181,7 @@ impl<'a, T: MutableData> Container<T> {
                     pub_key = Some(v.clone());
                 }
                 Options::PrevSig(v) => {
-                    parent = Some(v.clone());
+                    prev = Some(v.clone());
                 }
                 _ => (),
             }
@@ -195,14 +195,14 @@ impl<'a, T: MutableData> Container<T> {
         }?;
 
         trace!(
-            "Peer id: {:?} pub_key: {:?} parent: {:?} signing_id: {:?}",
+            "Peer id: {:?} pub_key: {:?} prev: {:?} signing_id: {:?}",
             peer_id,
             pub_key,
-            parent,
+            prev,
             signing_id
         );
 
-        // Fetch public key
+        // Fetch public key from public options if available
         let keys: Option<Keys> = match (key_source.keys(&signing_id), &pub_key) {
             (Some(keys), _) if keys.pub_key.is_some() => Some(keys),
             (_, Some(key)) => Some(Keys::new(key.clone())),

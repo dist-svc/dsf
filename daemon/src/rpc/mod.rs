@@ -169,7 +169,13 @@ where
                 time_bounds,
             })) => match self.resolve_identifier(&service) {
                 Ok(id) => {
+
+                    // Fetch data
                     let d = self.data().fetch_data(&id, &page_bounds, &time_bounds)?;
+
+                    // Lookup private key
+                    let k = self.services().find(&id).map(|s| s.private_key ).flatten();
+
                     let i = d.iter().map(|i| i.info.clone()).collect();
 
                     Some(ResponseKind::Data(i))
@@ -558,14 +564,14 @@ where
                         error!("Failed to send operation response: {:?}", e);
                     };
                 },
-                OpKind::ObjectPut(info, data) => {
+                OpKind::ObjectPut(data) => {
                     // TODO: Lookup matching service
                     
                     // Write data to local store
-                    let r = match self.data().store_data(&info, &data) {
-                        Ok(_) => Ok(Res::Sig(info.signature)),
+                    let r = match self.data().store_data(&data) {
+                        Ok(_) => Ok(Res::Sig(data.signature())),
                         Err(_) => {
-                            error!("Failed to store data: {:?}", info);
+                            error!("Failed to store data: {:?}", data);
                             Err(CoreError::Unknown)
                         },
                     };

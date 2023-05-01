@@ -1,7 +1,8 @@
 use crate::sync::{Arc, Mutex};
 use std::convert::TryFrom;
 
-use log::{debug, error, info, trace};
+use dsf_core::prelude::MaybeEncrypted;
+use log::{debug, error, info, trace, warn};
 
 use dsf_core::types::{Id, ImmutableData};
 use dsf_core::{keys::Keys, wire::Container};
@@ -19,13 +20,6 @@ pub struct DataManager {
 pub struct DataInst {
     pub info: DataInfo,
     pub page: Container,
-}
-
-impl From<Container> for DataInst {
-    fn from(page: Container) -> Self {
-        let info = DataInfo::try_from(&page).unwrap();
-        DataInst { info, page }
-    }
 }
 
 impl DataManager {
@@ -46,51 +40,47 @@ impl DataManager {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };
-        let keys = Keys::new(service.public_key.clone());
+        let keys = Keys{
+            pub_key:  Some(service.public_key.clone()),
+            sec_key: service.secret_key.clone(),
+            ..Default::default()
+        };
 
-        // Load data info
-        let mut info: Vec<DataInfo> = self.store.find_data(service_id)?;
-        info.sort_by(|a, b| a.index.partial_cmp(&b.index).unwrap());
-        info.reverse();
+        // TODO: apply offset to query
+        let offset = page_bounds.offset.unwrap_or(0);
+        let count = page_bounds.count.unwrap_or(10);
 
         // TODO: filter by time bounds (where possible)
 
-        // TODO: apply offset
+        // Load data from store
+        // TODO: filter (and sort?) via db rather than in post
+        let mut data = self.store.find_objects(service_id, &keys)?;
 
-        let offset = page_bounds.offset.unwrap_or(0);
-        let limit = page_bounds.count.unwrap_or(10);
-        let limit = info.len().min(offset + limit);
+        debug!("Retrieved {} objects: {:?}", data.len(), data);
 
-        debug!("Loaded data info for service: {}", service_id);
+        let limit = data.len().min(offset + count);
 
-        // Load associated raw pages
-        let mut data = Vec::with_capacity(info.len());
-        for i in info.drain(offset..limit) {
-            trace!("Fetching raw page for: {}", i.signature);
-
-            let p = self.store.load_page(&i.signature, &keys)?;
-            data.push(DataInst {
+        // Generate info objects for data
+        let mut results = Vec::with_capacity(limit);
+        for d in data.drain(offset..offset+limit) {
+            let i =  DataInfo::from_block(&d, &keys)?;
+            results.push(DataInst {
                 info: i,
-                page: p.unwrap(),
+                page: d,
             })
         }
 
-        Ok(data)
+        Ok(results)
     }
 
     /// Store data for a given service
     pub fn store_data<T: ImmutableData>(
         &self,
-        info: &DataInfo,
         page: &Container<T>,
     ) -> Result<(), Error> {
-        // Store data object
+        // Store page object
         #[cfg(feature = "store")]
-        self.store.save_data(info)?;
-
-        // Store backing raw object
-        #[cfg(feature = "store")]
-        self.store.save_page(page)?;
+        self.store.save_object(page)?;
 
         Ok(())
     }

@@ -185,7 +185,7 @@ fn print_services(services: &[ServiceInfo]) {
     table.set_format(*prettytable::format::consts::FORMAT_CLEAN);
 
     // Add a row per time
-    table.add_row(row![b => "Service ID", "Index", "State", "Updated", "PublicKey", "PrivateKey", "SecretKey", "Subscribers", "Replicas"]);
+    table.add_row(row![b => "Service ID", "Index", "State", "Updated", "PublicKey", "PrivateKey", "SecretKey", "Subscribers", "Replicas", "Primary Page"]);
 
     for s in services {
         table.add_row(row![
@@ -206,6 +206,7 @@ fn print_services(services: &[ServiceInfo]) {
                 .unwrap_or("False".to_string()),
             format!("{}", s.subscribers),
             format!("{}", s.replicas),
+            s.primary_page.as_ref().map(|p| format!("{}", p) ).unwrap_or("".to_string()),
         ]);
     }
 

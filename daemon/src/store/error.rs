@@ -15,6 +15,7 @@ pub enum StoreError {
     MissingSignature,
     MissingRawData,
     NotFound,
+    Decode,
 }
 
 impl From<ConnectionError> for StoreError {

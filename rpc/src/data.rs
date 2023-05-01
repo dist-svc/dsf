@@ -1,4 +1,6 @@
 use clap::Parser;
+use dsf_core::options::OptionsIter;
+use dsf_core::prelude::{Options, KeySource, DsfError};
 use serde::{Deserialize, Serialize};
 
 use dsf_core::{base::Body, options::Filters, prelude::MaybeEncrypted, types::*, wire::Container};
@@ -9,29 +11,55 @@ use crate::{PageBounds, ServiceIdentifier, TimeBounds};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DataInfo {
     pub service: Id,
-
+    pub kind: Kind,
     pub index: u16,
+
     pub body: Body,
+    pub public_options: Vec<Options>,
+    pub private_options: MaybeEncrypted<Vec<Options>>,
 
     pub previous: Option<Signature>,
     pub signature: Signature,
 }
 
-impl std::convert::TryFrom<&Container> for DataInfo {
-    type Error = std::convert::Infallible;
+impl DataInfo {
+    /// Parse [DataInfo] from a container, decrypting encrypted fields
+    /// using the provided keys if available
+    pub fn from_block<T: ImmutableData>(c: &Container<T>, keys: &impl KeySource) -> Result<Self, DsfError> {
+        let id = c.id();
+        let sec_key = keys.sec_key(&id);
 
-    fn try_from(page: &Container) -> Result<DataInfo, Self::Error> {
-        let body = match page.encrypted() {
-            true => MaybeEncrypted::Encrypted(page.body_raw().to_vec()),
-            false => MaybeEncrypted::Cleartext(page.body_raw().to_vec()),
+        let (body, private_options) = match (c.encrypted(), sec_key.as_ref()) {
+            (true, None) => (
+                MaybeEncrypted::Encrypted(c.body_raw().to_vec()),
+                MaybeEncrypted::Encrypted(c.private_options_raw().to_vec()),
+            ),
+            (true, Some(sk)) => {
+                let mut buff = [0u8; 2048];
+                let (body, private_opts) = c.decrypt_to(sk, &mut buff)?;
+
+                let private_opts = OptionsIter::new(private_opts).collect();
+
+                (
+                    MaybeEncrypted::Cleartext(body.to_vec()),
+                    MaybeEncrypted::Cleartext(private_opts),
+                )
+            },
+            (false, _) => (
+                MaybeEncrypted::Cleartext(c.body_raw().to_vec()),
+                MaybeEncrypted::Cleartext(c.private_options_iter().collect())
+            ),
         };
 
         Ok(DataInfo {
-            service: page.id(),
-            index: page.header().index(),
+            service: id,
+            kind: c.header().kind(),
+            index: c.header().index(),
             body,
-            previous: page.public_options_iter().prev_sig(),
-            signature: page.signature(),
+            public_options: c.public_options_iter().collect(),
+            private_options,
+            previous: c.public_options_iter().prev_sig(),
+            signature: c.signature(),
         })
     }
 }

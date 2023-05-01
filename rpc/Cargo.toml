@@ -25,6 +25,7 @@ rand = "0.7.2"
 colored = "1.9.0"
 chrono-humanize = "0.0.11"
 chrono-english = "0.1.4"
+base64 = "*"
 
 diesel = { version = "1.4.3", optional = true}
 strum = { version = "0.24.1", features = [ "derive" ] }

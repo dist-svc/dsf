@@ -145,7 +145,7 @@ pub enum OpKind {
     PeerGet(Id),
 
     ObjectGet(Id, Signature),
-    ObjectPut(DataInfo, Container),
+    ObjectPut(Container),
 
     Net(NetRequest, Vec<Peer>),
 }
@@ -166,7 +166,7 @@ impl core::fmt::Debug for OpKind {
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
 
             Self::ObjectGet(id, sig) => f.debug_tuple("ObjectGet").field(id).field(sig).finish(),
-            Self::ObjectPut(id, o) => f.debug_tuple("ObjectPut").field(id).field(o).finish(),
+            Self::ObjectPut(o) => f.debug_tuple("ObjectPut").field(o).finish(),
             Self::Net(req, peers) => f.debug_tuple("Net").field(req).field(peers).finish(),
         }
     }
@@ -282,8 +282,8 @@ pub trait Engine: Sync + Send {
     }
 
     /// Store an object for the associated service
-    async fn object_put(&self, info: DataInfo, data: Container) -> Result<Signature, CoreError> {
-        match self.exec(OpKind::ObjectPut(info, data)).await? {
+    async fn object_put(&self, data: Container) -> Result<Signature, CoreError> {
+        match self.exec(OpKind::ObjectPut(data)).await? {
             Res::Sig(s) => Ok(s),
             _ => Err(CoreError::NotFound),
         }

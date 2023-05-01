@@ -74,21 +74,9 @@ table! {
 }
 
 table! {
-    data (signature) {
-        service_id -> Text,
-        object_index -> Integer,
-
-        body_kind -> Text,
-        body_value -> Nullable<Blob>,
-
-        previous -> Nullable<Text>,
-        signature -> Text,
-    }
-}
-
-table! {
     object (signature) {
         service_id -> Text,
+        object_index -> Integer,
 
         raw_data -> Blob,
 

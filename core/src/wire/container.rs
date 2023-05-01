@@ -75,7 +75,7 @@ impl<T: ImmutableData> core::fmt::Debug for Container<T> {
 
 /// Decode a container from the provided buffer
 ///
-/// NOTE THIS DOES NOT PERFORM ANY VALIDATION
+/// NOTE THIS IS A WIP / DOES NOT PERFORM ANY VALIDATION
 impl<'a> encdec::Decode<'a> for Container<&'a [u8]> {
     type Output = Container<&'a [u8]>;
     type Error = Error;
@@ -100,6 +100,8 @@ impl<'a> encdec::Decode<'a> for Container<&'a [u8]> {
 }
 
 /// Encode a container to the provided buffer
+///
+/// NOTE THIS IS A WIP / DOES NOT PERFORM ANY VALIDATION
 impl<T: ImmutableData> encdec::Encode for Container<T> {
     type Error = Error;
 

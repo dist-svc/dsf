@@ -161,8 +161,7 @@ where
                 debug!("Storing data page");
 
                 // Store new service data
-                let data_info = DataInfo::try_from(&page).unwrap();
-                match self.data().store_data(&data_info, &page) {
+                match self.data().store_data(&page) {
                     Ok(_) => (),
                     Err(e) => {
                         error!("Error storing service data: {:?}", e);

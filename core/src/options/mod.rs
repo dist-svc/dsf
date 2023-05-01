@@ -165,6 +165,14 @@ impl Options {
     pub fn pub_key(public_key: PublicKey) -> Options {
         Options::PubKey(public_key)
     }
+
+    pub fn building(value: impl AsRef<str>) -> Options {
+        Options::Building(value.as_ref().into())
+    }
+
+    pub fn room(value: impl AsRef<str>) -> Options {
+        Options::Room(value.as_ref().into())
+    }
 }
 
 /// Parse parses a control option from the given scope

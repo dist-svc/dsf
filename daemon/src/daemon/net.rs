@@ -740,6 +740,7 @@ where
 
                 // Pick out service pages
 
+                // TODO: this datastore access is (probably) one of the sloww bits
                 for p in &data {
                     // Apply any updates to the service
                     if p.header().kind().is_page() {
@@ -750,9 +751,8 @@ where
 
                     // Store data pages
                     if p.header().kind().is_data() {
-                        if let Ok(info) = DataInfo::try_from(p) {
-                            // TODO: this is (probably) one of the sloww bits
-                            self.data().store_data(&info, p).unwrap();
+                        if let Err(e) = self.data().store_data(p) {
+                            error!("Failed to store data object: {:?}", e);
                         };
                     }
                 }

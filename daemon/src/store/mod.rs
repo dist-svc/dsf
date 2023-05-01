@@ -16,15 +16,13 @@ use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use dsf_core::prelude::*;
 use dsf_core::service::Subscriber;
 
-pub mod data;
-pub mod error;
-pub mod peers;
 pub mod schema;
-pub mod services;
-
-pub mod page;
-
+pub mod error;
 pub use error::StoreError;
+
+pub mod peers;
+pub mod services;
+pub mod object;
 
 #[derive(Clone)]
 pub struct Store {
@@ -159,22 +157,9 @@ impl Store {
         .execute(&self.pool.get().unwrap())?;
 
         sql_query(
-            "CREATE TABLE data (
-            signature TEXT NOT NULL UNIQUE PRIMARY KEY, 
-            service_id TEXT NOT NULL,
-
-            object_index INTEGER NOT NULL,
-            body_kind TEXT NOT NULL,
-            body_value BLOB,
-
-            previous TEXT
-        );",
-        )
-        .execute(&self.pool.get().unwrap())?;
-
-        sql_query(
             "CREATE TABLE object (
             service_id TEXT NOT NULL,
+            object_index INTEGER NOT NULL,
 
             raw_data BLOB NOT NULL,
 
@@ -233,7 +218,7 @@ impl Store {
         let keys = Keys::new(pub_key);
 
         // Load page
-        let page = match self.load_page(&sig, &keys)? {
+        let page = match self.load_object(&sig, &keys)? {
             Some(v) => v,
             None => return Ok(None),
         };
@@ -265,8 +250,8 @@ impl Store {
         let keys = Keys::new(service.public_key());
 
         // Ensure the page has been written
-        if self.load_page(&p_sig, &keys)?.is_none() {
-            self.save_page(page)?;
+        if self.load_object(&p_sig, &keys)?.is_none() {
+            self.save_object(page)?;
         }
 
         // Setup identity values

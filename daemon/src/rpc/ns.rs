@@ -306,8 +306,7 @@ impl<T: Engine> NameService for T {
         // Store data block
 
         // TODO: remove info, doesn't provide any particular utility
-        let info = DataInfo::try_from(&data).unwrap();
-        self.object_put(info.clone(), data.clone()).await?;
+        self.object_put(data.clone()).await?;
 
         // TODO: Lookup subscribers and distribute update
         // self.net_req(req, peers)
@@ -318,7 +317,7 @@ impl<T: Engine> NameService for T {
             let r = ns.publish_tertiary_buff::<256>(
                 TertiaryLink::Service(target.id()),
                 TertiaryOptions{
-                    index: info.index,
+                    index: data.header().index(),
                     issued: issued,
                     expiry: expiry,
                 },
@@ -475,9 +474,9 @@ mod test {
             // Store NS data block
             Box::new(|op, ns, t| {
                 match op {
-                    OpKind::ObjectPut(info, _object) => {
+                    OpKind::ObjectPut(object) => {
                         // TODO: check object contains expected NS information
-                        Ok(Res::Sig(info.signature))
+                        Ok(Res::Sig(object.signature()))
                     },
                     _ => panic!(
                         "Unexpected operation: {:?}, expected object put {}",

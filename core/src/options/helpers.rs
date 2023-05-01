@@ -33,7 +33,8 @@ impl<T> OptionsIter<T>
 where
     T: AsRef<[u8]>,
 {
-    pub(crate) fn new(buff: T) -> Self {
+    /// Create a new options
+    pub fn new(buff: T) -> Self {
         Self { index: 0, buff }
     }
 }
@@ -240,14 +241,16 @@ impl FromStr for Options {
             _ => return Err(InvalidFormat),
         };
 
-        match prefix {
+        let o = match prefix {
             "pub_key" => Options::pub_key(PublicKey::from_str(&data).map_err(B64)?),
             "name" => Options::name(&data),
             "kind" => Options::kind(&data),
+            "building" => Options::building(&data),
+            "room" => Options::room(&data),
             _ => return Err(Unsupported),
         };
 
-        todo!()
+        Ok(o)
     }
 }
 
@@ -257,8 +260,8 @@ impl Display for Options {
             Options::PubKey(o) => write!(f, "pub_key:{}", o),
             Options::Name(o) => write!(f, "name:{}", o),
             Options::Kind(o) => write!(f, "kind:{}", o),
-            //Options::Building(o) => write!(f, "name:{}", name.value),
-            //Options::Room(o) => write!(f, "kind:{}", kind.value),
+            Options::Building(o) => write!(f, "name:{}", o),
+            Options::Room(o) => write!(f, "kind:{}", o),
             _ => write!(f, "{:?}", self),
         }
     }

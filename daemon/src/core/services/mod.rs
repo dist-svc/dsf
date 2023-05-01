@@ -245,12 +245,12 @@ impl ServiceManager {
 
         #[cfg(feature = "store")]
         if let Some(p) = &inst.primary_page {
-            self.store.save_page(p).unwrap();
+            self.store.save_object(p).unwrap();
         }
 
         #[cfg(feature = "store")]
         if let Some(p) = &inst.replica_page {
-            self.store.save_page(p).unwrap();
+            self.store.save_object(p).unwrap();
         }
     }
 
@@ -280,11 +280,11 @@ impl ServiceManager {
             }
 
             if let Some(p) = &inst.primary_page {
-                self.store.save_page(p).unwrap();
+                self.store.save_object(p).unwrap();
             }
 
             if let Some(p) = &inst.replica_page {
-                self.store.save_page(p).unwrap();
+                self.store.save_object(p).unwrap();
             }
 
             inst.changed = false;
@@ -306,7 +306,7 @@ impl ServiceManager {
             let keys = Keys::new(i.public_key.clone());
 
             let primary_page = match i.primary_page {
-                Some(p) => self.store.load_page(&p, &keys).unwrap().unwrap(),
+                Some(p) => self.store.load_object(&p, &keys).unwrap().unwrap(),
                 None => {
                     trace!("No primary page for service: {:?}", i);
                     continue;
@@ -315,7 +315,7 @@ impl ServiceManager {
 
             let replica_page = i
                 .replica_page
-                .map(|s| self.store.load_page(&s, &keys).unwrap())
+                .map(|s| self.store.load_object(&s, &keys).unwrap())
                 .flatten();
 
             let mut service = Service::load(&primary_page).unwrap();
