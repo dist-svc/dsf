@@ -8,7 +8,7 @@ use crate::options::Options;
 use crate::crypto::{Crypto, Hash as _};
 use crate::error::Error;
 use crate::prelude::Header;
-use crate::types::{DateTime, Flags, Id, Kind, MutableData, PageKind, Queryable, Signature};
+use crate::types::{DateTime, Flags, Id, MutableData, PageKind, Queryable, Signature};
 use crate::wire::{Builder, Container};
 
 use super::Service;

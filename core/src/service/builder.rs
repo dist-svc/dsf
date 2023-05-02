@@ -8,7 +8,7 @@ use crate::keys::Keys;
 use crate::options::Options;
 use crate::types::*;
 
-use super::{History, Service, ServiceKind};
+use super::Service;
 
 /// Service builder to assist in the construction of service instances
 pub struct ServiceBuilder<B: PageBody = Vec<u8>> {

@@ -157,7 +157,7 @@ where
                         // Publish peer page to closest N peers
 
                         let mut buff = vec![0u8; 2048];
-                        let (n, mut primary_page) = self.primary(&mut buff).unwrap();
+                        let (_n, primary_page) = self.primary(&mut buff).unwrap();
 
                         let our_id = self.id();
                         let (store, _req_id) = match self.dht_mut().store_peers(

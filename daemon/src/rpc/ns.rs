@@ -118,7 +118,7 @@ impl<T: Engine> NameService for T {
         // Generate search query
         let lookup = match (opts.name, opts.hash) {
             (Some(n), _) => ns.resolve(&Options::name(&n))?,
-            (_, Some(h)) => {
+            (_, Some(_h)) => {
                 todo!("Hash based searching not yet implemented");
             }
             _ => {
@@ -471,7 +471,7 @@ mod test {
                 ),
             }),
             // Store NS data block
-            Box::new(|op, ns, t| {
+            Box::new(|op, ns, _t| {
                 match op {
                     OpKind::ObjectPut(object) => {
                         // TODO: check object contains expected NS information
@@ -583,7 +583,7 @@ mod test {
             }),
             // Register newly discovered service
             Box::new(move |op, _ns, t| match op {
-                OpKind::ServiceRegister(id, p) if id == t.id() => {
+                OpKind::ServiceRegister(id, _p) if id == t.id() => {
                     Ok(Res::ServiceInfo(target_info.clone()))
                 }
                 _ => panic!(

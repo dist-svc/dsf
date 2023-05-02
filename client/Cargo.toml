@@ -52,8 +52,3 @@ dsf-rpc = { version = "0.2.0" }
 name = "dsfc"
 path = "src/main.rs"
 required-features = [ "cli" ]
-
-[patch.crates-io]
-dsf-core = { git = "https://github.com/dist-svc/dsf-core" }
-dsf-rpc = { git = "https://github.com/dist-svc/dsf-rpc" }
-sodiumoxide = { git = "https://github.com/sodiumoxide/sodiumoxide" }

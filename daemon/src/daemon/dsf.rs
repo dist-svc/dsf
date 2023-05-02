@@ -461,8 +461,10 @@ where
 
         // Update listed replicas
         for (peer_id, page) in &replicas {
-            // TODO: handle this properly
-            self.replicas.create_or_update(id, peer_id, page);
+            // TODO: handle this error condition properly
+            if let Err(e) = self.replicas.create_or_update(id, peer_id, page) {
+                error!("Failed to store replica information: {:?}", e);
+            }
         }
 
         debug!("Service registered: {:?}", info);

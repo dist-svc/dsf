@@ -154,11 +154,13 @@ where
                         trace!("{:?}", v);
 
                         // Update located replicas
-                        // TODO: perhaps this should happen in the rx handle?
                         for p in &v {
                             // TODO: check other page fields here (id etc.)
                             if let PageInfo::Secondary(s) = &p.info()? {
-                                self.replicas().create_or_update(&id, &s.peer_id, p);
+                                if let Err(e) = self.replicas().create_or_update(&id, &s.peer_id, p)
+                                {
+                                    error!("Failed to update replica information: {:?}", e);
+                                }
                             }
                         }
 

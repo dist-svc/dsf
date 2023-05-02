@@ -1,4 +1,4 @@
-use core::convert::{Infallible, TryFrom};
+use core::convert::TryFrom;
 
 use encdec::{DecodeOwned, Encode};
 use modular_bitfield::prelude::*;

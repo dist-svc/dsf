@@ -114,9 +114,6 @@ rr-mux = "0.10.1"
 simplelog = "0.11.1"
 tempdir = "0.3.7"
 
-[profile.release]
-debug = true
-
 [[bin]]
 name = "dsfd"
 path = "src/bin/dsfd.rs"
@@ -124,9 +121,3 @@ path = "src/bin/dsfd.rs"
 [[bin]]
 name = "dsfm"
 path = "src/bin/dsfm.rs"
-
-[patch.crates-io]
-dsf-core = { git = "https://github.com/dist-svc/dsf-core" }
-dsf-rpc = { git = "https://github.com/dist-svc/dsf-rpc" }
-sodiumoxide = { git = "https://github.com/sodiumoxide/sodiumoxide" }
-kad = { git = "https://github.com/ryankurte/rust-kad" }

@@ -179,7 +179,7 @@ where
                     let d = self.data().fetch_data(&id, &page_bounds, &time_bounds)?;
 
                     // Lookup private key
-                    let k = self.services().find(&id).map(|s| s.private_key).flatten();
+                    let _k = self.services().find(&id).map(|s| s.private_key).flatten();
 
                     let i = d.iter().map(|i| i.info.clone()).collect();
 

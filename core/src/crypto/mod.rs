@@ -100,9 +100,6 @@ pub trait SecKey {
     ) -> Result<SecretMeta, Self::Error>;
 }
 
-/// Blake2b KDF context for tertiary ID seed derivation
-const DSF_KDF_CTX: [u8; 8] = [208, 217, 2, 27, 15, 253, 70, 121];
-
 pub trait Hash {
     type Error: Debug;
 

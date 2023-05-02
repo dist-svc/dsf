@@ -85,8 +85,5 @@ version = "0.2.5"
 default_features = false
 optional = true
 
-[patch.crates-io]
-sodiumoxide = { git = "https://github.com/sodiumoxide/sodiumoxide.git" }
-
 [dev-dependencies]
 pretty_assertions = "1.0.0"

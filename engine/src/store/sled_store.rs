@@ -85,7 +85,7 @@ impl<Addr: Clone + Debug + 'static> Store for SledStore<Addr> {
     fn get_last(&self) -> Result<Option<ObjectInfo>, Self::Error> {
         match self.db.get(SLED_LAST_KEY)? {
             Some(k) => {
-                let d = k.as_ref();
+                let _d = k.as_ref();
 
                 Ok(Some(ObjectInfo {
                     page_index: LittleEndian::read_u32(&k[0..]),
@@ -185,7 +185,7 @@ impl<Addr: Clone + Debug> KeySource for SledStore<Addr> {
 
 #[cfg(test)]
 mod tests {
-    use std::{env::temp_dir, net::SocketAddr};
+    use std::net::SocketAddr;
 
     use dsf_core::{
         crypto::{Crypto, Hash, PubKey, SecKey},

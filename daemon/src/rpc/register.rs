@@ -128,7 +128,7 @@ where
                     };
                 });
 
-                let service_info = match service_info {
+                let _service_info = match service_info {
                     Some(v) => v,
                     None => return Err(DsfError::UnknownService.into()),
                 };

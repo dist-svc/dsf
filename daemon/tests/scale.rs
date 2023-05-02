@@ -4,8 +4,6 @@ use std::time::Duration;
 use log::info;
 use rand::random;
 
-use tokio::task;
-
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use tracing_subscriber::FmtSubscriber;
 

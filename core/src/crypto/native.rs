@@ -90,7 +90,7 @@ impl PubKey for RustCrypto {
     // TODO: replace static KX with actual DH exchange at protocol level
     // then remove this... required for now for libsodium compat.
     fn kx(
-        pub_key: &PublicKey,
+        _pub_key: &PublicKey,
         pri_key: &PrivateKey,
         remote: &PublicKey,
     ) -> Result<(SecretKey, SecretKey), Self::Error> {
@@ -222,7 +222,7 @@ impl Hash for RustCrypto {
 
         let salt = DSF_NS_KDF_IDX.to_le_bytes();
 
-        let mut inst =
+        let inst =
             blake2::Blake2bMac::<U32>::new_with_salt_and_personal(&key, &salt, &DSF_NS_KDF_CTX)
                 .map_err(|_| ())?;
 
@@ -284,7 +284,6 @@ mod test {
     use test::Bencher;
 
     use super::*;
-    use crate::types::SECRET_KEY_TAG_LEN;
 
     #[test]
     fn test_pk_sign_verify() {

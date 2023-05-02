@@ -9,7 +9,7 @@ use core::{
     str::FromStr,
 };
 
-use encdec::{Decode, DecodeOwned, Encode};
+use encdec::{DecodeOwned, Encode};
 
 #[cfg(feature = "serde")]
 use serde::{

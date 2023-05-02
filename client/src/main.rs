@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 use std::time::SystemTime;
 
 use clap::Parser;
-use log::{debug, error, info, warn};
-use prettytable::{cell, row, Table};
+use log::{debug, error, warn};
+use prettytable::{row, Table};
 use simplelog::{LevelFilter, TermLogger};
 
 use dsf_client::{Client, Options};

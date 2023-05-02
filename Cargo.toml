@@ -8,6 +8,9 @@ members = [
     "rpc",
 ]
 
+[profile.release]
+debug = true
+
 [patch.crates-io]
 dsf-core = { path = "./core" }
 dsf-client = { path = "./client" }

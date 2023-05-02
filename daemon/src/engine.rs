@@ -343,13 +343,11 @@ impl Engine {
                         }
                     },
                     // TODO: periodic update
-                    interval = update_timer.tick().fuse() => {
+                    _interval = update_timer.tick().fuse() => {
                         trace!("engine::update");
 
-                        if let _i = interval {
-                            // TODO: prompt dsf service updates?
-                            // Maybe this should just use time internally?
-                        }
+                        // TODO: prompt dsf service updates?
+                        // Maybe this should just use time internally?
                     },
                     // Poll on DSF internal state (this actually runs DSF logic)
                     _ = dsf => {
@@ -442,8 +440,8 @@ impl Instance {
 
     /// Exit the running engine instance
     pub async fn join(self) -> Result<(), Error> {
-        futures::try_join!(self.dsf_handle, self.net_handle)?;
+        let (a, b) = futures::try_join!(self.dsf_handle, self.net_handle)?;
 
-        Ok(())
+        a.and(b)
     }
 }

@@ -168,7 +168,7 @@ where
                     // Return info for newly created service
                     let info = self
                         .services()
-                        .update_inst(id.as_ref().unwrap(), |s| ())
+                        .update_inst(id.as_ref().unwrap(), |_s| ())
                         .unwrap();
 
                     let resp = rpc::Response::new(req_id, rpc::ResponseKind::Service(info));
@@ -206,7 +206,7 @@ where
 
                         let info = self
                             .services()
-                            .update_inst(id.as_ref().unwrap(), |s| ())
+                            .update_inst(id.as_ref().unwrap(), |_s| ())
                             .unwrap();
 
                         let resp = rpc::Response::new(req_id, rpc::ResponseKind::Service(info));

@@ -190,7 +190,7 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
 
     // Select the latest primary page
 
-    let mut index = 0;
+    let index = 0;
     let mut primary = None;
 
     for c in &ordered {
@@ -354,7 +354,7 @@ mod test {
     #[test]
     fn test_reduce_tertiary() {
         let ns1 = setup();
-        let ns2 = setup();
+        let _ns2 = setup();
 
         let target_id = Id::from(rand::random::<[u8; 32]>());
 
