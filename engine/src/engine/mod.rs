@@ -25,7 +25,7 @@ pub struct Engine<A: Application, C: Comms, S: Store, const N: usize = 512> {
     svc: Service<A::Info>,
 
     pri: Signature,
-    req_id: u16,
+    req_id: RequestId,
 
     comms: C,
     store: S,
@@ -113,7 +113,7 @@ where
         if let Some(s) = store.get_last().map_err(EngineError::Store)? {
             debug!("Using last info: {:?}", s);
             sb = sb.last_signature(s.sig);
-            sb = sb.last_page(s.page_index);
+            sb = sb.version(s.page_index);
         }
 
         // TODO: fetch existing page if available?
@@ -169,7 +169,7 @@ where
         &mut self.store
     }
 
-    fn next_req_id(&mut self) -> u16 {
+    fn next_req_id(&mut self) -> RequestId {
         self.req_id = self.req_id.wrapping_add(1);
         self.req_id
     }
@@ -179,7 +179,7 @@ where
         &mut self,
         body: &[u8],
         opts: &[Options],
-    ) -> Result<u16, EngineError<<C as Comms>::Error, <S as Store>::Error>> {
+    ) -> Result<RequestId, EngineError<<C as Comms>::Error, <S as Store>::Error>> {
         debug!("Generating local discovery request");
 
         // Generate discovery request
@@ -379,7 +379,7 @@ where
     fn request(
         &mut self,
         addr: &Addr,
-        req_id: u16,
+        req_id: RequestId,
         data: NetRequestBody,
     ) -> Result<(), EngineError<<C as Comms>::Error, <S as Store>::Error>> {
         let mut flags = Flags::empty();
@@ -464,7 +464,7 @@ where
         match resp {
             EngineResponse::Net(net) => {
                 debug!("Sending response {:?} (id: {}) to: {:?}", net, req_id, from);
-                let mut r = NetResponse::new(self.svc.id(), req_id, net, Default::default());
+                let mut r = NetResponse::new(self.svc.id(), req_id as u16, net, Default::default());
 
                 // Include public key in responses if requested
                 if pub_key_requested {

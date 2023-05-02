@@ -59,8 +59,8 @@ impl<T: ImmutableData> core::fmt::Debug for Container<T> {
         };
 
         // TODO: there seems to be a fault in here which can lead to an infinite loop!?
-        //d.field("public_opts", &self.public_options_iter());
-        d.field("public_opts", &self.public_options_raw());
+        d.field("public_opts", &self.public_options_iter());
+        //d.field("public_opts", &self.public_options_raw());
 
         d.field("tag", &self.tag())
             .field("sig", &self.signature())

@@ -46,6 +46,7 @@ async fn scale(n: usize, level: LevelFilter) {
     // Set common configuration
     let mut config = EngineOptions::default();
     config.database_file = format!("{}/dsf-scale.db", d);
+    config.daemon_socket = format!("{}/dsf.sock", d);
     config.bind_addresses = vec![SocketAddr::new(
         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
         11200,
@@ -84,7 +85,7 @@ async fn scale(n: usize, level: LevelFilter) {
         bar.inc(1);
     }
     bar.finish();
-    info!("created daemons");
+    info!("created daemons, establishing connections");
 
     let base_addr = daemons[0].1;
 

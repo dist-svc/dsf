@@ -71,7 +71,7 @@ impl<'a, B: PageBody + DecodeOwned<Output = B>> Subscriber<B> for Service<B> {
             kind: header.kind().try_into().unwrap(),
 
             version: header.index(),
-            data_index: 0,
+            index: header.index(),
 
             body: body,
 

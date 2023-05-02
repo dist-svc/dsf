@@ -70,7 +70,7 @@ where
 
         // Create connect object
         let op = RpcOperation {
-            req_id,
+            rpc_id: req_id,
             kind: RpcKind::publish(options),
             done: tx,
         };

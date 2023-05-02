@@ -4,7 +4,7 @@ use core::ops::Deref;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use byteorder::{ByteOrder, NetworkEndian};
+use byteorder::{ByteOrder, LittleEndian};
 use encdec::{Decode, DecodeExt, Encode};
 use slice_ext::SplitBefore;
 
@@ -170,7 +170,7 @@ impl Response {
 
         let data = match kind {
             ResponseKind::Status => {
-                let status = NetworkEndian::read_u32(body);
+                let status = LittleEndian::read_u32(body);
                 ResponseBody::Status(status.into())
             }
             ResponseKind::NoResult => ResponseBody::NoResult,
@@ -224,7 +224,7 @@ impl Response {
         // Fetch other message specific options
         let common = Common {
             from: base.id(),
-            id: header.index(),
+            id: header.index() as u16,
             flags: header.flags(),
             public_key,
             remote_address,

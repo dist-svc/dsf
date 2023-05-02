@@ -101,8 +101,8 @@ pub trait Store: KeySource {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ObjectInfo {
-    pub page_index: u16,
-    pub block_index: u16,
+    pub page_index: u32,
+    pub block_index: u32,
     pub sig: Signature,
 }
 

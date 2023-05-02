@@ -88,8 +88,8 @@ impl<Addr: Clone + Debug + 'static> Store for SledStore<Addr> {
                 let d = k.as_ref();
 
                 Ok(Some(ObjectInfo {
-                    page_index: LittleEndian::read_u16(&k[0..]),
-                    block_index: LittleEndian::read_u16(&k[2..]),
+                    page_index: LittleEndian::read_u32(&k[0..]),
+                    block_index: LittleEndian::read_u32(&k[2..]),
                     sig: Signature::try_from(&k[4..][..SIGNATURE_LEN]).unwrap(),
                 }))
             }
@@ -100,8 +100,8 @@ impl<Addr: Clone + Debug + 'static> Store for SledStore<Addr> {
     fn set_last(&mut self, info: &ObjectInfo) -> Result<(), Self::Error> {
         let mut d = [0u8; 2 + 2 + SIGNATURE_LEN];
 
-        LittleEndian::write_u16(&mut d[0..], info.page_index);
-        LittleEndian::write_u16(&mut d[2..], info.block_index);
+        LittleEndian::write_u32(&mut d[0..], info.page_index);
+        LittleEndian::write_u32(&mut d[2..], info.block_index);
         d[4..].copy_from_slice(&info.sig);
 
         self.db.insert(SLED_LAST_KEY, d.as_slice())?;

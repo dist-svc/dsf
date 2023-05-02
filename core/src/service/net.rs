@@ -1,4 +1,4 @@
-use byteorder::{ByteOrder, NetworkEndian};
+use byteorder::{ByteOrder, LittleEndian};
 
 use encdec::Encode;
 
@@ -82,7 +82,7 @@ impl<D: PageBody> Net for Service<D> {
         let header = Header {
             kind: Kind::from(RequestKind::from(&req.data)),
             flags: req.flags,
-            index: req.id,
+            index: req.id as u32,
             ..Default::default()
         };
 
@@ -133,7 +133,7 @@ impl<D: PageBody> Net for Service<D> {
         let header = Header {
             kind: Kind::from(ResponseKind::from(&resp.data)),
             flags: resp.flags,
-            index: resp.id,
+            index: resp.id as u32,
             ..Default::default()
         };
 
@@ -143,7 +143,7 @@ impl<D: PageBody> Net for Service<D> {
         // Encode body
         let b = match &resp.data {
             ResponseBody::Status(status) => b.with_body(|buff| {
-                NetworkEndian::write_u32(buff, status.into());
+                LittleEndian::write_u32(buff, status.into());
                 Ok(4)
             })?,
             ResponseBody::NodesFound(id, nodes) => b.with_body(|buff| {

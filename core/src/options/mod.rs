@@ -4,7 +4,7 @@
 use core::convert::TryFrom;
 use core::fmt::Debug;
 
-use byteorder::{ByteOrder, NetworkEndian};
+use byteorder::{ByteOrder, LittleEndian};
 use encdec::{Decode, Encode};
 use heapless::String;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -185,8 +185,8 @@ impl<'a> Decode<'a> for Options {
             return Err(Error::InvalidOptionLength);
         }
 
-        let option_kind = NetworkEndian::read_u16(&data[0..2]);
-        let option_len = NetworkEndian::read_u16(&data[2..4]) as usize;
+        let option_kind = LittleEndian::read_u16(&data[0..2]);
+        let option_len = LittleEndian::read_u16(&data[2..4]) as usize;
 
         trace!(
             "Parse option kind: 0x{:02x} length: {}",
@@ -227,7 +227,7 @@ impl<'a> Decode<'a> for Options {
                 let mut ip = [0u8; 4];
 
                 ip.copy_from_slice(&d[0..4]);
-                let port = NetworkEndian::read_u16(&d[4..6]);
+                let port = LittleEndian::read_u16(&d[4..6]);
 
                 Ok(Options::address_v4(AddressV4::new(ip, port)))
             }
@@ -235,7 +235,7 @@ impl<'a> Decode<'a> for Options {
                 let mut ip = [0u8; 16];
 
                 ip.copy_from_slice(&d[0..16]);
-                let port = NetworkEndian::read_u16(&d[16..18]);
+                let port = LittleEndian::read_u16(&d[16..18]);
 
                 Ok(Options::address_v6(AddressV6::new(ip, port)))
             }
@@ -251,17 +251,17 @@ impl<'a> Decode<'a> for Options {
             }
 
             OptionKind::Issued => Ok(Options::Issued(DateTime::from_secs(
-                NetworkEndian::read_u64(d),
+                LittleEndian::read_u64(d),
             ))),
             OptionKind::Expiry => Ok(Options::Expiry(DateTime::from_secs(
-                NetworkEndian::read_u64(d),
+                LittleEndian::read_u64(d),
             ))),
-            OptionKind::Limit => Ok(Options::Limit(NetworkEndian::read_u32(d))),
+            OptionKind::Limit => Ok(Options::Limit(LittleEndian::read_u32(d))),
 
             OptionKind::Coord => Ok(Options::Coord(Coordinates {
-                lat: NetworkEndian::read_f32(&d[0..]),
-                lng: NetworkEndian::read_f32(&d[4..]),
-                alt: NetworkEndian::read_f32(&d[8..]),
+                lat: LittleEndian::read_f32(&d[0..]),
+                lng: LittleEndian::read_f32(&d[4..]),
+                alt: LittleEndian::read_f32(&d[8..]),
             })),
 
             OptionKind::Building => OptionString::decode(d).map(|(v, _)| Options::Building(v)),
@@ -316,7 +316,7 @@ impl Encode for Options {
     fn encode(&self, data: &mut [u8]) -> Result<usize, Self::Error> {
         // Set kind
         let kind = OptionKind::from(self);
-        NetworkEndian::write_u16(&mut data[0..], kind as u16);
+        LittleEndian::write_u16(&mut data[0..], kind as u16);
 
         // Encode data
         let n = match self {
@@ -343,22 +343,22 @@ impl Encode for Options {
                 len
             }
             Options::Limit(n) => {
-                NetworkEndian::write_u32(&mut data[4..], *n);
+                LittleEndian::write_u32(&mut data[4..], *n);
                 4
             }
             Options::IPv4(v) => {
                 data[OPTION_HEADER_LEN..][..4].copy_from_slice(&v.ip);
-                NetworkEndian::write_u16(&mut data[OPTION_HEADER_LEN + 4..], v.port);
+                LittleEndian::write_u16(&mut data[OPTION_HEADER_LEN + 4..], v.port);
                 6
             }
             Options::IPv6(v) => {
                 data[OPTION_HEADER_LEN..][..16].copy_from_slice(&v.ip);
-                NetworkEndian::write_u16(&mut data[OPTION_HEADER_LEN + 16..], v.port);
+                LittleEndian::write_u16(&mut data[OPTION_HEADER_LEN + 16..], v.port);
 
                 18
             }
             Options::Issued(v) | Options::Expiry(v) => {
-                NetworkEndian::write_u64(&mut data[4..], v.as_secs());
+                LittleEndian::write_u64(&mut data[4..], v.as_secs());
                 8
             }
             Options::Metadata(Metadata { key, value }) => {
@@ -378,9 +378,9 @@ impl Encode for Options {
                 n
             }
             Options::Coord(v) => {
-                NetworkEndian::write_f32(&mut data[4..8], v.lat);
-                NetworkEndian::write_f32(&mut data[8..12], v.lng);
-                NetworkEndian::write_f32(&mut data[12..16], v.alt);
+                LittleEndian::write_f32(&mut data[4..8], v.lat);
+                LittleEndian::write_f32(&mut data[8..12], v.lng);
+                LittleEndian::write_f32(&mut data[12..16], v.alt);
 
                 3 * 4
             }
@@ -388,7 +388,7 @@ impl Encode for Options {
         };
 
         // Write option length
-        NetworkEndian::write_u16(&mut data[2..], n as u16);
+        LittleEndian::write_u16(&mut data[2..], n as u16);
 
         trace!("Encoded option {:?}, value length: {}", kind, n);
 

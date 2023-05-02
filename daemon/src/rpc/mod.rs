@@ -296,7 +296,7 @@ where
             }
         };
 
-        let op = RpcOperation { req_id, kind, done };
+        let op = RpcOperation { rpc_id: req_id, kind, done };
 
         // TODO: check we're not overwriting anything here
 
@@ -315,7 +315,7 @@ where
 
         // Iterate through and update each operation
         for (_req_id, op) in &mut rpc_ops {
-            let RpcOperation { kind, done, req_id } = op;
+            let RpcOperation { kind, done, rpc_id: req_id } = op;
 
             let complete = match kind {
                 RpcKind::Connect(connect) => {

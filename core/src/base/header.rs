@@ -15,14 +15,17 @@ pub struct Header {
     // Application ID
     pub application_id: u16,
 
-    /// Object kind
+    /// Object kind (Page, Block, Request, Response, etc.)
     pub kind: Kind,
 
     /// Object flags
     pub flags: Flags,
 
-    /// Index is the Page Version for Pages, or the Request ID for messages
-    pub index: u16,
+    /// Index of the object
+    /// - index in the published chain for primary pages / data blocks (enables simple sorting and requests)
+    /// - the Request ID for request / response messages
+    /// - index of the corresponding data block for tertiary pages
+    pub index: u32,
 }
 
 impl Default for Header {
@@ -38,7 +41,7 @@ impl Default for Header {
 }
 
 impl Header {
-    pub fn new(application_id: u16, kind: Kind, index: u16, flags: Flags) -> Header {
+    pub fn new(application_id: u16, kind: Kind, index: u32, flags: Flags) -> Header {
         Header {
             protocol_version: 0,
             application_id,
@@ -64,7 +67,7 @@ impl Header {
         self.flags
     }
 
-    pub fn index(&self) -> u16 {
+    pub fn index(&self) -> u32 {
         self.index
     }
 }

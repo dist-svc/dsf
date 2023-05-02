@@ -1,4 +1,4 @@
-use std::collections::hash_map::RandomState;
+use std::collections::hash_map::{RandomState, Entry};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
@@ -189,7 +189,6 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
     let mut filtered = vec![];
 
     // Select the latest primary page
-    // TODO: how to enable explicit version resets?
 
     let mut index = 0;
     let mut primary = None;
@@ -197,7 +196,7 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
     for c in &ordered {
         let h = c.header();
         match c.info() {
-            Ok(PageInfo::Primary(_)) if &c.id() == id && h.index() > index => {
+            Ok(PageInfo::Primary(_)) if &c.id() == id && h.index() >= index => {
                 primary = Some(c.clone())
             }
             _ => (),
@@ -208,12 +207,24 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
         filtered.push(pri.clone());
     }
 
-    // Reduce secondary pages by peer_id (via a hashmap to get only the latest value)
+    // Reduce secondary pages by peer_id and version (via a hashmap to get only the latest value)
     let secondaries = ordered.iter().filter_map(|c| match c.info() {
         Ok(PageInfo::Secondary(s)) if &c.id() == id => Some((s.peer_id, c.clone())),
         _ => None,
     });
-    let mut map = HashMap::<_, _, RandomState>::from_iter(secondaries);
+    let mut map = HashMap::<Id, Container, _>::new();
+    for (peer, c) in secondaries {
+        match map.entry(peer) {
+            Entry::Occupied(mut o) if o.get().header().index() < c.header().index() => {
+                o.insert(c.clone());
+            },
+            Entry::Occupied(_) => (),
+            Entry::Vacant(v) =>  {
+                v.insert(c.clone());
+            },
+        }
+    }
+
     filtered.extend(map.drain().map(|(_k, v)| v.clone()));
 
     // TODO: if there is no primary page, can we reject secondary pages?
@@ -277,18 +288,26 @@ mod test {
 
         let (_, svc_page) = svc.publish_primary_buff(Default::default()).unwrap();
 
+        let mut version = 0;
+
         let (_, p1a) = peer1
-            .publish_secondary_buff(&svc.id(), Default::default())
+            .publish_secondary_buff(&svc.id(), SecondaryOptions{version, ..Default::default()})
             .unwrap();
+        version += 1;
+
         let (_, p1b) = peer1
-            .publish_secondary_buff(&svc.id(), Default::default())
+            .publish_secondary_buff(&svc.id(), SecondaryOptions{version, ..Default::default()})
             .unwrap();
+        version += 1;
+
 
         let (_, p2a) = peer2
-            .publish_secondary_buff(&svc.id(), Default::default())
+            .publish_secondary_buff(&svc.id(), SecondaryOptions{version, ..Default::default()})
             .unwrap();
+        version += 1;
+
         let (_, p2b) = peer2
-            .publish_secondary_buff(&svc.id(), Default::default())
+            .publish_secondary_buff(&svc.id(), SecondaryOptions{version, ..Default::default()})
             .unwrap();
 
         let pages = vec![

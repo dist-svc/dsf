@@ -10,7 +10,7 @@ pub struct ReplicaInfo {
     pub page_id: Id,
     pub peer_id: Id,
 
-    pub version: u16,
+    pub version: u32,
 
     pub issued: SystemTime,
     pub updated: SystemTime,

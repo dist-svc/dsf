@@ -65,27 +65,27 @@ where
     Dsf<Net>: NetIf<Interface = Net>,
 {
     pub fn connect(&mut self, options: ConnectOptions) -> Result<ConnectFuture, DsfError> {
-        let req_id = rand::random();
+        let rpc_id = rand::random();
 
         let (tx, rx) = mpsc::channel(1);
 
         // Create connect object
         let op = RpcOperation {
-            req_id,
+            rpc_id: rpc_id,
             kind: RpcKind::connect(options),
             done: tx,
         };
 
         // Add to tracking
-        debug!("Adding RPC op {} to tracking", req_id);
-        self.rpc_ops.insert(req_id, op);
+        debug!("Adding RPC op {} to tracking", rpc_id);
+        self.rpc_ops.insert(rpc_id, op);
 
         Ok(ConnectFuture { rx })
     }
 
     pub fn poll_rpc_connect(
         &mut self,
-        req_id: u64,
+        rpc_id: u64,
         connect_op: &mut ConnectOp,
         ctx: &mut Context,
         mut done: mpsc::Sender<rpc::Response>,
@@ -179,7 +179,7 @@ where
                         warn!("Connect locate error: {:?}", e);
 
                         let resp = rpc::Response::new(
-                            req_id,
+                            rpc_id,
                             rpc::ResponseKind::Error(dsf_core::error::Error::Unknown),
                         );
 
@@ -207,7 +207,7 @@ where
                             peers: v.len(),
                         };
 
-                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Connected(i));
+                        let resp = rpc::Response::new(rpc_id, rpc::ResponseKind::Connected(i));
 
                         let _ = done.try_send(resp);
 
@@ -220,7 +220,7 @@ where
                         error!("Connect update error: {:?}", e);
 
                         let resp = rpc::Response::new(
-                            req_id,
+                            rpc_id,
                             rpc::ResponseKind::Error(dsf_core::error::Error::Unknown),
                         );
 

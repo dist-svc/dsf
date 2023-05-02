@@ -18,6 +18,7 @@ use crate::ServiceIdentifier;
 pub struct ServiceInfo {
     pub id: Id,
     pub index: usize,
+    
     pub state: ServiceState,
 
     pub public_key: PublicKey,
@@ -195,8 +196,8 @@ impl RegisterOptions {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RegisterInfo {
-    pub page_version: u16,
-    pub replica_version: Option<u16>,
+    pub page_version: u32,
+    pub replica_version: Option<u32>,
     pub peers: usize,
 }
 

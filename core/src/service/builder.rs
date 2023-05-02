@@ -17,8 +17,8 @@ pub struct ServiceBuilder<B: PageBody = Vec<u8>> {
 
     kind: PageKind,
     application_id: u16,
-    last_page: u16,
-    last_data: u16,
+    version: u32,
+    index: u32,
     body: Option<B>,
 
     private_key: Option<PrivateKey>,
@@ -39,8 +39,8 @@ impl<B: PageBody> Default for ServiceBuilder<B> {
             public_key: None,
 
             application_id: 0,
-            last_page: 0,
-            last_data: 0,
+            version: 0,
+            index: 0,
             kind: PageKind::Generic,
             body: None,
 
@@ -108,13 +108,13 @@ impl<B: PageBody> ServiceBuilder<B> {
         self
     }
 
-    pub fn last_page(mut self, index: u16) -> Self {
-        self.last_page = index;
+    pub fn version(mut self, index: u32) -> Self {
+        self.version = index;
         self
     }
 
-    pub fn last_data(mut self, index: u16) -> Self {
-        self.last_data = index;
+    pub fn index(mut self, index: u32) -> Self {
+        self.index = index;
         self
     }
 
@@ -214,8 +214,8 @@ impl<B: PageBody> ServiceBuilder<B> {
             id,
             application_id: self.application_id,
             kind: self.kind,
-            version: self.last_page,
-            data_index: self.last_data,
+            version: self.version,
+            index: self.index,
             body,
             public_options: self.public_options,
             private_options: MaybeEncrypted::Cleartext(self.private_options),

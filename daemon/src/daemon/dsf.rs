@@ -76,7 +76,7 @@ pub struct Dsf<Net = NetSink> {
     pub(crate) rpc_ops: HashMap<u64, RpcOperation>,
 
     /// Tracking for network operations (collections of requests with retries etc.)
-    pub(crate) net_ops: HashMap<u16, NetOp>,
+    pub(crate) net_ops: HashMap<RequestId, NetOp>,
 
     /// Tracking for individual outgoing network requests
     pub(crate) net_requests: HashMap<(Address, RequestId), mpsc::Sender<NetResponse>>,

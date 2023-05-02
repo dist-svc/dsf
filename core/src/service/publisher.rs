@@ -119,7 +119,7 @@ pub struct SecondaryOptions<'a, Body: DataBody = &'a [u8]> {
 
     /// Page version
     /// This is monotonically increased for any successive publishing of the same page
-    pub version: u16,
+    pub version: u32,
 
     /// Page body
     pub body: Option<Body>,
@@ -204,13 +204,14 @@ where
 
         debug!("Primary options: {:?}", options);
 
-        self.version = self.version.wrapping_add(1);
+        // Fetch index for next published object
+        let index = self.index;
 
         // Setup header
         let header = Header {
             application_id: self.application_id,
             kind: self.kind.into(),
-            index: self.version,
+            index,
             flags,
             ..Default::default()
         };
@@ -272,6 +273,10 @@ where
 
         // Sign generated object
         let c = self.sign(b)?;
+
+        // Update current version and next index
+        self.version = index;
+        self.index = index.wrapping_add(1);
 
         // Return container and encode
         Ok((c.len(), c))
@@ -349,13 +354,13 @@ where
             flags |= Flags::ENCRYPTED;
         }
 
-        self.data_index = self.data_index.wrapping_add(1);
+        let index = self.index;
 
         let header = Header {
             application_id: self.application_id,
             kind: Kind::data(options.data_kind),
             flags,
-            index: self.data_index,
+            index,
             ..Default::default()
         };
 
@@ -392,6 +397,9 @@ where
 
         // Sign generated object
         let c = self.sign(b)?;
+
+        // Update index
+        self.index = self.index.wrapping_add(1);
 
         // Return container and encoded length
         Ok((c.len(), c))
@@ -462,13 +470,13 @@ mod test {
         let (_n, p) = svc
             .publish_primary_buff(opts.clone())
             .expect("Failed to publish primary page");
-        assert_eq!(p.header().index(), 1);
+        assert_eq!(p.header().index(), 0);
 
         // Publish second page
         let (_n, p) = svc
             .publish_primary_buff(opts.clone())
             .expect("Failed to publish primary page");
-        assert_eq!(p.header().index(), 2);
+        assert_eq!(p.header().index(), 1);
     }
 
     #[test]

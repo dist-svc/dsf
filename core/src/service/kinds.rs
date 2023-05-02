@@ -23,9 +23,9 @@ pub struct Unknown {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct History {
     /// Last page index
-    pub last_page: u16,
+    pub last_page: u32,
     /// Last data index
-    pub last_data: u16,
+    pub last_data: u32,
     /// Last object signature
     pub last_sig: Option<Signature>,
 }

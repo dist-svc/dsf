@@ -34,7 +34,7 @@ pub type RpcSender = mpsc::Sender<Response>;
 /// RPC operation container object
 /// Used to track RPC operation kind / state / response etc.
 pub struct RpcOperation {
-    pub req_id: u64,
+    pub rpc_id: u64,
     pub kind: RpcKind,
     pub done: RpcSender,
 }

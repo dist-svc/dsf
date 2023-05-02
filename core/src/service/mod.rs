@@ -45,8 +45,11 @@ pub struct Service<B: PageBody = Vec<u8>> {
     application_id: u16,
     kind: PageKind,
 
-    version: u16,
-    data_index: u16,
+    /// Current service version (index of last primary page)
+    version: u32,
+
+    /// Index / counter of linked published objects (primary pages + data blocks)
+    index: u32,
 
     body: MaybeEncrypted<B>,
 
@@ -78,7 +81,7 @@ impl<B: PageBody> Default for Service<B> {
             application_id: 0,
             kind: PageKind::Generic,
             version: 0,
-            data_index: 0,
+            index: 0,
             body: MaybeEncrypted::None,
             public_options: vec![],
             private_options: MaybeEncrypted::None,
@@ -227,7 +230,7 @@ impl<B: PageBody> Service<B> {
             application_id: opts.application_id,
             kind: opts.kind,
             version: opts.history.last_page,
-            data_index: opts.history.last_data,
+            index: opts.history.last_data.max(opts.history.last_page),
             body,
             public_options: opts.public_options,
             private_options: MaybeEncrypted::Cleartext(opts.private_options),
@@ -243,9 +246,7 @@ impl<B: PageBody> Service<B> {
         self.id.clone()
     }
 
-    /// Update a service.
-    /// This allows in-place editing of descriptors and options and causes an update of the service version number
-    /// as well as a reset of the data_index.
+    /// Update a service, allows in-place editing of descriptors and options
     pub fn update<U>(&mut self, update_fn: U) -> Result<(), Error>
     where
         U: Fn(&mut MaybeEncrypted<B>, &mut Vec<Options>, &mut MaybeEncrypted<Vec<Options>>),
@@ -260,12 +261,6 @@ impl<B: PageBody> Service<B> {
             &mut self.private_options,
         );
 
-        // Update service version
-        self.version += 1;
-
-        // Reset data index to 0;
-        self.data_index = 0;
-
         Ok(())
     }
 
@@ -277,7 +272,7 @@ impl<B: PageBody> Service<B> {
         }
     }
 
-    pub fn version(&self) -> u16 {
+    pub fn version(&self) -> u32 {
         self.version
     }
 
@@ -367,9 +362,8 @@ mod test {
 
         debug!("pp1: {:?}", pp1);
 
-        // Append sig to page1
-        //page1.set_signature(base1.signature().clone().unwrap());
-        assert_eq!(service.version, 1, "initial service version");
+        assert_eq!(service.version, 0, "initial service version");
+        assert_eq!(service.index, 1, "service object index");
 
         println!("Encoded service to {} bytes", n);
 
@@ -384,6 +378,7 @@ mod test {
         println!("Generating service replica");
         let mut replica =
             Service::<Vec<u8>>::load(&base2).expect("Error generating service replica");
+        assert_eq!(replica.version, 0);
 
         println!("Updating service");
         service
@@ -391,12 +386,14 @@ mod test {
                 public_options.push(Options::kind("Test Kind"));
             })
             .expect("Error updating service");
-        assert_eq!(service.version, 2, "service.update updates service version");
 
         println!("Generating updated page");
         let (_n, page3) = service
             .publish_primary_buff(Default::default())
             .expect("Error publishing primary page");
+
+        assert_eq!(service.version, 1, "publish primary page updates version");
+        assert_eq!(service.index, 2, "publish primary page updates index");
 
         let pp3 = Container::parse(page3.raw().to_vec(), &keys).unwrap();
 
@@ -404,7 +401,7 @@ mod test {
         replica
             .apply_primary(&pp3)
             .expect("Error updating service replica");
-        assert_eq!(replica.version, 3);
+        assert_eq!(replica.version, 1);
 
         println!("Generating a secondary page");
         let secondary_options = SecondaryOptions::default();

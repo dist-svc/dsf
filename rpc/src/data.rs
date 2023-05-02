@@ -12,7 +12,7 @@ use crate::{PageBounds, ServiceIdentifier, TimeBounds};
 pub struct DataInfo {
     pub service: Id,
     pub kind: Kind,
-    pub index: u16,
+    pub index: u32,
 
     pub body: Body,
     pub public_options: Vec<Options>,
@@ -154,6 +154,6 @@ impl PushOptions {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PublishInfo {
-    pub index: u16,
+    pub index: u32,
     //pub sig: Signature,
 }

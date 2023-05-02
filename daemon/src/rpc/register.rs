@@ -69,7 +69,7 @@ where
 
         // Create connect object
         let op = RpcOperation {
-            req_id,
+            rpc_id: req_id,
             kind: RpcKind::register(options),
             done: tx,
         };
@@ -108,7 +108,7 @@ where
                 };
 
                 let mut pages = vec![];
-                let mut page_version = 0u16;
+                let mut page_version = 0u32;
                 //let mut _replica_version = None;
 
                 // Generate pages / update service instance
@@ -190,7 +190,7 @@ where
 
                     let i = RegisterInfo {
                         // TODO: fix page and replica versions
-                        page_version: service_info.index as u16,
+                        page_version,
                         replica_version,
                         peers: 0,
                     };

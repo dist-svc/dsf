@@ -59,7 +59,7 @@ impl From<Signature> for TertiaryLink {
 /// Tertiary page configuration options
 #[derive(Clone, PartialEq, Debug)]
 pub struct TertiaryOptions {
-    pub index: u16,
+    pub index: u32,
     pub issued: DateTime,
     pub expiry: DateTime,
 }

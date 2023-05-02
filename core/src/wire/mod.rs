@@ -29,20 +29,20 @@ pub use container::Container;
 use crate::keys::{KeySource, Keys};
 
 /// Header object length
-pub const HEADER_LEN: usize = 16;
+pub const HEADER_LEN: usize = offsets::ID;
 
 /// Offsets for fixed fields in the protocol header
 mod offsets {
     pub const PROTO_VERSION: usize = 0;
-    pub const APPLICATION_ID: usize = 2;
-    pub const OBJECT_KIND: usize = 4;
-    pub const FLAGS: usize = 6;
-    pub const INDEX: usize = 8;
-    pub const DATA_LEN: usize = 10;
-    pub const PRIVATE_OPTIONS_LEN: usize = 12;
-    pub const PUBLIC_OPTIONS_LEN: usize = 14;
-    pub const ID: usize = 16;
-    pub const BODY: usize = 48;
+    pub const APPLICATION_ID: usize = PROTO_VERSION + 1;
+    pub const OBJECT_KIND: usize = APPLICATION_ID + 2;
+    pub const FLAGS: usize = OBJECT_KIND + 2;
+    pub const INDEX: usize = FLAGS + 2;
+    pub const DATA_LEN: usize = INDEX + 3;
+    pub const PRIVATE_OPTIONS_LEN: usize = DATA_LEN + 2;
+    pub const PUBLIC_OPTIONS_LEN: usize = PRIVATE_OPTIONS_LEN + 2;
+    pub const ID: usize = PUBLIC_OPTIONS_LEN + 2;
+    pub const BODY: usize = ID + 32;
 }
 
 /// Helper for validating signatures in symmetric or asymmetric modes
@@ -425,7 +425,7 @@ mod test {
             .expect("Error encoding page");
 
         // Decode into container
-        let d = Container::parse(c.buff.clone(), &keys).expect("Error decoding page");
+        let d = Container::parse(c.raw().to_vec(), &keys).expect("Error decoding page");
 
         // TODO: convert to pages and compare
 

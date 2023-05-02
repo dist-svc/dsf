@@ -292,7 +292,7 @@ impl From<&RequestBody> for RequestKind {
 }
 
 impl<D> Request<D> {
-    pub fn new(from: Id, request_id: u16, data: D, flags: Flags) -> Self {
+    pub fn new(from: Id, request_id: RequestId, data: D, flags: Flags) -> Self {
         let common = Common {
             from,
             id: request_id,
@@ -424,7 +424,7 @@ impl Request {
 
         let common = Common {
             from: base.id(),
-            id: header.index(),
+            id: header.index() as u16,
             flags: header.flags(),
             public_key,
             remote_address,
