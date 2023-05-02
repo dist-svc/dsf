@@ -18,7 +18,7 @@ use crate::ServiceIdentifier;
 pub struct ServiceInfo {
     pub id: Id,
     pub index: usize,
-    
+
     pub state: ServiceState,
 
     pub public_key: PublicKey,

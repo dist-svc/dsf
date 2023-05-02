@@ -30,11 +30,7 @@ type RequestMap = Arc<Mutex<HashMap<u64, mpsc::Sender<ResponseKind>>>>;
 /// Options for client instantiation
 #[derive(Clone, Debug, Parser)]
 pub struct Options {
-    #[clap(
-        short,
-        long,
-        env = "DSF_SOCK"
-    )]
+    #[clap(short, long, env = "DSF_SOCK")]
     /// Override default daemon socket
     /// (otherwise this will attempt to connect to user then
     /// global scoped sockets)
@@ -48,7 +44,7 @@ pub struct Options {
 impl Options {
     pub fn new(address: Option<&str>, timeout: Duration) -> Self {
         Self {
-            daemon_socket: address.map(|v| v.to_string() ),
+            daemon_socket: address.map(|v| v.to_string()),
             timeout: timeout.into(),
         }
     }
@@ -66,12 +62,11 @@ impl Options {
                 return p.to_string_lossy().to_string();
             }
         }
-    
+
         // Otherwise fallback to system socket
         "/var/dsfd/dsf.sock".to_string()
     }
 }
-
 
 /// DSF client connector
 #[derive(Debug)]

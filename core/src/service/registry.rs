@@ -1,8 +1,8 @@
 use core::ops::Add;
 
-use encdec::{Encode, Decode, DecodeOwned};
+use encdec::{Decode, DecodeOwned, Encode};
 
-use crate::base::{PageBody, DataBody};
+use crate::base::{DataBody, PageBody};
 use crate::options::Options;
 
 use crate::crypto::{Crypto, Hash as _};
@@ -119,7 +119,7 @@ impl<B: PageBody> Registry for Service<B> {
 
         // Setup header
         let header = Header {
-            kind: Kind::page(kind as u16),
+            kind: kind.into(),
             index: 0,
             flags,
             ..Default::default()

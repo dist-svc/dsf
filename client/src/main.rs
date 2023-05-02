@@ -206,7 +206,10 @@ fn print_services(services: &[ServiceInfo]) {
                 .unwrap_or("False".to_string()),
             format!("{}", s.subscribers),
             format!("{}", s.replicas),
-            s.primary_page.as_ref().map(|p| format!("{}", p) ).unwrap_or("".to_string()),
+            s.primary_page
+                .as_ref()
+                .map(|p| format!("{}", p))
+                .unwrap_or("".to_string()),
         ]);
     }
 

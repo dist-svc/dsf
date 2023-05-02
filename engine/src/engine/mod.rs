@@ -447,7 +447,7 @@ where
             && base.header().flags().contains(Flags::PUB_KEY_REQUEST);
 
         // Convert and handle messages
-        let (resp, evt) = match base.header().kind().base() {
+        let (resp, evt) = match base.header().kind().base_kind {
             BaseKind::Request | BaseKind::Response => {
                 match NetMessage::parse(base.raw().to_vec(), &self.store)
                     .map_err(EngineError::Core)?

@@ -6,9 +6,9 @@ use dsf_core::wire::Container;
 use futures::channel::mpsc;
 use futures::Future;
 
+use dsf_core::net::{Request as NetRequest, Response as NetResponse};
 use dsf_core::prelude::{DsfError as CoreError, Id, Service};
 use dsf_core::types::{CryptoHash, Signature};
-use dsf_core::net::{Response as NetResponse, Request as NetRequest};
 
 use dsf_rpc::*;
 
@@ -160,7 +160,9 @@ impl core::fmt::Debug for OpKind {
             Self::ServiceResolve(arg0) => f.debug_tuple("ServiceResolve").field(arg0).finish(),
             Self::ServiceGet(id) => f.debug_tuple("ServiceGet").field(id).finish(),
             Self::ServiceCreate(s, _p) => f.debug_tuple("ServiceCreate").field(&s.id()).finish(),
-            Self::ServiceRegister(id, _pages) => f.debug_tuple("ServiceRegister").field(id).finish(),
+            Self::ServiceRegister(id, _pages) => {
+                f.debug_tuple("ServiceRegister").field(id).finish()
+            }
             Self::ServiceUpdate(id, _f) => f.debug_tuple("ServiceUpdate").field(id).finish(),
 
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
@@ -250,7 +252,10 @@ pub trait Engine: Sync + Send {
         service: Service,
         primary_page: Container,
     ) -> Result<ServiceInfo, CoreError> {
-        match self.exec(OpKind::ServiceCreate(service, primary_page)).await? {
+        match self
+            .exec(OpKind::ServiceCreate(service, primary_page))
+            .await?
+        {
             Res::ServiceInfo(s) => Ok(s),
             _ => Err(CoreError::Unknown),
         }
@@ -290,7 +295,11 @@ pub trait Engine: Sync + Send {
     }
 
     /// Issue a network request to the specified peers
-    async fn net_req(&self, req: NetRequest, peers: Vec<Peer>) -> Result<HashMap<Id, NetResponse>, CoreError> {
+    async fn net_req(
+        &self,
+        req: NetRequest,
+        peers: Vec<Peer>,
+    ) -> Result<HashMap<Id, NetResponse>, CoreError> {
         match self.exec(OpKind::Net(req, peers)).await? {
             Res::Responses(r) => Ok(r),
             _ => Err(CoreError::Unknown),

@@ -40,8 +40,8 @@ impl DataManager {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };
-        let keys = Keys{
-            pub_key:  Some(service.public_key.clone()),
+        let keys = Keys {
+            pub_key: Some(service.public_key.clone()),
             sec_key: service.secret_key.clone(),
             ..Default::default()
         };
@@ -62,22 +62,16 @@ impl DataManager {
 
         // Generate info objects for data
         let mut results = Vec::with_capacity(limit);
-        for d in data.drain(offset..offset+limit) {
-            let i =  DataInfo::from_block(&d, &keys)?;
-            results.push(DataInst {
-                info: i,
-                page: d,
-            })
+        for d in data.drain(offset..offset + limit) {
+            let i = DataInfo::from_block(&d, &keys)?;
+            results.push(DataInst { info: i, page: d })
         }
 
         Ok(results)
     }
 
     /// Store data for a given service
-    pub fn store_data<T: ImmutableData>(
-        &self,
-        page: &Container<T>,
-    ) -> Result<(), Error> {
+    pub fn store_data<T: ImmutableData>(&self, page: &Container<T>) -> Result<(), Error> {
         // Store page object
         #[cfg(feature = "store")]
         self.store.save_object(page)?;

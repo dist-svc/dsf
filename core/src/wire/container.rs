@@ -461,7 +461,7 @@ impl<'a, T: ImmutableData> Container<T> {
         } else if kind.is_page() && flags.contains(Flags::TERTIARY) {
             // Handle tertiary page parsing (requires access to page body)
             if self.encrypted() {
-                return Err(Error::Encrypted)
+                return Err(Error::Encrypted);
             }
 
             let peer_id = self.public_options_iter().find_map(|o| match o {
@@ -473,7 +473,7 @@ impl<'a, T: ImmutableData> Container<T> {
                 None => Err(Error::NoPeerId),
             }?;
 
-            match PageKind::try_from(kind.index()) {
+            match PageKind::try_from(kind) {
                 Ok(PageKind::ServiceLink) => {
                     let target_id = Id::try_from(self.body_raw())?;
                     PageInfo::service_link(target_id, peer_id)

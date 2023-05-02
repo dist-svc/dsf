@@ -27,10 +27,7 @@ impl Comms for std::net::UdpSocket {
         use std::net::{Ipv4Addr, SocketAddr};
 
         // Local broadcast with default DSF addr
-        let addr = SocketAddr::V4(SocketAddrV4::new(
-            Ipv4Addr::new(255, 255, 255, 255),
-            10100,
-        ));
+        let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(255, 255, 255, 255), 10100));
 
         log::debug!("Broadcast {} bytes to: {}", data.len(), addr);
 

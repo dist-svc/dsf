@@ -14,11 +14,14 @@ use serde::{Deserialize, Serialize};
 use dsf_core::error::Error as CoreError;
 use dsf_core::options::{self, Filters};
 use dsf_core::prelude::{DsfError, Options, PageInfo};
-use dsf_core::service::{Registry, ServiceBuilder, Publisher, DataOptions, TertiaryData, TertiaryLink, TertiaryOptions};
-use dsf_core::types::{CryptoHash, Flags, Id, PageKind, DateTime};
+use dsf_core::service::{
+    DataOptions, Publisher, Registry, ServiceBuilder, TertiaryData, TertiaryLink, TertiaryOptions,
+};
+use dsf_core::types::{CryptoHash, DateTime, Flags, Id, PageKind};
 
 use dsf_rpc::{
-    LocateOptions, NsRegisterInfo, NsRegisterOptions, NsSearchOptions, Response, ServiceIdentifier, ServiceInfo, NsCreateOptions, DataInfo, LocateInfo,
+    DataInfo, LocateInfo, LocateOptions, NsCreateOptions, NsRegisterInfo, NsRegisterOptions,
+    NsSearchOptions, Response, ServiceIdentifier, ServiceInfo,
 };
 
 use crate::daemon::Dsf;
@@ -42,7 +45,6 @@ pub trait NameService {
 
 #[async_trait::async_trait]
 impl<T: Engine> NameService for T {
-
     /// Create a new name service
     async fn ns_create(&self, opts: NsCreateOptions) -> Result<ServiceInfo, DsfError> {
         debug!("Creating new nameservice (opts: {:?})", opts);
@@ -61,7 +63,7 @@ impl<T: Engine> NameService for T {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to build name service: {:?}", e);
-                return Err(e)
+                return Err(e);
             }
         };
 
@@ -87,7 +89,7 @@ impl<T: Engine> NameService for T {
         if let Err(e) = self.dht_put(id.clone(), vec![primary_page]).await {
             error!("Failed to register service: {:?}", e);
         }
-        
+
         debug!("Created NameService {}", id);
 
         let info = self.service_get(id).await?;
@@ -168,10 +170,13 @@ impl<T: Engine> NameService for T {
                 // Fetch information for linked service
                 Ok(PageInfo::ServiceLink(s)) if s.peer_id == ns.id() => {
                     // Check whether service can be locally resolved
-                    let i = match self.service_locate(LocateOptions{
-                        id: s.target_id.clone(),
-                        local_only: false,
-                    }).await {
+                    let i = match self
+                        .service_locate(LocateOptions {
+                            id: s.target_id.clone(),
+                            local_only: false,
+                        })
+                        .await
+                    {
                         Ok(i) => i,
                         Err(e) => {
                             error!("Failed to locate service {}: {:?}", s.target_id, e);
@@ -271,28 +276,22 @@ impl<T: Engine> NameService for T {
 
         // TODO: setup issued / expiry times to be consistent
         let issued = DateTime::now();
-        let expiry = issued + Duration::from_secs(60 * 60);        
+        let expiry = issued + Duration::from_secs(60 * 60);
 
         // Generate name service data block
-        let body = Some(TertiaryData{
-            tids: tids.clone(),
-        });
+        let body = Some(TertiaryData { tids: tids.clone() });
         let res = self
             .service_update(
                 ns.id(),
                 Box::new(move |s| {
                     // First, create a data block for the new registration
-                    let (_, d) = s.publish_data_buff::<TertiaryData>(
-                        DataOptions{
-                            data_kind: PageKind::Name.into(),
-                            body: body.clone(),
-                            issued: Some(issued.clone()),
-                            public_options: &[
-                                Options::expiry(expiry.clone())
-                            ],
-                            ..Default::default()
-                        }
-                    )?;
+                    let (_, d) = s.publish_data_buff::<TertiaryData>(DataOptions {
+                        data_kind: PageKind::Name.into(),
+                        body: body.clone(),
+                        issued: Some(issued.clone()),
+                        public_options: &[Options::expiry(expiry.clone())],
+                        ..Default::default()
+                    })?;
 
                     Ok(Res::Pages(vec![d.to_owned()]))
                 }),
@@ -316,7 +315,7 @@ impl<T: Engine> NameService for T {
         for t in tids {
             let r = ns.publish_tertiary_buff::<256>(
                 TertiaryLink::Service(target.id()),
-                TertiaryOptions{
+                TertiaryOptions {
                     index: data.header().index(),
                     issued: issued,
                     expiry: expiry,
@@ -477,7 +476,7 @@ mod test {
                     OpKind::ObjectPut(object) => {
                         // TODO: check object contains expected NS information
                         Ok(Res::Sig(object.signature()))
-                    },
+                    }
                     _ => panic!(
                         "Unexpected operation: {:?}, expected object put {}",
                         op,
@@ -538,11 +537,7 @@ mod test {
             let name = t.public_options().iter().name().unwrap();
             let tid = ns.resolve(&Options::name(&name)).unwrap();
             let (_, tertiary) = ns
-                .publish_tertiary_buff::<256>(
-                    t.id().into(),
-                    Default::default(),
-                    tid,
-                )
+                .publish_tertiary_buff::<256>(t.id().into(), Default::default(), tid)
                 .unwrap();
 
             (name, primary.to_owned(), tertiary.to_owned())
@@ -609,7 +604,15 @@ mod test {
             .unwrap();
 
         // Returns pages for located service
-        assert_eq!(&r, &[LocateInfo{
-            id: target_id, origin: true, updated: true, page_version: 0, page: Some(p) }]);
+        assert_eq!(
+            &r,
+            &[LocateInfo {
+                id: target_id,
+                origin: true,
+                updated: true,
+                page_version: 0,
+                page: Some(p)
+            }]
+        );
     }
 }

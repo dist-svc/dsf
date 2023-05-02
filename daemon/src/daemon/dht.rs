@@ -1,4 +1,4 @@
-use std::collections::hash_map::{RandomState, Entry};
+use std::collections::hash_map::{Entry, RandomState};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
@@ -217,11 +217,11 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
         match map.entry(peer) {
             Entry::Occupied(mut o) if o.get().header().index() < c.header().index() => {
                 o.insert(c.clone());
-            },
+            }
             Entry::Occupied(_) => (),
-            Entry::Vacant(v) =>  {
+            Entry::Vacant(v) => {
                 v.insert(c.clone());
-            },
+            }
         }
     }
 
@@ -291,23 +291,46 @@ mod test {
         let mut version = 0;
 
         let (_, p1a) = peer1
-            .publish_secondary_buff(&svc.id(), SecondaryOptions{version, ..Default::default()})
+            .publish_secondary_buff(
+                &svc.id(),
+                SecondaryOptions {
+                    version,
+                    ..Default::default()
+                },
+            )
             .unwrap();
         version += 1;
 
         let (_, p1b) = peer1
-            .publish_secondary_buff(&svc.id(), SecondaryOptions{version, ..Default::default()})
+            .publish_secondary_buff(
+                &svc.id(),
+                SecondaryOptions {
+                    version,
+                    ..Default::default()
+                },
+            )
             .unwrap();
         version += 1;
 
-
         let (_, p2a) = peer2
-            .publish_secondary_buff(&svc.id(), SecondaryOptions{version, ..Default::default()})
+            .publish_secondary_buff(
+                &svc.id(),
+                SecondaryOptions {
+                    version,
+                    ..Default::default()
+                },
+            )
             .unwrap();
         version += 1;
 
         let (_, p2b) = peer2
-            .publish_secondary_buff(&svc.id(), SecondaryOptions{version, ..Default::default()})
+            .publish_secondary_buff(
+                &svc.id(),
+                SecondaryOptions {
+                    version,
+                    ..Default::default()
+                },
+            )
             .unwrap();
 
         let pages = vec![
@@ -346,12 +369,20 @@ mod test {
 
         // Generate two pages
         let (_, t1a) = ns1
-            .publish_tertiary_buff::<256>(target_id.clone().into(), tertiary_opts.clone(), tid.clone())
+            .publish_tertiary_buff::<256>(
+                target_id.clone().into(),
+                tertiary_opts.clone(),
+                tid.clone(),
+            )
             .unwrap();
 
         tertiary_opts.index = 1;
         let (_, t1b) = ns1
-            .publish_tertiary_buff::<256>(target_id.clone().into(), tertiary_opts.clone(), tid.clone())
+            .publish_tertiary_buff::<256>(
+                target_id.clone().into(),
+                tertiary_opts.clone(),
+                tid.clone(),
+            )
             .unwrap();
 
         let pages = vec![t1a.to_owned(), t1b.to_owned()];

@@ -131,7 +131,10 @@ impl Engine {
     /// Create a new daemon instance
     pub async fn new(options: EngineOptions) -> Result<Self, Error> {
         // Create new local data store
-        info!("Creating / connecting to database: {}", options.database_file);
+        info!(
+            "Creating / connecting to database: {}",
+            options.database_file
+        );
         // Ensure directory exists
         if let Some(p) = PathBuf::from(&options.database_file).parent() {
             if !p.exists() {

@@ -63,7 +63,7 @@ pub struct Builder<S, T: MutableData> {
     _s: PhantomData<S>,
 }
 
-impl <S, T: MutableData> Debug for Builder<S, T> {
+impl<S, T: MutableData> Debug for Builder<S, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Builder")
             .field("buf", &self.as_ref())
@@ -91,8 +91,13 @@ pub enum SigningOpt {
     Signed(Signature),
 }
 
-impl <'a, B: Encode> WireBuilder<'a, B> {
-    pub fn encode(&self, buff: &mut [u8], secret_key: Option<&SecretKey>, signer: SigningOpt) -> Result<usize, Error> {
+impl<'a, B: Encode> WireBuilder<'a, B> {
+    pub fn encode(
+        &self,
+        buff: &mut [u8],
+        secret_key: Option<&SecretKey>,
+        signer: SigningOpt,
+    ) -> Result<usize, Error> {
         let mut n = HEADER_LEN;
 
         // Write the object ID
@@ -100,12 +105,16 @@ impl <'a, B: Encode> WireBuilder<'a, B> {
         n += ID_LEN;
 
         // Write the object data
-        let body_len = self.body.encode(&mut buff[n..])
+        let body_len = self
+            .body
+            .encode(&mut buff[n..])
             .map_err(|_| Error::EncodeFailed)?;
         n += body_len;
 
         // Write private options
-        let private_options_len = self.private_options.encode(&mut buff[n..])
+        let private_options_len = self
+            .private_options
+            .encode(&mut buff[n..])
             .map_err(|_| Error::EncodeFailed)?;
         n += private_options_len;
 
@@ -128,7 +137,9 @@ impl <'a, B: Encode> WireBuilder<'a, B> {
         }
 
         // Write public options
-        let public_options_len = self.public_options.encode(&mut buff[n..])
+        let public_options_len = self
+            .public_options
+            .encode(&mut buff[n..])
             .map_err(|_| Error::EncodeFailed)?;
         n += public_options_len;
 
@@ -146,16 +157,12 @@ impl <'a, B: Encode> WireBuilder<'a, B> {
                 // Generate signature
                 let sig = Crypto::pk_sign(&pri_key, &buff[..n]).unwrap();
 
-                trace!(
-                    "Sign {} byte object, new index: {}",
-                    n,
-                    n + SIGNATURE_LEN
-                );
+                trace!("Sign {} byte object, new index: {}", n, n + SIGNATURE_LEN);
 
                 // Write signature to object
                 (&mut buff[n..][..SIGNATURE_LEN]).copy_from_slice(&sig);
                 n += SIGNATURE_LEN;
-            },
+            }
             // Perform secret key AEAD over header + body
             SigningOpt::Private(sec_key) => {
                 // Split header and body sections
@@ -174,7 +181,7 @@ impl <'a, B: Encode> WireBuilder<'a, B> {
                 buff[n..][..tag.len()].copy_from_slice(&tag);
                 // TODO: this superflously pads out to signature length
                 n += SIGNATURE_LEN;
-            },
+            }
             // Append existing signature
             SigningOpt::Signed(sig) => {
                 buff[n..][..sig.len()].copy_from_slice(&sig);

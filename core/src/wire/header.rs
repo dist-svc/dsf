@@ -1,4 +1,5 @@
 use byteorder::{ByteOrder, LittleEndian};
+use encdec::Decode;
 
 use super::{offsets, HEADER_LEN, SECRET_KEY_TAG_LEN};
 use crate::base::Header;
@@ -38,23 +39,19 @@ impl<T: ImmutableData> WireHeader<T> {
     }
 
     pub fn kind(&self) -> Kind {
-        let raw = LittleEndian::read_u16(&self.buff.as_ref()[offsets::OBJECT_KIND..]);
-        Kind::from(raw)
+        // TODO: should pass error here, but aiming to deprecate WireKind completely
+        let (kind, _) = Kind::decode(&self.buff.as_ref()[offsets::OBJECT_KIND..]).unwrap();
+        kind
     }
 
     pub fn flags(&self) -> Flags {
         let raw = LittleEndian::read_u16(&self.buff.as_ref()[offsets::FLAGS..]);
-        unsafe { Flags::from_bits_unchecked(raw) }
+        Flags::from_bits_truncate(raw)
     }
 
     pub fn index(&self) -> u32 {
         let b = &self.buff.as_ref()[offsets::INDEX..];
-        u32::from_le_bytes([
-            b[0],
-            b[1],
-            b[2],
-            0
-        ])
+        u32::from_le_bytes([b[0], b[1], b[2], 0])
     }
 
     pub fn data_len(&self) -> usize {
@@ -141,8 +138,8 @@ impl<T: MutableData> WireHeader<T> {
     }
 
     /// Set the protocol version
-    pub fn set_protocol_version(&mut self, version: u16) {
-        LittleEndian::write_u16(&mut self.buff.as_mut()[offsets::PROTO_VERSION..], version)
+    pub fn set_protocol_version(&mut self, version: u8) {
+        self.buff.as_mut()[offsets::PROTO_VERSION] = version;
     }
 
     /// Set the application ID

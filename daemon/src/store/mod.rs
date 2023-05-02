@@ -16,13 +16,13 @@ use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use dsf_core::prelude::*;
 use dsf_core::service::Subscriber;
 
-pub mod schema;
 pub mod error;
+pub mod schema;
 pub use error::StoreError;
 
+pub mod object;
 pub mod peers;
 pub mod services;
-pub mod object;
 
 #[derive(Clone)]
 pub struct Store {

@@ -1,6 +1,6 @@
 use clap::Parser;
 use dsf_core::options::OptionsIter;
-use dsf_core::prelude::{Options, KeySource, DsfError};
+use dsf_core::prelude::{DsfError, KeySource, Options};
 use serde::{Deserialize, Serialize};
 
 use dsf_core::{base::Body, options::Filters, prelude::MaybeEncrypted, types::*, wire::Container};
@@ -25,7 +25,10 @@ pub struct DataInfo {
 impl DataInfo {
     /// Parse [DataInfo] from a container, decrypting encrypted fields
     /// using the provided keys if available
-    pub fn from_block<T: ImmutableData>(c: &Container<T>, keys: &impl KeySource) -> Result<Self, DsfError> {
+    pub fn from_block<T: ImmutableData>(
+        c: &Container<T>,
+        keys: &impl KeySource,
+    ) -> Result<Self, DsfError> {
         let id = c.id();
         let sec_key = keys.sec_key(&id);
 
@@ -44,10 +47,10 @@ impl DataInfo {
                     MaybeEncrypted::Cleartext(body.to_vec()),
                     MaybeEncrypted::Cleartext(private_opts),
                 )
-            },
+            }
             (false, _) => (
                 MaybeEncrypted::Cleartext(c.body_raw().to_vec()),
-                MaybeEncrypted::Cleartext(c.private_options_iter().collect())
+                MaybeEncrypted::Cleartext(c.private_options_iter().collect()),
             ),
         };
 
@@ -110,7 +113,7 @@ pub struct PublishOptions {
 
     #[clap(short, long, default_value = "0")]
     /// Data page kind (defaults to generic)
-    pub kind: u16,
+    pub kind: u8,
 
     #[clap(short, long, value_parser = data_from_str)]
     /// Data body as a string

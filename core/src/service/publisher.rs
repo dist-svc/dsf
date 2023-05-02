@@ -155,7 +155,7 @@ impl<'a> Default for SecondaryOptions<'a> {
 #[derive(Clone, Debug)]
 pub struct DataOptions<'a, Body: DataBody = &'a [u8]> {
     /// Data object kind
-    pub data_kind: u16,
+    pub data_kind: u8,
 
     /// Data object body
     pub body: Option<Body>,

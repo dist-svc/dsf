@@ -75,10 +75,10 @@ impl Display for DataInfo {
                 for o in options {
                     write!(f, "\n    - {}, ", o)?;
                 }
-            },
+            }
             MaybeEncrypted::Encrypted(_) => write!(f, "{}", "Encrypted".to_string().red())?,
         }
-       
+
         write!(f, "\n  - public_options: ")?;
         for o in &self.public_options {
             write!(f, "\n    - {}, ", o)?;

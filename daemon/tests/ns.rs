@@ -38,9 +38,12 @@ async fn test_ns() {
     let _h = e.start().await.expect("Error launching engine");
 
     // Setup client connector
-    let mut client = Client::new(&ClientOptions::new(Some(&daemon_socket), Duration::from_secs(5)))
-        .await
-        .expect("Error creating client");
+    let mut client = Client::new(&ClientOptions::new(
+        Some(&daemon_socket),
+        Duration::from_secs(5),
+    ))
+    .await
+    .expect("Error creating client");
 
     // Create a new service for name registration
     let s = client

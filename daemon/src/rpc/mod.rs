@@ -1,7 +1,10 @@
-use std::{task::{Context, Poll}, time::SystemTime};
+use std::{
+    task::{Context, Poll},
+    time::SystemTime,
+};
 
 use dsf_core::wire::Container;
-use kad::{store::Datastore, prelude::DhtError};
+use kad::{prelude::DhtError, store::Datastore};
 use log::{debug, error, info, warn};
 use tracing::{span, Level};
 
@@ -13,10 +16,13 @@ use dsf_rpc::*;
 
 use crate::{
     core::peers::Peer,
-    daemon::{net::{NetIf, NetFuture}, Dsf},
+    daemon::{
+        net::{NetFuture, NetIf},
+        Dsf,
+    },
     error::{CoreError, Error},
     rpc::lookup::PeerRegistry,
-    rpc::{ns::NameService, locate::ServiceRegistry},
+    rpc::{locate::ServiceRegistry, ns::NameService},
 };
 
 // Generic / shared operation types
@@ -169,12 +175,11 @@ where
                 time_bounds,
             })) => match self.resolve_identifier(&service) {
                 Ok(id) => {
-
                     // Fetch data
                     let d = self.data().fetch_data(&id, &page_bounds, &time_bounds)?;
 
                     // Lookup private key
-                    let k = self.services().find(&id).map(|s| s.private_key ).flatten();
+                    let k = self.services().find(&id).map(|s| s.private_key).flatten();
 
                     let i = d.iter().map(|i| i.info.clone()).collect();
 
@@ -234,7 +239,7 @@ where
                     warn!("Async service locate response sent");
                 });
                 return Ok(());
-            },
+            }
             RequestKind::Service(ServiceCommands::Subscribe(opts)) => RpcKind::subscribe(opts),
             RequestKind::Service(ServiceCommands::Discover(opts)) => RpcKind::discover(opts),
             RequestKind::Data(DataCommands::Publish(opts)) => RpcKind::publish(opts),
@@ -256,7 +261,7 @@ where
                     warn!("Async ns create response sent");
                 });
                 return Ok(());
-            },
+            }
             RequestKind::Ns(NsCommands::Register(opts)) => {
                 let exec = self.exec();
                 tokio::task::spawn(async move {
@@ -296,7 +301,11 @@ where
             }
         };
 
-        let op = RpcOperation { rpc_id: req_id, kind, done };
+        let op = RpcOperation {
+            rpc_id: req_id,
+            kind,
+            done,
+        };
 
         // TODO: check we're not overwriting anything here
 
@@ -315,7 +324,11 @@ where
 
         // Iterate through and update each operation
         for (_req_id, op) in &mut rpc_ops {
-            let RpcOperation { kind, done, rpc_id: req_id } = op;
+            let RpcOperation {
+                kind,
+                done,
+                rpc_id: req_id,
+            } = op;
 
             let complete = match kind {
                 RpcKind::Connect(connect) => {
@@ -456,7 +469,9 @@ where
                     let r = self
                         .services()
                         .register(
-                            service, &primary_page, ServiceState::Created,
+                            service,
+                            &primary_page,
+                            ServiceState::Created,
                             Some(SystemTime::now()),
                         )
                         .map(|i| Ok(Res::ServiceInfo(i)))
@@ -563,27 +578,27 @@ where
                     if let Err(e) = op.done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
-                },
+                }
                 OpKind::ObjectPut(data) => {
                     // TODO: Lookup matching service
-                    
+
                     // Write data to local store
                     let r = match self.data().store_data(&data) {
                         Ok(_) => Ok(Res::Sig(data.signature())),
                         Err(_) => {
                             error!("Failed to store data: {:?}", data);
                             Err(CoreError::Unknown)
-                        },
+                        }
                     };
                     if let Err(e) = op.done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
-                },
+                }
                 OpKind::Net(ref req, ref peers) => {
                     let s = self.net_op(peers.clone(), req.clone());
                     op.state = OpState::Net(s);
                     self.ops.insert(op_id, op);
-                },
+                }
             }
         }
 
@@ -670,7 +685,7 @@ impl Future for OpState {
             OpState::Net(send) => match send.poll_unpin(ctx) {
                 Poll::Ready(r) => Ok(Res::Responses(r)),
                 _ => return Poll::Pending,
-            }
+            },
         };
 
         Poll::Ready(r)

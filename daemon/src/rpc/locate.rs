@@ -156,7 +156,8 @@ where
                                 .filter(&opts.id, |s| s.primary_page.clone())
                                 .flatten(),
                         };
-                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![info]));
+                        let resp =
+                            rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![info]));
 
                         let _ = done.try_send(resp);
 
@@ -180,7 +181,8 @@ where
                                     .filter(&opts.id, |s| s.primary_page.clone())
                                     .flatten(),
                             };
-                            let resp = rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![info]));
+                            let resp =
+                                rpc::Response::new(req_id, rpc::ResponseKind::Located(vec![info]));
 
                             let _ = done.try_send(resp);
 
@@ -194,7 +196,7 @@ where
                             req_id,
                             rpc::ResponseKind::Error(dsf_core::error::Error::Unknown),
                         );
-                        
+
                         let _ = done.try_send(resp);
 
                         *state = LocateState::Error;
@@ -265,7 +267,9 @@ impl<T: Engine> ServiceRegistry for T {
         debug!("Adding service {} to store", opts.id);
 
         // Add located service to local tracking
-        let i = self.service_register(opts.id.clone(), pages.clone()).await?;
+        let i = self
+            .service_register(opts.id.clone(), pages.clone())
+            .await?;
 
         debug!("Stored service: {:?}", i);
 
@@ -277,7 +281,7 @@ impl<T: Engine> ServiceRegistry for T {
                 } else {
                     Some(self.object_get(opts.id.clone(), sig).await?)
                 }
-            },
+            }
             None => None,
         };
 

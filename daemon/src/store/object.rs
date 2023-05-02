@@ -5,7 +5,7 @@ use dsf_core::{
 };
 use log::error;
 
-use super::{Store, StoreError, schema::object};
+use super::{schema::object, Store, StoreError};
 
 use crate::store::schema::object::dsl::*;
 
@@ -25,7 +25,13 @@ impl Store {
             .prev_sig()
             .as_ref()
             .map(|v| previous.eq(v.to_string()));
-        let values = (service_id.eq(page.id().to_string()), idx, raw, prev, sig.clone());
+        let values = (
+            service_id.eq(page.id().to_string()),
+            idx,
+            raw,
+            prev,
+            sig.clone(),
+        );
 
         let r = object
             .filter(sig.clone())
@@ -101,8 +107,7 @@ impl Store {
 
         let (_r_id, r_raw, _r_previous, _r_signature) = &results[0];
 
-        let c = Container::parse(r_raw.to_vec(), key_source)
-            .map_err(|_e| StoreError::Decode)?;
+        let c = Container::parse(r_raw.to_vec(), key_source).map_err(|_e| StoreError::Decode)?;
 
         Ok(Some(c))
     }
