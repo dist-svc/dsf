@@ -234,7 +234,7 @@ where
                         })
                         .collect();
 
-                    debug!("Issuing subscribe request to {} peers", peers.len());
+                    debug!("Issuing subscribe request to {:?}", peers);
 
                     // Issue net operation
                     let op = self.net_op(peers, req);

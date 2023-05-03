@@ -215,7 +215,6 @@ where
                     if let Err(e) = done.clone().try_send(Response::new(req_id, i)) {
                         error!("Failed to send RPC response: {:?}", e);
                     }
-                    warn!("Async response sent");
                 });
 
                 return Ok(());
@@ -232,11 +231,10 @@ where
                         Ok(i) => ResponseKind::Located(vec![i]),
                         Err(e) => ResponseKind::Error(e),
                     };
-                    warn!("Async service locate result: {:?}", i);
+                    debug!("Async service locate result: {:?}", i);
                     if let Err(e) = done.clone().try_send(Response::new(req_id, i)) {
                         error!("Failed to send RPC response: {:?}", e);
                     }
-                    warn!("Async service locate response sent");
                 });
                 return Ok(());
             }

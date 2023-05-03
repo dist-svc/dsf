@@ -243,7 +243,7 @@ impl Net {
                             };
 
                             let data = Bytes::copy_from_slice(&buff[..n]);
-                            event!(Level::TRACE, kind="UDP rx", address = %address);
+                            event!(Level::DEBUG, kind="UDP rx", address = %address);
 
                             let msg = NetMessage{
                                 interface: Some(interface),
@@ -273,7 +273,7 @@ impl Net {
                                 }
                             };
 
-                            event!(Level::TRACE, kind="UDP tx", address = %d.address);
+                            event!(Level::DEBUG, kind="UDP tx", address = %d.address);
 
                             if let Err(e) = socket.send_to(&d.data, &d.address).await {
                                 error!("socket send error: {:?}", e);

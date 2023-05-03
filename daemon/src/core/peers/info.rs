@@ -8,6 +8,7 @@ bitflags::bitflags!(
         const SYMMETRIC_AVAILABLE = (1 << 0);
         const SYMMETRIC_ENABLED = (1 << 1);
         const CONSTRAINED = (1 << 2);
+        const TRANSIENT = (1 << 3);
     }
 );
 

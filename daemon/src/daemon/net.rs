@@ -152,7 +152,7 @@ impl Future for NetOp {
             true
 
         // Check for timeouts
-        } else if Instant::now().saturating_duration_since(self.ts) > Duration::from_secs(3) {
+        } else if Instant::now().saturating_duration_since(self.ts) > Duration::from_secs(5) {
             debug!("Net operation {} timeout", self.req.id);
             true
         } else {
@@ -412,6 +412,8 @@ where
         let from = resp.from.clone();
         let req_id = resp.id;
 
+        debug!("response: {:?}", resp);
+
         // Generic net message processing here
         let peer =
             match self.handle_base(&from, &addr.into(), &resp.common, Some(SystemTime::now())) {
@@ -421,7 +423,12 @@ where
 
         // Parse out and handle DHT responses
         if let Some(dht_resp) = self.net_to_dht_response(&resp.data) {
-            let _ = self.handle_dht_resp(from.clone(), peer, req_id, dht_resp);
+            match self.handle_dht_resp(from.clone(), peer, req_id, dht_resp) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    warn!("DHT error: {:?}", e);
+                }
+            }
 
             return Ok(());
         }
@@ -570,6 +577,9 @@ where
         let mut peer_flags = PeerFlags::empty();
         if c.flags.contains(Flags::CONSTRAINED) {
             peer_flags |= PeerFlags::CONSTRAINED;
+        }
+        if c.flags.contains(Flags::NO_PERSIST) {
+            peer_flags |= PeerFlags::TRANSIENT;
         }
 
         // Find or create (and push) peer
