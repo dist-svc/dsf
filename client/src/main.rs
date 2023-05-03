@@ -188,6 +188,17 @@ fn print_services(services: &[ServiceInfo]) {
     table.add_row(row![b => "Service ID", "Index", "State", "Updated", "PublicKey", "PrivateKey", "SecretKey", "Subscribers", "Replicas", "Primary Page"]);
 
     for s in services {
+        let pk = s.public_key.to_string();
+        let public_key = format!("{}..{}", &pk[..6], &pk[pk.len()-6..]);
+
+        let primary_page = match s.primary_page.as_ref() {
+            Some(p) => {
+                let p = p.to_string();
+                format!("{}..{}", &p[..6], &p[p.len()-6..])
+            },
+            None => format!("None"),
+        };
+
         table.add_row(row![
             s.id.to_string(),
             s.index.to_string(),
@@ -195,7 +206,7 @@ fn print_services(services: &[ServiceInfo]) {
             s.last_updated
                 .map(systemtime_to_humantime)
                 .unwrap_or("Never".to_string()),
-            s.public_key.to_string(),
+            public_key,
             s.private_key
                 .as_ref()
                 .map(|_| "True".to_string())
@@ -206,10 +217,7 @@ fn print_services(services: &[ServiceInfo]) {
                 .unwrap_or("False".to_string()),
             format!("{}", s.subscribers),
             format!("{}", s.replicas),
-            s.primary_page
-                .as_ref()
-                .map(|p| format!("{}", p))
-                .unwrap_or("".to_string()),
+            primary_page,
         ]);
     }
 

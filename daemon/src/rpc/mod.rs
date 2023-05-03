@@ -126,15 +126,19 @@ where
                 }
             }
             RequestKind::Service(ServiceCommands::List(_options)) => {
-                let s = self.services().list();
-                Some(ResponseKind::Services(s))
+                let services = self.services().list();
+                // TODO: clear keys unless specifically requested
+                Some(ResponseKind::Services(services))
             }
             RequestKind::Service(ServiceCommands::Info(options)) => {
                 match self.resolve_identifier(&options.service) {
                     Ok(id) => Some(
                         self.services()
                             .find(&id)
-                            .map(|i| ResponseKind::Service(i))
+                            .map(|i| {
+                                // TODO: Clear keys unless specifically requested
+                                ResponseKind::Service(i)
+                            })
                             .unwrap_or(ResponseKind::None),
                     ),
                     Err(_e) => Some(ResponseKind::None),
@@ -147,7 +151,7 @@ where
                         let s = self.services().update_inst(&id, |s| {
                             s.service.set_secret_key(options.secret_key.clone());
                         });
-
+                        // TODO: Clear keys unless specifically requested
                         match s {
                             Some(s) => Some(ResponseKind::Services(vec![s])),
                             None => Some(ResponseKind::None),

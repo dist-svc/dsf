@@ -1,6 +1,6 @@
 [package]
 name = "dsf-engine"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Ryan Kurte <ryankurte@gmail.com>"]
 description = "DSF embedded engine"
 repository = "https://github.com/dist-svc/dsf"
@@ -30,6 +30,6 @@ sled = { version = "0.34.7", optional = true }
 thiserror = { version = "*", optional = true }
 
 [dev-dependencies]
-simplelog = "*"
-anyhow = "*"
-tempfile = "*"
+simplelog = "0.12.1"
+anyhow = "1.0.70"
+tempfile = "3.5.0"

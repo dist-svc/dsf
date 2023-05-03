@@ -278,6 +278,11 @@ where
 
                         debug!("Found {} subscribers", subs.len());
 
+                        // Update service to subscribed state
+                        self.services().update_inst(&id, |i| {
+                            i.state = ServiceState::Subscribed;
+                        });
+
                         // TODO: send completion
                         let resp = rpc::Response::new(req_id, rpc::ResponseKind::Subscribed(subs));
 

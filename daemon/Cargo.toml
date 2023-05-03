@@ -2,7 +2,7 @@
 name = "dsf-daemon"
 repository = "https://github.com/dist-svc/dsf-daemon"
 description = "Distributed Service Framework (DSF) Daemon"
-version = "0.1.3"
+version = "0.3.0"
 authors = ["ryan <ryan@kurte.nz>"]
 edition = "2018"
 license = "GPL-3.0"
@@ -64,50 +64,22 @@ tempdir = "0.3.7"
 tokio = { version = "1.26.0", features = [ "full" ] }
 tracing-futures = "0.2.4"
 tracing-subscriber = { version = "0.3.17", features = [ "env-filter" ] }
+chrono = { version = "0.4.6", features = ["serde"] }
+diesel = { features = ["sqlite", "extras", "chrono", "r2d2"], version = "1.4.5" }
+log = { features = ["max_level_trace", "release_max_level_trace"], version = "0.4.6" }
+serde = { features = ["derive"], version = "1.0" }
+tracing = { features = ["max_level_trace", "release_max_level_trace"], version = "0.1.22" }
+humantime = "2.0.0"
+igd = { version = "0.10.0", features = ["aio"] }
+libsqlite3-sys = { version = "0.9.1" }
 
-[dependencies.chrono]
-features = ["serde"]
-version = "0.4.6"
+dsf-core = { version = "0.3.0", features = ["serde", "std"] }
+dsf-rpc = { version = "0.3.0", features = ["std"] }
+kad = { version = "0.6.1" }
 
-[dependencies.diesel]
-features = ["sqlite", "extras", "chrono", "r2d2"]
-version = "1.4.5"
-
-[dependencies.dsf-core]
-version = "0.2.0"
-features = ["serde", "std"]
-
-[dependencies.dsf-rpc]
-version = "0.2.0"
-features = ["std"]
-
-[dependencies.humantime]
-version = "2.0.0"
-
-[dependencies.igd]
-version = "0.10.0"
-features = ["aio"]
-
-[dependencies.kad]
-version = "0.6.0"
-
-[dependencies.libsqlite3-sys]
-version = "0.9.1"
-
-[dependencies.log]
-features = ["max_level_trace", "release_max_level_trace"]
-version = "0.4.6"
-
-[dependencies.serde]
-features = ["derive"]
-version = "1.0"
-
-[dependencies.tracing]
-features = ["max_level_trace", "release_max_level_trace"]
-version = "0.1.22"
 
 [dev-dependencies]
-dsf-client = "0.2.0"
+dsf-client = "0.3.0"
 indicatif = "0.16.2"
 rand = "0.7.3"
 rr-mux = "0.10.1"

@@ -6,7 +6,7 @@ keywords = ["DSF"]
 authors = ["ryan <ryan@kurte.nz>"]
 license = "MPL-2.0"
 edition = "2018"
-version = "0.2.0"
+version = "0.3.0"
 
 [features]
 cli = [ "clap", "simplelog", "humantime" ]
@@ -44,8 +44,8 @@ log = { version = "0.4.6", features = ["max_level_trace", "release_max_level_inf
 tui = { version = "0.9.0", features = [ "crossterm" ], default-features = false }
 anyhow = "*"
 
-dsf-core = { version = "0.2.0", features = [ "serde", "std" ] }
-dsf-rpc = { version = "0.2.0" }
+dsf-core = { version = "0.3.0", features = [ "serde", "std" ] }
+dsf-rpc = { version = "0.3.0" }
 
 
 [[bin]]

@@ -1,5 +1,6 @@
 use std::fmt;
 
+use dsf_core::helpers::{parse_bytes, print_bytes, parse_bytes_vec};
 use serde::{de, de::Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -23,8 +24,7 @@ impl Serialize for Data {
     where
         S: Serializer,
     {
-        let s = base64::encode_config(&self.0, base64::URL_SAFE);
-
+        let s = print_bytes(&self.0);
         serializer.serialize_str(&s)
     }
 }
@@ -40,15 +40,15 @@ impl<'de> Deserialize<'de> for Data {
             type Value = Data;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a base64 encoded data page")
+                formatter.write_str("a string encoded data page")
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                let s = base64::decode_config(value, base64::URL_SAFE)
-                    .map_err(|_e| de::Error::custom("decoding b64"))?;
+                let s = parse_bytes_vec(value)
+                    .map_err(|_e| de::Error::custom("decoding bytes"))?;
 
                 Ok(Data(s))
             }

@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 use std::net::SocketAddr;
 
 use colored::Colorize;
+use dsf_core::helpers::print_bytes;
 use dsf_core::prelude::MaybeEncrypted;
 
 use crate::{DataInfo, PeerInfo, ServiceInfo};
@@ -59,7 +60,7 @@ impl Display for DataInfo {
         write!(f, "\n  - service id: {}", self.service)?;
 
         let body = match &self.body {
-            Body::Cleartext(v) => base64::encode_config(&v, base64::URL_SAFE).green(),
+            Body::Cleartext(v) => print_bytes(v).green(),
             Body::Encrypted(_) => "Encrypted".to_string().red(),
             Body::None => "None".to_string().blue(),
         };
@@ -90,7 +91,8 @@ impl Display for DataInfo {
         };
         write!(f, "\n  - previous: {}", previous)?;
 
-        write!(f, "\n  - signature: {}", self.signature)?;
+        let sig = self.signature.to_string();
+        write!(f, "\n  - signature: {}..{}", &sig[..6], &sig[sig.len()-6..])?;
 
         Ok(())
     }
@@ -116,15 +118,16 @@ impl Display for ServiceInfo {
             write!(f, ", {}", self.state)?;
         }
 
+        let pub_key = self.public_key.to_string();
         if f.sign_plus() {
-            write!(f, "\n  - public key: {}", self.public_key)?;
+            write!(f, "\n  - public key: {}..{}", &pub_key[..6], &pub_key[pub_key.len()-6..])?;
         } else {
-            write!(f, ", {}", self.public_key)?;
+            write!(f, ", {}..{}", &pub_key[..6], &pub_key[pub_key.len()-6..])?;
         }
 
         if let Some(sk) = &self.secret_key {
             if f.sign_plus() {
-                write!(f, "\n  - secret key: {}", sk.to_string().dimmed())?;
+                write!(f, "\n  - secret key: {}", sk.to_string())?;
             } else {
                 write!(f, ", {}", sk)?;
             }

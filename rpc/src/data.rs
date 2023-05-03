@@ -139,7 +139,7 @@ pub struct PushOptions {
     pub service: ServiceIdentifier,
 
     #[clap(short, long, value_parser = data_from_str)]
-    /// Base64 encoded (pre-signed) DSF object
+    /// Base58 encoded (pre-signed) DSF object
     pub data: Data,
 }
 

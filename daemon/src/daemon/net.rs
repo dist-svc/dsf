@@ -424,13 +424,12 @@ where
         // Parse out and handle DHT responses
         if let Some(dht_resp) = self.net_to_dht_response(&resp.data) {
             match self.handle_dht_resp(from.clone(), peer, req_id, dht_resp) {
-                Ok(_) => return Ok(()),
+                Ok(true) => return Ok(()),
+                Ok(false) => (),
                 Err(e) => {
                     warn!("DHT error: {:?}", e);
                 }
             }
-
-            return Ok(());
         }
 
         // Look for matching point-to-point requests

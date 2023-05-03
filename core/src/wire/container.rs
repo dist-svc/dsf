@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use crate::base::PageBody;
 use crate::crypto::{Crypto, Hash as _, SecKey as _};
-use crate::helpers::{print_bytes, parse_bytes, parse_bytes_vec};
+use crate::helpers::{print_bytes, parse_bytes_vec};
 use crate::page::PageInfo;
 use crate::types::*;
 

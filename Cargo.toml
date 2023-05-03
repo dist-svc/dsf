@@ -18,5 +18,5 @@ dsf-daemon = { path = "./daemon" }
 dsf-engine = { path = "./engine" }
 dsf-rpc = { path = "./rpc" }
 
-kad = { git = "https://github.com/ryankurte/rust-kad", branch = "main" }
+kad = { git = "https://github.com/ryankurte/rust-kad.git", branch = "main" }
 #kad = { path = "../rust-kad" }

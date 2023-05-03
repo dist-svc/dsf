@@ -10,6 +10,7 @@ use futures::channel::mpsc;
 use dsf_core::net::{RequestBody, ResponseBody};
 use dsf_core::prelude::*;
 use dsf_core::types::{Data, Id, RequestId};
+use log::error;
 
 use super::{net::NetIf, Dsf};
 
@@ -58,16 +59,22 @@ where
         peer: Peer,
         req_id: RequestId,
         resp: DhtResponse<Id, Peer, Data>,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         // Map peer to existing DHT entry
         // TODO: resolve this rather than creating a new instance
         // (or, use only the index and rely on external storage etc.?)
         let entry = DhtEntry::new(from.into(), peer);
 
         // Pass to DHT
-        let resp = self.dht_mut().handle_resp(req_id, &entry, &resp).unwrap();
+        let handled = match self.dht_mut().handle_resp(req_id, &entry, &resp){
+            Ok(v) => v,
+            Err(e) => {
+                error!("DHT handle_resp error: {:?}", e);
+                return Ok(false)
+            }
+        };
 
-        Ok(resp)
+        Ok(handled)
     }
 
     pub(crate) fn is_dht_req(msg: &NetRequest) -> bool {

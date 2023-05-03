@@ -22,6 +22,8 @@ pub struct ServiceInfo {
     pub state: ServiceState,
 
     pub public_key: PublicKey,
+    // TODO: rework to avoid (ever) returning private / secret keys
+    // (requires ServiceInfo replacement for database...)
     pub private_key: Option<PrivateKey>,
     pub secret_key: Option<SecretKey>,
 
