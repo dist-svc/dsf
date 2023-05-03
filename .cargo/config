@@ -10,4 +10,7 @@ linker = "aarch64-linux-gnu-gcc"
 
 [target.aarch64-unknown-linux-musl]
 linker = "aarch64-linux-musl-gcc"
-
+rustflags = [
+    "-C", "link_arg=-specs",
+    "-C", "link_arg=/usr/lib/aarch64-linux-musl/musl-gcc.specs"
+]

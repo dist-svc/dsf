@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 
 use crate::base::PageBody;
 use crate::crypto::{Crypto, Hash as _, SecKey as _};
+use crate::helpers::{print_bytes, parse_bytes, parse_bytes_vec};
 use crate::page::PageInfo;
 use crate::types::*;
 
@@ -131,7 +132,7 @@ impl<T: ImmutableData> serde::Serialize for Container<T> {
         S: serde::Serializer,
     {
         //serializer.serialize_bytes(self.raw())
-        serializer.serialize_str(&base64::encode(self.raw()))
+        serializer.serialize_str(&print_bytes(self.raw()))
     }
 }
 
@@ -155,7 +156,7 @@ impl<'de: 'a, 'a> serde::Deserialize<'de> for Container {
                 E: serde::de::Error,
             {
                 let buff =
-                    base64::decode(v).map_err(|_e| serde::de::Error::custom("decoding base64"))?;
+                    parse_bytes_vec(v).map_err(|_e| serde::de::Error::custom("byte string decoding failed"))?;
 
                 Container::try_from(buff)
                     .map_err(|_e| serde::de::Error::custom("decoding container"))
@@ -166,7 +167,7 @@ impl<'de: 'a, 'a> serde::Deserialize<'de> for Container {
                 E: serde::de::Error,
             {
                 let buff =
-                    base64::decode(v).map_err(|_e| serde::de::Error::custom("decoding base64"))?;
+                parse_bytes_vec(v).map_err(|_e| serde::de::Error::custom("byte string decoding failed"))?;
 
                 Container::try_from(buff)
                     .map(|c| c.to_owned())

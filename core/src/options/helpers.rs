@@ -5,7 +5,10 @@ use core::str::FromStr;
 use encdec::Decode;
 
 use super::{OptionString, Options, OPTION_HEADER_LEN};
-use crate::types::{Address, DateTime, Id, ImmutableData, PublicKey, Signature};
+use crate::{
+    types::{Address, DateTime, Id, ImmutableData, PublicKey, Signature},
+    helpers::ParseBytesError,
+};
 
 /// Iterator for decoding options from the provided buffer
 pub struct OptionsIter<T> {
@@ -225,8 +228,8 @@ pub enum OptionsParseError {
     )]
     Unsupported,
 
-    #[cfg_attr(feature = "thiserror", error("Base64 decode error: {0}"))]
-    B64(base64::DecodeError),
+    #[cfg_attr(feature = "thiserror", error("byte string decode error: {0}"))]
+    Parse(ParseBytesError),
 }
 
 impl FromStr for Options {
@@ -242,7 +245,7 @@ impl FromStr for Options {
         };
 
         let o = match prefix {
-            "pub_key" => Options::pub_key(PublicKey::from_str(&data).map_err(B64)?),
+            "pub_key" => Options::pub_key(PublicKey::from_str(&data).map_err(Parse)?),
             "name" => Options::name(&data),
             "kind" => Options::kind(&data),
             "building" => Options::building(&data),

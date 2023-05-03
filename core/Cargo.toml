@@ -12,7 +12,7 @@ edition = "2021"
 [features]
 defmt-default = ["defmt", "heapless/defmt-impl"]
 
-std = ["alloc", "managed/std", "bytes/std", "base64/std", "byteorder/std", "sha2/std", "chrono/std", "thiserror", "rand_core_0_5/std", "log/std", "simplelog", "getrandom/std"]
+std = ["alloc", "managed/std", "bytes/std", "base64/std", "byteorder/std", "sha2/std", "chrono/std", "thiserror", "rand_core_0_5/std", "log/std", "simplelog", "getrandom/std", "bs58/std"]
 alloc = ["base64/alloc", "chrono/alloc", "pretty-hex/alloc", "encdec/alloc", "defmt/alloc", "serde/alloc"]
 
 serde = ["dep:serde", "heapless/serde"]
@@ -27,6 +27,7 @@ base64 = { version = "0.12.1", default_features = false }
 bitflags = "1.2.1"
 blake2 = { version = "0.10.4", default_features = false }
 byteorder = { version = "1.3.2", default_features = false }
+bs58 = { version = "0.4.0", default_features = false }
 
 bytes = { version = "1.0.1", default_features = false }
 cfg-if = "1.0.0"

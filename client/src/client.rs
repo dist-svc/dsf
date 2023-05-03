@@ -64,7 +64,7 @@ impl Options {
         }
 
         // Otherwise fallback to system socket
-        "/var/dsfd/dsf.sock".to_string()
+        "/var/run/dsfd/dsf.sock".to_string()
     }
 }
 

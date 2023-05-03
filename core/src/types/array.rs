@@ -17,7 +17,10 @@ use serde::{
     Deserializer, Serializer,
 };
 
-use crate::error::Error;
+use crate::{
+    error::Error,
+    helpers::{print_bytes, parse_bytes},
+};
 
 /// Basic const-generic array type to override display etc.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -193,7 +196,7 @@ impl<K, const N: usize> BitXor for Array<K, N> {
 impl<K, const N: usize> fmt::Display for Array<K, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let r: &[u8] = &self.0;
-        let encoded = base64::encode_config(&r, base64::URL_SAFE);
+        let encoded = print_bytes(r);
         write!(f, "{}", encoded)?;
         Ok(())
     }
@@ -202,7 +205,7 @@ impl<K, const N: usize> fmt::Display for Array<K, N> {
 impl<K, const N: usize> fmt::Debug for Array<K, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let r: &[u8] = &self.0;
-        let encoded = base64::encode_config(&r, base64::URL_SAFE);
+        let encoded = print_bytes(&r);
         write!(f, "{}", encoded)?;
         Ok(())
     }
@@ -222,13 +225,11 @@ impl<K, const N: usize> fmt::UpperHex for Array<K, N> {
 }
 
 impl<K, const N: usize> FromStr for Array<K, N> {
-    type Err = base64::DecodeError;
+    type Err = bs58::decode::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut data = [0u8; N];
-        let _decoded = base64::decode_config_slice(s, base64::URL_SAFE, &mut data)?;
-        // TODO: check decoded length
-
+        parse_bytes(s, &mut data)?;
         Ok(data.into())
     }
 }
@@ -255,14 +256,14 @@ impl<'de, K, const N: usize> serde::Deserialize<'de> for Array<K, N> {
             type Value = T;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a base64 encoded string")
+                formatter.write_str("a b58 encoded string")
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                T::from_str(value).map_err(|_e| de::Error::custom("decoding b64"))
+                T::from_str(value).map_err(|_e| de::Error::custom("decoding b58"))
             }
         }
 

@@ -1,6 +1,7 @@
 use diesel::r2d2::PoolError;
 use diesel::result::Error as DieselError;
 use diesel::ConnectionError;
+use dsf_core::helpers::ParseBytesError;
 use std::net::AddrParseError;
 use strum::ParseError as StrumError;
 
@@ -10,7 +11,7 @@ pub enum StoreError {
     Pool,
     Diesel(DieselError),
     Strum(StrumError),
-    B64(base64::DecodeError),
+    Parse(ParseBytesError),
     Addr(AddrParseError),
     MissingSignature,
     MissingRawData,
@@ -30,9 +31,9 @@ impl From<DieselError> for StoreError {
     }
 }
 
-impl From<base64::DecodeError> for StoreError {
-    fn from(e: base64::DecodeError) -> Self {
-        Self::B64(e)
+impl From<ParseBytesError> for StoreError {
+    fn from(e: ParseBytesError) -> Self {
+        Self::Parse(e)
     }
 }
 

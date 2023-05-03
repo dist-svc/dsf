@@ -56,6 +56,8 @@ pub mod prelude;
 
 pub mod error;
 
+pub mod helpers;
+
 #[cfg(feature = "defmt")]
 pub trait Debug = core::fmt::Debug + defmt::Format;
 
