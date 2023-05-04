@@ -30,8 +30,14 @@ use dsf_core::wire::Container;
 use crate::daemon::Dsf;
 use crate::error::Error as DaemonError;
 
-use crate::core::data::DataInfo;
-use crate::core::peers::{Peer, PeerAddress, PeerFlags, PeerState};
+use crate::rpc::subscribe::PubSub;
+use crate::{
+    core::{
+        data::DataInfo,
+        peers::{Peer, PeerAddress, PeerFlags, PeerState},
+    },
+    rpc::locate::ServiceRegistry,
+};
 
 /// Network interface abstraction, allows [`Dsf`] instance to be generic over interfaces
 pub trait NetIf {
@@ -830,12 +836,12 @@ where
                     local_only: false,
                 };
                 let service_id = service_id.clone();
-                let loc = self.locate(opts)?;
+                let exec = self.exec();
 
                 tokio::task::spawn(async move {
-                    let resp = match loc.await {
+                    let resp = match exec.service_locate(opts).await {
                         Ok(ref v) => {
-                            if let Some(p) = v.get(0).map(|i| i.page.as_ref()).flatten() {
+                            if let Some(p) = &v.page {
                                 info!("Locate ok (index: {})", p.header().index());
                                 net::ResponseBody::ValuesFound(service_id, vec![p.to_owned()])
                             } else {
@@ -885,11 +891,11 @@ where
                 let opts = SubscribeOptions {
                     service: ServiceIdentifier::id(service_id.clone()),
                 };
-                let sub = self.subscribe(opts)?;
+                let exec = self.exec();
 
                 // Await subscription response
                 tokio::task::spawn(async move {
-                    let resp = match sub.await {
+                    let resp = match exec.subscribe(opts).await {
                         Ok(_v) => net::ResponseBody::Status(Status::Ok),
                         Err(e) => {
                             error!("Subscription failed: {:?}", e);

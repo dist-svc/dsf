@@ -8,7 +8,7 @@ use log::{debug, error, trace};
 use dsf_core::{prelude::*, wire::Container};
 use dsf_rpc::replica::ReplicaInfo;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ReplicaInst {
     pub info: ReplicaInfo,
     pub page: Container,
@@ -55,10 +55,10 @@ impl ReplicaManager {
     }
 
     /// Find replicas for a given service
-    pub fn find(&self, service_id: &Id) -> Vec<ReplicaInst> {
+    pub fn find(&self, service_id: &Id) -> Result<Vec<ReplicaInst>, DsfError> {
         let v = self.replicas.get(service_id);
 
-        v.map(|v| v.clone()).unwrap_or(vec![])
+        Ok(v.map(|v| v.clone()).unwrap_or(vec![]))
     }
 
     /// Create or update a given replica instance

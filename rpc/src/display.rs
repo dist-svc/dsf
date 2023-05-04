@@ -92,7 +92,12 @@ impl Display for DataInfo {
         write!(f, "\n  - previous: {}", previous)?;
 
         let sig = self.signature.to_string();
-        write!(f, "\n  - signature: {}..{}", &sig[..6], &sig[sig.len()-6..])?;
+        write!(
+            f,
+            "\n  - signature: {}..{}",
+            &sig[..6],
+            &sig[sig.len() - 6..]
+        )?;
 
         Ok(())
     }
@@ -120,9 +125,14 @@ impl Display for ServiceInfo {
 
         let pub_key = self.public_key.to_string();
         if f.sign_plus() {
-            write!(f, "\n  - public key: {}..{}", &pub_key[..6], &pub_key[pub_key.len()-6..])?;
+            write!(
+                f,
+                "\n  - public key: {}..{}",
+                &pub_key[..6],
+                &pub_key[pub_key.len() - 6..]
+            )?;
         } else {
-            write!(f, ", {}..{}", &pub_key[..6], &pub_key[pub_key.len()-6..])?;
+            write!(f, ", {}..{}", &pub_key[..6], &pub_key[pub_key.len() - 6..])?;
         }
 
         if let Some(sk) = &self.secret_key {

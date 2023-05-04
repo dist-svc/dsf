@@ -7,25 +7,24 @@ use futures::channel::mpsc;
 use futures::Future;
 
 use dsf_core::net::{Request as NetRequest, Response as NetResponse};
-use dsf_core::prelude::{DsfError as CoreError, Id, Service};
+use dsf_core::prelude::{DsfError as CoreError, Id, NetRequestBody, Service};
 use dsf_core::types::{CryptoHash, Signature};
 
 use dsf_rpc::*;
 
 use crate::core::peers::Peer;
+use crate::core::replicas::ReplicaInst;
 use crate::error::Error;
 
 use super::connect::{ConnectOp, ConnectState};
 use super::lookup::{LookupOp, LookupState};
 
 use super::create::{CreateOp, CreateState};
-use super::locate::{LocateOp, LocateState};
 use super::register::{RegisterOp, RegisterState};
 
 use super::discover::{DiscoverOp, DiscoverState};
 use super::publish::{PublishOp, PublishState};
 use super::push::{PushOp, PushState};
-use super::subscribe::{SubscribeOp, SubscribeState};
 
 use super::bootstrap::{BootstrapOp, BootstrapState};
 
@@ -49,8 +48,6 @@ pub enum RpcKind {
     Publish(PublishOp),
 
     Discover(DiscoverOp),
-    Locate(LocateOp),
-    Subscribe(SubscribeOp),
 
     Push(PushOp),
 
@@ -87,13 +84,6 @@ impl RpcKind {
         })
     }
 
-    pub fn locate(opts: LocateOptions) -> Self {
-        RpcKind::Locate(LocateOp {
-            opts,
-            state: LocateState::Init,
-        })
-    }
-
     pub fn publish(opts: PublishOptions) -> Self {
         RpcKind::Publish(PublishOp {
             opts,
@@ -105,13 +95,6 @@ impl RpcKind {
         RpcKind::Discover(DiscoverOp {
             opts,
             state: DiscoverState::Init,
-        })
-    }
-
-    pub fn subscribe(opts: SubscribeOptions) -> Self {
-        RpcKind::Subscribe(SubscribeOp {
-            opts,
-            state: SubscribeState::Init,
         })
     }
 
@@ -144,10 +127,13 @@ pub enum OpKind {
 
     PeerGet(Id),
 
+    ReplicaUpdate(Id, Vec<ReplicaInst>),
+    ReplicaGet(Id),
+
     ObjectGet(Id, Signature),
     ObjectPut(Container),
 
-    Net(NetRequest, Vec<Peer>),
+    Net(NetRequestBody, Vec<Peer>),
 }
 
 impl core::fmt::Debug for OpKind {
@@ -167,6 +153,14 @@ impl core::fmt::Debug for OpKind {
 
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
 
+            Self::ReplicaGet(id) => f.debug_tuple("ReplicaGet").field(id).finish(),
+
+            Self::ReplicaUpdate(id, info) => f
+                .debug_tuple("ReplicaUpdate")
+                .field(id)
+                .field(info)
+                .finish(),
+
             Self::ObjectGet(id, sig) => f.debug_tuple("ObjectGet").field(id).field(sig).finish(),
             Self::ObjectPut(o) => f.debug_tuple("ObjectPut").field(o).finish(),
             Self::Net(req, peers) => f.debug_tuple("Net").field(req).field(peers).finish(),
@@ -174,7 +168,8 @@ impl core::fmt::Debug for OpKind {
     }
 }
 
-pub type UpdateFn = Box<dyn Fn(&mut Service) -> Result<Res, CoreError> + Send + 'static>;
+pub type UpdateFn =
+    Box<dyn Fn(&mut Service, &mut ServiceState) -> Result<Res, CoreError> + Send + 'static>;
 
 /// Basic engine response, used to construct higher-level functions
 #[derive(Clone, PartialEq, Debug)]
@@ -187,6 +182,7 @@ pub enum Res {
     Ids(Vec<Id>),
     Responses(HashMap<Id, NetResponse>),
     Sig(Signature),
+    Replicas(Vec<ReplicaInst>),
 }
 
 /// Core engine implementation providing primitive operations for the construction of RPCs
@@ -294,10 +290,18 @@ pub trait Engine: Sync + Send {
         }
     }
 
+    /// Store an object for the associated service
+    async fn replica_update(&self, id: Id, replicas: Vec<ReplicaInst>) -> Result<(), CoreError> {
+        match self.exec(OpKind::ReplicaUpdate(id, replicas)).await? {
+            Res::Id(_) => Ok(()),
+            _ => Err(CoreError::NotFound),
+        }
+    }
+
     /// Issue a network request to the specified peers
     async fn net_req(
         &self,
-        req: NetRequest,
+        req: NetRequestBody,
         peers: Vec<Peer>,
     ) -> Result<HashMap<Id, NetResponse>, CoreError> {
         match self.exec(OpKind::Net(req, peers)).await? {

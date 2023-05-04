@@ -83,7 +83,7 @@ impl PeerManager {
 
         // Write non-transient peers to store
         #[cfg(feature = "store")]
-        if ! peer.flags.contains(PeerFlags::TRANSIENT) {
+        if !peer.flags.contains(PeerFlags::TRANSIENT) {
             if let Err(e) = self.store.save_peer(&peer.info) {
                 error!("Error writing peer {} to db: {:?}", id, e);
             }

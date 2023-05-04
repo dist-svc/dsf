@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use crate::base::PageBody;
 use crate::crypto::{Crypto, Hash as _, SecKey as _};
-use crate::helpers::{print_bytes, parse_bytes_vec};
+use crate::helpers::{parse_bytes_vec, print_bytes};
 use crate::page::PageInfo;
 use crate::types::*;
 
@@ -53,7 +53,6 @@ impl<T: ImmutableData> core::fmt::Debug for Container<T> {
             false => d.field("body (cleartext)", &self.body_raw()),
         };
 
-        #[cfg(disabled)]
         match self.encrypted() {
             true => d.field("private_opts", &self.private_options_raw()),
             false => d.field("private_opts", &self.private_options_iter()),
@@ -155,8 +154,8 @@ impl<'de: 'a, 'a> serde::Deserialize<'de> for Container {
             where
                 E: serde::de::Error,
             {
-                let buff =
-                    parse_bytes_vec(v).map_err(|_e| serde::de::Error::custom("byte string decoding failed"))?;
+                let buff = parse_bytes_vec(v)
+                    .map_err(|_e| serde::de::Error::custom("byte string decoding failed"))?;
 
                 Container::try_from(buff)
                     .map_err(|_e| serde::de::Error::custom("decoding container"))
@@ -166,8 +165,8 @@ impl<'de: 'a, 'a> serde::Deserialize<'de> for Container {
             where
                 E: serde::de::Error,
             {
-                let buff =
-                parse_bytes_vec(v).map_err(|_e| serde::de::Error::custom("byte string decoding failed"))?;
+                let buff = parse_bytes_vec(v)
+                    .map_err(|_e| serde::de::Error::custom("byte string decoding failed"))?;
 
                 Container::try_from(buff)
                     .map(|c| c.to_owned())
@@ -283,7 +282,7 @@ impl<'a, T: ImmutableData> Container<T> {
 
     /// Iterate over private options
     /// NOTE: ONLY VALID FOR DECRYPTED OBJECTS
-    pub fn private_options_iter(&self) -> impl Iterator<Item = Options> + Clone + '_ {
+    pub fn private_options_iter(&self) -> OptionsIter<&[u8]> {
         let data = self.buff.as_ref();
         let n = offsets::BODY + self.header().data_len();
         let s = self.header().private_options_len();
@@ -621,7 +620,7 @@ impl<'a, T: ImmutableData> Container<T> {
 
         Ok((
             &buff[..self.header().data_len()],
-            &buff[self.header().private_options_offset()..][..self.header().private_options_len()],
+            &buff[self.header().data_len()..][..self.header().private_options_len()],
         ))
     }
 }

@@ -44,7 +44,7 @@ impl fmt::Debug for DateTime {
 impl fmt::Display for DateTime {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let u = Utc.timestamp_opt(self.0 as i64, 0);
-        write!(f, "{:?}", u)
+        write!(f, "{:?}", u.single().unwrap())
     }
 }
 

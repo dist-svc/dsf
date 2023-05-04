@@ -109,6 +109,10 @@ pub enum ServiceCommands {
     SetKey(SetKeyOptions),
 
     #[clap()]
+    /// Fetch the encryption/decryption key for a given service
+    GetKey(ServiceIdentifier),
+
+    #[clap()]
     /// Remove a service from the service list (and database if specified)
     Remove(RemoveOptions),
 }

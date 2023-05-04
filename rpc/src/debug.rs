@@ -2,16 +2,19 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
 use crate::ServiceIdentifier;
+use dsf_core::types::Id;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Subcommand)]
 pub enum DebugCommands {
     /// Datastore debug commands
     #[clap(subcommand)]
-    Datastore(DatastoreCommands),
+    Store(DatastoreCommands),
 
-    /// Datastore debug commands
-    #[clap(subcommand)]
-    Dht(DhtCommands),
+    /// Search for entries in the DHT
+    Search {
+        #[clap()]
+        id: Id,
+    },
 
     /// Force an update of the daemon
     Update,

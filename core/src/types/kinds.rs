@@ -3,6 +3,7 @@ use core::convert::TryFrom;
 use encdec::{DecodeOwned, Encode};
 use modular_bitfield::prelude::*;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use strum::{Display, EnumString};
 
 use crate::error::Error;
 
@@ -28,6 +29,43 @@ pub struct Kind {
     pub base_kind: BaseKind,
     /// Sub object type
     pub sub_kind: SubKind,
+}
+
+impl core::fmt::Display for Kind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let index = self.sub_kind.index();
+        let app = self.sub_kind.app();
+
+        write!(f, "{} ", self.base_kind)?;
+
+        match self.base_kind {
+            BaseKind::Page => match PageKind::try_from(index) {
+                Ok(k) if !app => write!(f, "({k})")?,
+                _ => write!(f, "({index:02x})")?,
+            },
+            BaseKind::Block => match DataKind::try_from(index) {
+                Ok(k) if !app => write!(f, "({k})")?,
+                _ => write!(f, "({index:02x})")?,
+            },
+            BaseKind::Request => match RequestKind::try_from(index) {
+                Ok(k) if !app => write!(f, "({k})")?,
+                _ => write!(f, "({index:02x})")?,
+            },
+            BaseKind::Response => match ResponseKind::try_from(index) {
+                Ok(k) if !app => write!(f, "({k})")?,
+                _ => write!(f, "({index:02x})")?,
+            },
+        }
+
+        Ok(())
+    }
+}
+
+pub enum Kind2 {
+    Page(PageKind),
+    Data(DataKind),
+    Request(RequestKind),
+    Response(ResponseKind),
 }
 
 impl From<Kind> for u16 {
@@ -80,7 +118,7 @@ impl DecodeOwned for Kind {
 }
 
 /// [BaseKind] differentiates between pages, blocks, and messages
-#[derive(Copy, Clone, PartialEq, Debug, strum::Display, strum::EnumString, TryFromPrimitive)]
+#[derive(Copy, Clone, PartialEq, Debug, Display, EnumString, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
@@ -178,8 +216,8 @@ pub enum KindError {
     Copy,
     IntoPrimitive,
     TryFromPrimitive,
-    strum::Display,
-    strum::EnumString,
+    Display,
+    EnumString,
     strum::EnumVariantNames,
 )]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -236,10 +274,10 @@ impl From<PageKind> for Kind {
 }
 
 /// [RequestKind] enumerates request message types
-#[derive(BitfieldSpecifier, Copy, Clone, PartialEq, Debug, strum::EnumString, strum::Display)]
+#[derive(Copy, Clone, PartialEq, Debug, EnumString, Display, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[bits = 8]
+#[repr(u8)]
 pub enum RequestKind {
     Hello = 0x00,
     Ping = 0x01,
@@ -273,15 +311,15 @@ impl TryFrom<Kind> for RequestKind {
             return Err(KindError::InvalidKind(value));
         }
 
-        RequestKind::from_bytes(value.sub_kind.index()).map_err(|_| KindError::Unrecognized(value))
+        RequestKind::try_from(value.sub_kind.index()).map_err(|_| KindError::Unrecognized(value))
     }
 }
 
 /// [RequestKind] enumerates response message types
-#[derive(BitfieldSpecifier, Copy, Clone, PartialEq, Debug, strum::EnumString, strum::Display)]
+#[derive(Copy, Clone, PartialEq, Debug, EnumString, Display, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[bits = 8]
+#[repr(u8)]
 pub enum ResponseKind {
     Status = 0x00,
     NoResult = 0x01,
@@ -307,18 +345,20 @@ impl TryFrom<Kind> for ResponseKind {
             return Err(KindError::InvalidKind(value));
         }
 
-        ResponseKind::from_bytes(value.sub_kind.index()).map_err(|_| KindError::Unrecognized(value))
+        ResponseKind::try_from(value.sub_kind.index()).map_err(|_| KindError::Unrecognized(value))
     }
 }
 
 /// [DataKind] enumerates data object types
-#[derive(BitfieldSpecifier, Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, EnumString, Display, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[bits = 8]
-
+#[repr(u8)]
 pub enum DataKind {
+    /// Generic data object
     Generic = 0x00,
+    /// Name service data object
+    Name = 0x01,
 }
 
 impl From<DataKind> for Kind {
@@ -338,7 +378,7 @@ impl TryFrom<Kind> for DataKind {
             return Err(KindError::InvalidKind(value));
         }
 
-        DataKind::from_bytes(value.sub_kind.index()).map_err(|_| KindError::Unrecognized(value))
+        DataKind::try_from(value.sub_kind.index()).map_err(|_| KindError::Unrecognized(value))
     }
 }
 

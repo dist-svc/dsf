@@ -269,8 +269,6 @@ where
         // TODO: filter / update issued and expiry if included?
         let b = b.public_options(self.public_options.iter())?;
 
-        debug!("Builder: {:?}", b);
-
         // Sign generated object
         let c = self.sign(b)?;
 

@@ -66,11 +66,11 @@ where
         let entry = DhtEntry::new(from.into(), peer);
 
         // Pass to DHT
-        let handled = match self.dht_mut().handle_resp(req_id, &entry, &resp){
+        let handled = match self.dht_mut().handle_resp(req_id, &entry, &resp) {
             Ok(v) => v,
             Err(e) => {
                 error!("DHT handle_resp error: {:?}", e);
-                return Ok(false)
+                return Ok(false);
             }
         };
 

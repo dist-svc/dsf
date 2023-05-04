@@ -21,8 +21,7 @@ use crate::{
         Dsf,
     },
     error::{CoreError, Error},
-    rpc::lookup::PeerRegistry,
-    rpc::{locate::ServiceRegistry, ns::NameService},
+    rpc::{locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService, subscribe::PubSub},
 };
 
 // Generic / shared operation types
@@ -49,9 +48,6 @@ pub mod push;
 
 // Locate an existing service
 pub mod locate;
-
-// Query for data from a service
-pub mod query;
 
 // Subscribe to a service
 pub mod subscribe;
@@ -126,7 +122,8 @@ where
                 }
             }
             RequestKind::Service(ServiceCommands::List(_options)) => {
-                let services = self.services().list();
+                let mut services = self.services().list();
+                services.sort_by_key(|s| s.index);
                 // TODO: clear keys unless specifically requested
                 Some(ResponseKind::Services(services))
             }
@@ -151,7 +148,6 @@ where
                         let s = self.services().update_inst(&id, |s| {
                             s.service.set_secret_key(options.secret_key.clone());
                         });
-                        // TODO: Clear keys unless specifically requested
                         match s {
                             Some(s) => Some(ResponseKind::Services(vec![s])),
                             None => Some(ResponseKind::None),
@@ -225,78 +221,87 @@ where
             }
             RequestKind::Service(ServiceCommands::Create(opts)) => RpcKind::create(opts),
             RequestKind::Service(ServiceCommands::Register(opts)) => RpcKind::register(opts),
-            //RequestKind::Service(ServiceCommands::Locate(opts)) => RpcKind::locate(opts),
-            RequestKind::Service(ServiceCommands::Locate(opts)) => {
-                let exec = self.exec();
-
-                tokio::task::spawn(async move {
-                    debug!("Starting async locate create");
-                    let i = match exec.service_locate(opts).await {
-                        Ok(i) => ResponseKind::Located(vec![i]),
-                        Err(e) => ResponseKind::Error(e),
-                    };
-                    debug!("Async service locate result: {:?}", i);
-                    if let Err(e) = done.clone().try_send(Response::new(req_id, i)) {
-                        error!("Failed to send RPC response: {:?}", e);
-                    }
-                });
-                return Ok(());
-            }
-            RequestKind::Service(ServiceCommands::Subscribe(opts)) => RpcKind::subscribe(opts),
             RequestKind::Service(ServiceCommands::Discover(opts)) => RpcKind::discover(opts),
             RequestKind::Data(DataCommands::Publish(opts)) => RpcKind::publish(opts),
-            //RequestKind::Data(DataCommands::Query(options)) => unimplemented!(),
-            //RequestKind::Debug(DebugCommands::Update) => self.update(true).await.map(|_| ResponseKind::None)?,
-            RequestKind::Ns(NsCommands::Create(opts)) => {
+            RequestKind::Service(c) => {
                 let exec = self.exec();
 
                 tokio::task::spawn(async move {
-                    debug!("Starting async ns create");
-                    let i = match exec.ns_create(opts).await {
-                        Ok(i) => ResponseKind::Service(i),
+                    debug!("Starting async service rpc: {:?}", c);
+                    let r = match c {
+                        ServiceCommands::Locate(opts) => exec
+                            .service_locate(opts)
+                            .await
+                            .map(|v| ResponseKind::Located(vec![v])),
+                        ServiceCommands::Subscribe(opts) => {
+                            exec.subscribe(opts).await.map(ResponseKind::Subscribed)
+                        }
+                        _ => unimplemented!(),
+                    };
+
+                    debug!("Async service rpc result: {:?}", r);
+                    let r = match r {
+                        Ok(r) => r,
                         Err(e) => ResponseKind::Error(e),
                     };
-                    warn!("Async ns create result: {:?}", i);
-                    if let Err(e) = done.clone().try_send(Response::new(req_id, i)) {
+
+                    if let Err(e) = done.clone().try_send(Response::new(req_id, r)) {
                         error!("Failed to send RPC response: {:?}", e);
                     }
-                    warn!("Async ns create response sent");
                 });
                 return Ok(());
             }
-            RequestKind::Ns(NsCommands::Register(opts)) => {
+
+            //RequestKind::Data(DataCommands::Query(options)) => unimplemented!(),
+            RequestKind::Ns(c) => {
                 let exec = self.exec();
+
                 tokio::task::spawn(async move {
-                    debug!("Starting async ns register");
-                    let i = match exec.ns_register(opts).await {
-                        Ok(i) => ResponseKind::Ns(i),
-                        Err(e) => ResponseKind::Error(e),
+                    debug!("Starting NS op: {:?}", c);
+                    // Run NS operation
+                    let r = match c {
+                        NsCommands::Create(opts) => {
+                            exec.ns_create(opts).await.map(ResponseKind::Service)
+                        }
+                        NsCommands::Register(opts) => {
+                            exec.ns_register(opts).await.map(ResponseKind::Ns)
+                        }
+                        NsCommands::Search(opts) => {
+                            exec.ns_search(opts).await.map(ResponseKind::Located)
+                        }
                     };
-                    warn!("Async ns register result: {:?}", i);
-                    if let Err(e) = done.clone().try_send(Response::new(req_id, i)) {
+                    let r = match r {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error!("NS operation failed: {:?}", e);
+                            ResponseKind::Error(e)
+                        }
+                    };
+                    if let Err(e) = done.clone().try_send(Response::new(req_id, r)) {
                         error!("Failed to send RPC response: {:?}", e);
                     }
-                    warn!("Async ns register response sent");
-                });
-                return Ok(());
-            }
-            RequestKind::Ns(NsCommands::Search(opts)) => {
-                let exec = self.exec();
-                tokio::task::spawn(async move {
-                    debug!("Starting async ns search");
-                    let i = match exec.ns_search(opts).await {
-                        Ok(s) => ResponseKind::Located(s),
-                        Err(e) => ResponseKind::Error(e),
-                    };
-                    warn!("Async ns search result: {:?}", i);
-                    if let Err(e) = done.clone().try_send(Response::new(req_id, i)) {
-                        error!("Failed to send RPC response: {:?}", e);
-                    }
-                    warn!("Async ns search response sent");
                 });
                 return Ok(());
             }
             RequestKind::Debug(DebugCommands::Bootstrap) => RpcKind::bootstrap(()),
+            RequestKind::Debug(c) => {
+                let exec = self.exec();
+
+                tokio::task::spawn(async move {
+                    debug!("Starting async debug task");
+                    let r = match c {
+                        DebugCommands::Search { id } => match exec.dht_search(id).await {
+                            Ok(i) => ResponseKind::Pages(i),
+                            Err(e) => ResponseKind::Error(e),
+                        },
+                        _ => ResponseKind::Error(DsfError::Unimplemented),
+                    };
+                    if let Err(e) = done.clone().try_send(Response::new(req_id, r)) {
+                        error!("Failed to send RPC response: {:?}", e);
+                    }
+                });
+                return Ok(());
+            }
             _ => {
                 error!("RPC operation {:?} unimplemented", req.kind());
                 return Ok(());
@@ -336,9 +341,6 @@ where
                 RpcKind::Connect(connect) => {
                     self.poll_rpc_connect(*req_id, connect, ctx, done.clone())?
                 }
-                RpcKind::Locate(locate) => {
-                    self.poll_rpc_locate(*req_id, locate, ctx, done.clone())?
-                }
                 RpcKind::Register(register) => {
                     self.poll_rpc_register(*req_id, register, ctx, done.clone())?
                 }
@@ -353,9 +355,6 @@ where
                 }
                 RpcKind::Publish(publish) => {
                     self.poll_rpc_publish(*req_id, publish, ctx, done.clone())?
-                }
-                RpcKind::Subscribe(subscribe) => {
-                    self.poll_rpc_subscribe(*req_id, subscribe, ctx, done.clone())?
                 }
                 _ => {
                     error!("Unsuported async RPC: {}", kind);
@@ -498,7 +497,7 @@ where
                 OpKind::ServiceUpdate(id, f) => {
                     let r = self
                         .services()
-                        .with(&id, |inst| f(&mut inst.service))
+                        .with(&id, |inst| f(&mut inst.service, &mut inst.state))
                         .unwrap_or(Err(CoreError::NotFound));
 
                     if let Err(e) = op.done.try_send(r) {
@@ -596,8 +595,41 @@ where
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
-                OpKind::Net(ref req, ref peers) => {
-                    let s = self.net_op(peers.clone(), req.clone());
+                OpKind::ReplicaGet(id) => {
+                    let r = match self.replicas().find(&id) {
+                        Ok(v) => Ok(Res::Replicas(v)),
+                        Err(e) => {
+                            error!("Failed to locate replicas for service: {:?}", id);
+                            Err(e)
+                        }
+                    };
+                    if let Err(e) = op.done.try_send(r) {
+                        error!("Failed to send operation response: {:?}", e);
+                    };
+                }
+                OpKind::ReplicaUpdate(ref id, replicas) => {
+                    let resp = Ok(Res::Id(id.clone()));
+                    for r in replicas {
+                        match self
+                            .replicas()
+                            .create_or_update(&id, &r.info.peer_id, &r.page)
+                        {
+                            Ok(v) => v,
+                            Err(e) => {
+                                // TODO: propagate error?
+                                error!("Failed to update replica: {:?}", e);
+                            }
+                        }
+                    }
+                    if let Err(e) = op.done.try_send(resp) {
+                        error!("Failed to send operation response: {:?}", e);
+                    };
+                }
+                OpKind::Net(ref body, ref peers) => {
+                    let req =
+                        NetRequest::new(self.id(), rand::random(), body.clone(), Flags::default());
+
+                    let s = self.net_op(peers.clone(), req);
                     op.state = OpState::Net(s);
                     self.ops.insert(op_id, op);
                 }

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use dsf_core::helpers::{parse_bytes, print_bytes, parse_bytes_vec};
+use dsf_core::helpers::{parse_bytes, parse_bytes_vec, print_bytes};
 use serde::{de, de::Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -47,8 +47,7 @@ impl<'de> Deserialize<'de> for Data {
             where
                 E: de::Error,
             {
-                let s = parse_bytes_vec(value)
-                    .map_err(|_e| de::Error::custom("decoding bytes"))?;
+                let s = parse_bytes_vec(value).map_err(|_e| de::Error::custom("decoding bytes"))?;
 
                 Ok(Data(s))
             }

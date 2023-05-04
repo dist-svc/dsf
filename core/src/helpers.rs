@@ -7,10 +7,13 @@ pub fn print_bytes(data: &[u8]) -> String {
 }
 
 /// Parse bytes from string encoding to fixed size array
-pub fn parse_bytes<const N: usize>(value: &str, data: &mut [u8; N]) -> Result<(), bs58::decode::Error> {
+pub fn parse_bytes<const N: usize>(
+    value: &str,
+    data: &mut [u8; N],
+) -> Result<(), bs58::decode::Error> {
     let n = bs58::decode(value).into(data)?;
     if n != N {
-        return Err(bs58::decode::Error::BufferTooSmall)
+        return Err(bs58::decode::Error::BufferTooSmall);
     }
     Ok(())
 }

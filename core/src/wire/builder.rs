@@ -365,7 +365,7 @@ impl<T: MutableData> Builder<SetPrivateOptions, T> {
 
         self.header_mut().set_private_options_len(o.len());
 
-        debug!(
+        trace!(
             "Add raw private options, {} bytes, new index: {}",
             o.len(),
             self.n
@@ -390,7 +390,7 @@ impl<T: MutableData> Builder<Encrypt, T> {
     ) -> Result<Builder<SetPublicOptions, T>, Error> {
         // TODO: skip if body + private options are empty...
 
-        debug!("SK body encrypt with key: {}", secret_key);
+        trace!("SK body encrypt with key: {}", secret_key);
 
         // Calculate area to be encrypted
         let o = HEADER_LEN + ID_LEN;
@@ -510,7 +510,7 @@ impl<T: MutableData> Builder<SetPublicOptions, T> {
     ) -> Result<Builder<SetPublicOptions, T>, Error> {
         let b = self.buf.as_mut();
 
-        debug!("Public options: {:?}", options);
+        trace!("Public options: {:?}", options);
 
         let n = Options::encode_iter(options.into_iter(), &mut b[self.n..])?;
         self.n += n;
@@ -519,7 +519,7 @@ impl<T: MutableData> Builder<SetPublicOptions, T> {
 
         self.header_mut().set_public_options_len(c);
 
-        debug!("Add public options {} bytes, new index: {}", n, self.n);
+        trace!("Add public options {} bytes, new index: {}", n, self.n);
 
         Ok(self)
     }

@@ -6,8 +6,8 @@ use encdec::Decode;
 
 use super::{OptionString, Options, OPTION_HEADER_LEN};
 use crate::{
-    types::{Address, DateTime, Id, ImmutableData, PublicKey, Signature},
     helpers::ParseBytesError,
+    types::{Address, DateTime, Id, ImmutableData, PublicKey, Signature},
 };
 
 /// Iterator for decoding options from the provided buffer
@@ -260,13 +260,24 @@ impl FromStr for Options {
 impl Display for Options {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Options::PubKey(o) => write!(f, "pub_key:{}", o),
-            Options::Name(o) => write!(f, "name:{}", o),
-            Options::Kind(o) => write!(f, "kind:{}", o),
-            Options::Building(o) => write!(f, "name:{}", o),
-            Options::Room(o) => write!(f, "kind:{}", o),
-            _ => write!(f, "{:?}", self),
+            Options::PubKey(o) => {
+                write!(f, "pub_key: ",)?;
+                o.fmt(f)?;
+            }
+            Options::PrevSig(o) => {
+                write!(f, "prev_sig: ")?;
+                o.fmt(f)?;
+            }
+            Options::Name(o) => write!(f, "name: {}", o)?,
+            Options::Kind(o) => write!(f, "kind: {}", o)?,
+            Options::Building(o) => write!(f, "building: {}", o)?,
+            Options::Room(o) => write!(f, "room: {}", o)?,
+            Options::Issued(t) => write!(f, "issued: {}", t)?,
+            Options::Expiry(t) => write!(f, "expiry: {}", t)?,
+            _ => write!(f, "{:?}", self)?,
         }
+
+        Ok(())
     }
 }
 

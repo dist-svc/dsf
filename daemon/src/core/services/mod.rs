@@ -8,7 +8,7 @@ use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
 use dsf_core::wire::Container;
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 
 use dsf_core::options::Options;
 use dsf_core::prelude::*;
@@ -173,14 +173,21 @@ impl ServiceManager {
     where
         F: FnMut(&mut ServiceInst),
     {
-        match self.services.get_mut(id) {
-            Some(svc) => {
-                (f)(svc);
-                svc.changed = true;
-                Some(svc.info())
-            }
-            None => None,
-        }
+        let svc = match self.services.get_mut(id) {
+            Some(s) => s,
+            None => return None,
+        };
+
+        (f)(svc);
+
+        svc.changed = true;
+        let info = svc.info();
+
+        drop(svc);
+
+        let _ = self.sync();
+
+        Some(info)
     }
 
     pub fn validate_pages(&mut self, id: &Id, pages: &[Container]) -> Result<(), DsfError> {
@@ -245,12 +252,16 @@ impl ServiceManager {
 
         #[cfg(feature = "store")]
         if let Some(p) = &inst.primary_page {
-            self.store.save_object(p).unwrap();
+            if let Err(e) = self.store.save_object(p) {
+                error!("Failed to write primary page to store: {:?}", e);
+            }
         }
 
         #[cfg(feature = "store")]
         if let Some(p) = &inst.replica_page {
-            self.store.save_object(p).unwrap();
+            if let Err(e) = self.store.save_object(p) {
+                error!("Failed to write replica page to store: {:?}", e);
+            }
         }
     }
 
@@ -306,7 +317,24 @@ impl ServiceManager {
             let keys = Keys::new(i.public_key.clone());
 
             let primary_page = match i.primary_page {
-                Some(p) => self.store.load_object(&p, &keys).unwrap().unwrap(),
+                Some(p) => {
+                    debug!("Loading page {:#} for service {:#}", p, i.id);
+
+                    match self.store.load_object(&p, &keys) {
+                        Ok(Some(p)) => p,
+                        Ok(None) => {
+                            warn!("Missing page {:#} for service {:#}", p, i.id);
+                            continue;
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to load page {:#} for service {:#}: {:?}",
+                                p, i.id, e
+                            );
+                            continue;
+                        }
+                    }
+                }
                 None => {
                     trace!("No primary page for service: {:?}", i);
                     continue;

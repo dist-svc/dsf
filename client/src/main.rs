@@ -7,8 +7,8 @@ use prettytable::{row, Table};
 use simplelog::{LevelFilter, TermLogger};
 
 use dsf_client::{Client, Options};
-use dsf_core::types::Id;
-use dsf_rpc::{PeerInfo, RequestKind, ResponseKind, ServiceInfo};
+use dsf_core::{helpers::print_bytes, prelude::MaybeEncrypted, types::Id};
+use dsf_rpc::{DataInfo, PeerInfo, RequestKind, ResponseKind, ServiceInfo};
 
 #[derive(Parser)]
 #[clap(
@@ -21,6 +21,10 @@ struct Config {
 
     #[clap(flatten)]
     options: Options,
+
+    /// Disable field truncation during display
+    #[clap(long)]
+    no_trunc: bool,
 
     #[clap(long = "log-level", default_value = "info")]
     /// Enable verbose logging
@@ -98,7 +102,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     match res {
         Ok(resp) => {
-            handle_response(resp);
+            handle_response(resp, opts.no_trunc);
         }
         Err(e) => {
             error!("error: {:?}", e);
@@ -108,26 +112,24 @@ async fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn handle_response(resp: ResponseKind) {
+fn handle_response(resp: ResponseKind, no_trunc: bool) {
     match resp {
         ResponseKind::Status(status) => {
             println!("Status: {:?}", status);
         }
         ResponseKind::Service(info) => {
             println!("Created / Located service");
-            print_services(&[info]);
+            print_services(&[info], no_trunc);
         }
         ResponseKind::Services(services) => {
-            print_services(&services);
+            print_services(&services, no_trunc);
         }
         ResponseKind::Peers(peers) => {
-            print_peers(&peers);
+            print_peers(&peers, no_trunc);
         }
         ResponseKind::Data(data) => {
             println!("Data:");
-            for d in &data {
-                println!("{:+}", d);
-            }
+            print_objects(&data, no_trunc);
         }
         ResponseKind::Error(e) => error!("{:?}", e),
         ResponseKind::Unrecognised => warn!("command not yet implemented"),
@@ -140,7 +142,7 @@ fn systemtime_to_humantime(s: SystemTime) -> String {
     chrono_humanize::HumanTime::from(v).to_string()
 }
 
-fn print_peers(peers: &[(Id, PeerInfo)]) {
+fn print_peers(peers: &[(Id, PeerInfo)], no_trunc: bool) {
     if peers.len() == 0 {
         warn!("No peers found");
         return;
@@ -155,8 +157,13 @@ fn print_peers(peers: &[(Id, PeerInfo)]) {
     table.add_row(row![b => "Peer ID", "Index", "State", "Address(es)", "Seen", "Sent", "Received", "Blocked"]);
 
     for (_id, p) in peers {
+        let id = match no_trunc {
+            true => format!("{}", p.id),
+            false => format!("{:#}", p.id),
+        };
+
         table.add_row(row![
-            p.id.to_string(),
+            id,
             p.index.to_string(),
             p.state.to_string(),
             format!("{}", SocketAddr::from(*p.address())),
@@ -173,7 +180,7 @@ fn print_peers(peers: &[(Id, PeerInfo)]) {
     table.printstd();
 }
 
-fn print_services(services: &[ServiceInfo]) {
+fn print_services(services: &[ServiceInfo], no_trunc: bool) {
     if services.len() == 0 {
         warn!("No services found");
         return;
@@ -188,13 +195,15 @@ fn print_services(services: &[ServiceInfo]) {
     table.add_row(row![b => "Service ID", "Index", "State", "Updated", "PublicKey", "PrivateKey", "SecretKey", "Subscribers", "Replicas", "Primary Page"]);
 
     for s in services {
-        let pk = s.public_key.to_string();
-        let public_key = format!("{}..{}", &pk[..6], &pk[pk.len()-6..]);
+        let pk = match no_trunc {
+            true => format!("{}", s.public_key),
+            false => format!("{:#}", s.public_key),
+        };
 
         let primary_page = match s.primary_page.as_ref() {
-            Some(p) => {
-                let p = p.to_string();
-                format!("{}..{}", &p[..6], &p[p.len()-6..])
+            Some(p) => match no_trunc {
+                true => format!("{}", p),
+                false => format!("{:#}", p),
             },
             None => format!("None"),
         };
@@ -206,7 +215,7 @@ fn print_services(services: &[ServiceInfo]) {
             s.last_updated
                 .map(systemtime_to_humantime)
                 .unwrap_or("Never".to_string()),
-            public_key,
+            pk,
             s.private_key
                 .as_ref()
                 .map(|_| "True".to_string())
@@ -223,4 +232,60 @@ fn print_services(services: &[ServiceInfo]) {
 
     // Print the table to stdout
     table.printstd();
+}
+
+fn print_objects(objects: &[DataInfo], no_trunc: bool) {
+    if objects.len() == 0 {
+        warn!("No objects found");
+        return;
+    }
+
+    for o in objects {
+        println!("index: {}", o.index);
+
+        println!("  - kind: {}", o.kind);
+
+        let body = match &o.body {
+            MaybeEncrypted::Cleartext(v) if v.len() > 0 => print_bytes(v),
+            MaybeEncrypted::Encrypted(_) => "Encrypted".to_string(),
+            _ => "Empty".to_string(),
+        };
+        println!("  - body: {}", body);
+
+        print!("  - private_options: ");
+        match &o.private_options {
+            MaybeEncrypted::None => println!("Empty"),
+            MaybeEncrypted::Cleartext(options) => {
+                println!("");
+                for o in options {
+                    if no_trunc {
+                        println!("    - {o}");
+                    } else {
+                        println!("    - {o:#}");
+                    }
+                }
+            }
+            MaybeEncrypted::Encrypted(_) => println!("Encrypted"),
+        };
+
+        print!("  - public_options: ");
+        if o.public_options.len() == 0 {
+            println!("Empty")
+        } else {
+            println!("");
+            for o in &o.public_options {
+                if no_trunc {
+                    println!("    - {o}");
+                } else {
+                    println!("    - {o:#}");
+                }
+            }
+        }
+
+        if no_trunc {
+            println!("  - signature: {}", o.signature);
+        } else {
+            println!("  - signature: {:#}", o.signature);
+        }
+    }
 }

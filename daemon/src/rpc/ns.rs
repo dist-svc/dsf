@@ -17,7 +17,7 @@ use dsf_core::prelude::{DsfError, Options, PageInfo};
 use dsf_core::service::{
     DataOptions, Publisher, Registry, ServiceBuilder, TertiaryData, TertiaryLink, TertiaryOptions,
 };
-use dsf_core::types::{CryptoHash, DateTime, Flags, Id, PageKind};
+use dsf_core::types::{CryptoHash, DataKind, DateTime, Flags, Id, PageKind};
 
 use dsf_rpc::{
     DataInfo, LocateInfo, LocateOptions, NsCreateOptions, NsRegisterInfo, NsRegisterOptions,
@@ -283,13 +283,15 @@ impl<T: Engine> NameService for T {
         let res = self
             .service_update(
                 ns.id(),
-                Box::new(move |s| {
+                Box::new(move |s, _| {
                     // First, create a data block for the new registration
                     let (_, d) = s.publish_data_buff::<TertiaryData>(DataOptions {
-                        data_kind: PageKind::Name.into(),
+                        data_kind: DataKind::Name as u8,
                         body: body.clone(),
-                        issued: Some(issued.clone()),
-                        public_options: &[Options::expiry(expiry.clone())],
+                        public_options: &[
+                            Options::issued(issued.clone()),
+                            Options::expiry(expiry.clone()),
+                        ],
                         ..Default::default()
                     })?;
 
@@ -360,7 +362,7 @@ mod test {
 
     use dsf_core::options::{Filters, Options};
     use dsf_core::page::ServiceLink;
-    use dsf_rpc::ServiceInfo;
+    use dsf_rpc::{ServiceInfo, ServiceState};
     use futures::future;
 
     use super::*;
@@ -463,7 +465,10 @@ mod test {
             }),
             // Attempt NS registration
             Box::new(|op, ns, _t| match op {
-                OpKind::ServiceUpdate(id, f) if id == ns.id() => f(ns),
+                OpKind::ServiceUpdate(id, f) if id == ns.id() => {
+                    let mut state = ServiceState::Created;
+                    f(ns, &mut state)
+                }
                 _ => panic!(
                     "Unexpected operation: {:?}, expected update {}",
                     op,

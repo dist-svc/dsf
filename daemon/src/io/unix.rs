@@ -1,13 +1,11 @@
 use crate::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use std::io;
-use std::pin::Pin;
+use std::{collections::HashMap, io, os::unix::fs::PermissionsExt, pin::Pin};
 
 use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::select;
 use futures::task::{Context, Poll};
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -115,6 +113,16 @@ impl Unix {
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path)?;
         let mut index = 0;
+
+        // Setup socket permissions
+        if let Ok(mut perms) = std::fs::metadata(&path).map(|p| p.permissions()) {
+            // +RWX for running user and group
+            perms.set_mode(0o770);
+            // Write back permission
+            if let Err(e) = std::fs::set_permissions(&path, perms) {
+                warn!("Failed to set unix socket permissions: {:?}", e);
+            }
+        }
 
         let connections = Arc::new(Mutex::new(HashMap::new()));
         let c = connections.clone();

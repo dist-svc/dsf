@@ -1,16 +1,12 @@
 //! Wire provides a container type to map byte data to fixed fields (and vice versa)
 //! to support wire encoding and decoding.
 
-use core::ops::DerefMut;
-
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use encdec::DecodeExt;
 use pretty_hex::*;
 
-use crate::base::MaybeEncrypted;
-use crate::crypto::{Crypto, Hash as _, PubKey as _, SecKey as _};
+use crate::crypto::{Crypto, Hash as _, PubKey as _};
 use crate::error::Error;
 use crate::options::Options;
 use crate::types::*;
@@ -243,58 +239,6 @@ impl<'a, T: MutableData> Container<T> {
         // Return verified container
         Ok(container)
     }
-}
-
-/// Helper to decrypt optionally encrypted fields
-pub(crate) fn decrypt(
-    sk: &SecretKey,
-    body: &mut MaybeEncrypted,
-    private_opts: &mut MaybeEncrypted<Vec<Options>>,
-    tag: Option<&SecretMeta>,
-) -> Result<(), Error> {
-    // Check we have a tag
-    let tag = match tag {
-        Some(t) => t,
-        None => return Err(Error::Unknown),
-    };
-
-    // Build cyphertext
-    let mut cyphertext: Vec<u8> = vec![];
-
-    let body_len = match body {
-        MaybeEncrypted::Cleartext(_) => return Err(Error::Unknown),
-        MaybeEncrypted::None => 0,
-        MaybeEncrypted::Encrypted(e) => {
-            cyphertext.extend(e.iter());
-            e.len()
-        }
-    };
-
-    let private_opt_len = match private_opts {
-        MaybeEncrypted::Cleartext(_) => return Err(Error::Unknown),
-        MaybeEncrypted::None => 0,
-        MaybeEncrypted::Encrypted(e) => {
-            cyphertext.extend(e.iter());
-            e.len()
-        }
-    };
-
-    // Perform decryption
-    let _n = Crypto::sk_decrypt(sk, tag, None, cyphertext.deref_mut())
-        .map_err(|_e| Error::InvalidSignature)?;
-
-    // Write-back decrypted data
-    if body_len > 0 {
-        *body = MaybeEncrypted::Cleartext(cyphertext[..body_len].to_vec());
-    }
-
-    if private_opt_len > 0 {
-        let o = Options::decode_iter(&cyphertext[body_len..]);
-        let opts: Vec<_> = o.collect::<Result<Vec<Options>, Error>>()?;
-        *private_opts = MaybeEncrypted::Cleartext(opts);
-    }
-
-    Ok(())
 }
 
 impl<T: ImmutableData> Container<T> {

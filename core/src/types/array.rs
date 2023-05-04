@@ -19,7 +19,7 @@ use serde::{
 
 use crate::{
     error::Error,
-    helpers::{print_bytes, parse_bytes},
+    helpers::{parse_bytes, print_bytes},
 };
 
 /// Basic const-generic array type to override display etc.
@@ -193,24 +193,43 @@ impl<K, const N: usize> BitXor for Array<K, N> {
     }
 }
 
+/// [core::fmt::Display] impl for [Array] types
+///
+/// NOTE: this should not be used for serialisation as concatenation
+/// may be applied using `#` option
 impl<K, const N: usize> fmt::Display for Array<K, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let r: &[u8] = &self.0;
-        let encoded = print_bytes(r);
-        write!(f, "{}", encoded)?;
+        let e = print_bytes(&self.0);
+
+        if !f.alternate() {
+            write!(f, "{}", e)?;
+        } else {
+            write!(f, "{}..{}", &e[..6], &e[e.len() - 6..])?;
+        }
+
         Ok(())
     }
 }
 
+/// [core::fmt::Debug] impl for [Array] types
+///
+/// NOTE: this should not be used for serialisation as concatenation
+/// may be applied using `#` option
 impl<K, const N: usize> fmt::Debug for Array<K, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let r: &[u8] = &self.0;
-        let encoded = print_bytes(&r);
-        write!(f, "{}", encoded)?;
+        let e = print_bytes(&self.0);
+
+        if !f.alternate() {
+            write!(f, "{}", e)?;
+        } else {
+            write!(f, "{}..{}", &e[..6], &e[e.len() - 6..])?;
+        }
+
         Ok(())
     }
 }
 
+/// [core::fmt::UpperHex] impl for [Array] types
 impl<K, const N: usize> fmt::UpperHex for Array<K, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for i in 0..self.0.len() {
@@ -224,6 +243,7 @@ impl<K, const N: usize> fmt::UpperHex for Array<K, N> {
     }
 }
 
+/// [String] conversion for [Array] types, parses from b58 encoding
 impl<K, const N: usize> FromStr for Array<K, N> {
     type Err = bs58::decode::Error;
 
@@ -240,7 +260,8 @@ impl<K, const N: usize> serde::Serialize for Array<K, N> {
     where
         S: Serializer,
     {
-        serializer.collect_str(self)
+        let e = print_bytes(&self.0);
+        serializer.collect_str(&e)
     }
 }
 
