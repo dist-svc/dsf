@@ -436,6 +436,15 @@ where
         }
     }
 
+    fn resolve_service(&mut self, ident: &ServiceIdentifier) -> Option<Service> {
+        let id = match self.resolve_identifier(ident) {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+
+        self.services().find_copy(&id)
+    }
+
     pub fn poll_exec(&mut self, ctx: &mut Context) -> Result<(), Error> {
         // Check for incoming / new operations
         if let Poll::Ready(Some(mut op)) = self.op_rx.poll_next_unpin(ctx) {
@@ -446,8 +455,7 @@ where
             match op.kind {
                 OpKind::ServiceResolve(i) => {
                     let r = self
-                        .resolve_identifier(&i)
-                        .map(|id| self.services().find_copy(&id).unwrap())
+                        .resolve_service(&i)
                         .map(|s| Ok(Res::Service(s)))
                         .unwrap_or(Err(CoreError::NotFound));
 

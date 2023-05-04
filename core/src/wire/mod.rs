@@ -313,6 +313,7 @@ mod test {
     use crate::{
         keys::NullKeySource,
         prelude::{Body, Header},
+        crypto::SecKey,
     };
 
     fn setup() -> (Id, Keys) {
