@@ -1,3 +1,5 @@
+//! Create operation, create a new service and optionally register this in the database
+
 use std::convert::TryFrom;
 use std::future::Future;
 use std::pin::Pin;
@@ -27,214 +29,100 @@ use super::ops::*;
 
 pub enum CreateState {
     Init,
-    Pending(kad::dht::StoreFuture<Id, Peer>),
+    Pending,
     Done,
     Error,
 }
 
-pub struct CreateOp {
-    pub(crate) id: Option<Id>,
-    pub(crate) opts: CreateOptions,
-    pub(crate) state: CreateState,
+#[async_trait::async_trait]
+pub trait CreateService {
+    /// Create a new service
+    async fn service_create(&self, options: CreateOptions) -> Result<ServiceInfo, DsfError>;
 }
 
-pub struct CreateFuture {
-    rx: mpsc::Receiver<rpc::Response>,
-}
+#[async_trait::async_trait]
+impl<T: Engine> CreateService for T {
+    async fn service_create(&self, options: CreateOptions) -> Result<ServiceInfo, DsfError> {
+        info!("Creating service: {:?}", options);
+        let mut sb = ServiceBuilder::generic();
 
-impl Future for CreateFuture {
-    type Output = Result<ServiceInfo, DsfError>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        let resp = match self.rx.poll_next_unpin(ctx) {
-            Poll::Ready(Some(r)) => r,
-            _ => return Poll::Pending,
-        };
-
-        match resp.kind() {
-            rpc::ResponseKind::Service(r) => Poll::Ready(Ok(r)),
-            rpc::ResponseKind::Error(e) => Poll::Ready(Err(e.into())),
-            _ => Poll::Pending,
+        if let Some(kind) = options.page_kind {
+            sb = sb.kind(kind);
         }
-    }
-}
 
-impl<Net> Dsf<Net>
-where
-    Dsf<Net>: NetIf<Interface = Net>,
-{
-    /// Create (and publish) a new CreateOptions
-    pub fn create(&mut self, options: CreateOptions) -> Result<CreateFuture, DsfError> {
-        let req_id = rand::random();
+        // Attach a body if provided
+        if let Some(body) = &options.body {
+            sb = sb.body(body.clone());
+        } else {
+            sb = sb.body(vec![]);
+        }
 
-        let (tx, rx) = mpsc::channel(1);
+        // Append supplied public and private options
+        sb = sb.public_options(options.public_options.clone());
+        sb = sb.private_options(options.private_options.clone());
 
-        // Create connect object
-        let op = RpcOperation {
-            rpc_id: req_id,
-            kind: RpcKind::create(options),
-            done: tx,
-        };
+        // Append addresses as private options
+        sb = sb.private_options(
+            options
+                .addresses
+                .iter()
+                .map(|v| Options::address(v.clone()))
+                .collect(),
+        );
 
-        // Add to tracking
-        debug!("Adding RPC op {} to tracking", req_id);
-        self.rpc_ops.insert(req_id, op);
+        // TODO: append metadata
+        for _m in &options.metadata {
+            //TODO
+        }
 
-        Ok(CreateFuture { rx })
-    }
+        // If the service is not public, encrypt the object
+        if !options.public {
+            sb = sb.encrypt();
+        }
 
-    pub fn poll_rpc_create(
-        &mut self,
-        req_id: u64,
-        create_op: &mut CreateOp,
-        ctx: &mut Context,
-        mut done: mpsc::Sender<rpc::Response>,
-    ) -> Result<bool, DsfError> {
-        let CreateOp { id, opts, state } = create_op;
+        debug!("Generating service");
+        let mut service = sb.build().unwrap();
+        let id = service.id();
 
-        match state {
-            CreateState::Init => {
-                info!("Creating service: {:?}", opts);
-                let mut sb = ServiceBuilder::generic();
+        debug!("Generating service page");
+        // TODO: revisit this
+        let buff = vec![0u8; 1024];
+        let (_n, primary_page) = service.publish_primary(Default::default(), buff).unwrap();
 
-                if let Some(kind) = opts.page_kind {
-                    sb = sb.kind(kind);
-                }
+        // Add service to local store
+        debug!("Storing service information");
+        let mut info = self.svc_create(service, primary_page.clone()).await?;
 
-                // Attach a body if provided
-                if let Some(body) = &opts.body {
-                    sb = sb.body(body.clone());
-                } else {
-                    sb = sb.body(vec![]);
-                }
+        let pages = vec![primary_page];
 
-                // Append supplied public and private options
-                sb = sb.public_options(opts.public_options.clone());
-                sb = sb.private_options(opts.private_options.clone());
+        // TODO: option of generating replica information here / prior to registration
 
-                // Append addresses as private options
-                sb = sb.private_options(
-                    opts.addresses
-                        .iter()
-                        .map(|v| Options::address(v.clone()))
-                        .collect(),
-                );
-
-                // TODO: append metadata
-                for _m in &opts.metadata {
-                    //TODO
-                }
-
-                // If the service is not public, encrypt the object
-                if !opts.public {
-                    sb = sb.encrypt();
-                }
-
-                debug!("Generating service");
-                let mut service = sb.build().unwrap();
-                *id = Some(service.id());
-
-                debug!("Generating service page");
-                // TODO: revisit this
-                let buff = vec![0u8; 1024];
-                let (_n, primary_page) = service.publish_primary(Default::default(), buff).unwrap();
-
-                //primary_page.raw = Some(buff[..n].to_vec());
-
-                // Register service in local database
-                debug!("Storing service information");
-                self.services()
-                    .register(service, &primary_page, ServiceState::Created, None)
-                    .unwrap();
-
-                let pages = vec![primary_page];
-
-                // TODO: Write pages to storage
-
-                // Register to database if enabled
-                if opts.register {
-                    // Store pages
-                    let (store, _req_id) = match self.dht_mut().store(id.clone().unwrap(), pages) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            error!("DHT store error: {:?}", e);
-                            return Err(DsfError::Unknown);
-                        }
-                    };
-
-                    *state = CreateState::Pending(store);
-                    Ok(false)
-                } else {
-                    // Return info for newly created service
-                    let info = self
-                        .services()
-                        .update_inst(id.as_ref().unwrap(), |_s| ())
-                        .unwrap();
-
-                    let resp = rpc::Response::new(req_id, rpc::ResponseKind::Service(info));
-                    done.try_send(resp).unwrap();
-
-                    *state = CreateState::Done;
-
-                    Ok(false)
+        // Register via DHT if enabled
+        if options.register {
+            // Register service page in DHT
+            match self.dht_put(id.clone(), pages).await {
+                Ok(_) => match self
+                    .svc_update(
+                        id.clone(),
+                        Box::new(|_svc, state| {
+                            *state = ServiceState::Registered;
+                            Ok(Res::Ok)
+                        }),
+                    )
+                    .await
+                {
+                    Ok(_) => info.state = ServiceState::Registered,
+                    Err(e) => {
+                        error!("Failed to update service state: {:?}", e);
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to store service page in DHT: {:?}", e);
+                    // TODO: return error? attach to info? check from client?
                 }
             }
-            CreateState::Pending(store) => {
-                match store.poll_unpin(ctx) {
-                    Poll::Ready(Ok(v)) => {
-                        debug!("DHT store complete! {:?}", v);
-
-                        // Update service
-                        let info = self
-                            .services()
-                            .update_inst(id.as_ref().unwrap(), |s| {
-                                s.state = ServiceState::Registered;
-                                s.last_updated = Some(SystemTime::now());
-                            })
-                            .unwrap();
-
-                        // Return info
-                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Service(info));
-                        done.try_send(resp).unwrap();
-
-                        *state = CreateState::Done;
-
-                        Ok(false)
-                    }
-                    Poll::Ready(Err(kad::prelude::DhtError::NoPeers)) => {
-                        warn!("No peers for registration");
-
-                        let info = self
-                            .services()
-                            .update_inst(id.as_ref().unwrap(), |_s| ())
-                            .unwrap();
-
-                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Service(info));
-                        done.try_send(resp).unwrap();
-
-                        *state = CreateState::Done;
-
-                        Ok(false)
-                    }
-                    Poll::Ready(Err(e)) => {
-                        warn!("DHT store error: {:?}", e);
-
-                        let resp = rpc::Response::new(
-                            req_id,
-                            rpc::ResponseKind::Error(dsf_core::error::Error::Unknown),
-                        );
-
-                        done.try_send(resp).unwrap();
-
-                        *state = CreateState::Error;
-
-                        Ok(false)
-                    }
-                    _ => Ok(false),
-                }
-            }
-            CreateState::Done => Ok(true),
-            CreateState::Error => Ok(true),
         }
+
+        Ok(info)
     }
 }

@@ -42,7 +42,7 @@ impl<T: Engine> ServiceRegistry for T {
         info!("Locating service: {:?}", opts);
 
         // Check for existing / local information
-        let local = self.service_get(opts.id.clone()).await;
+        let local = self.svc_get(opts.id.clone()).await;
         let local = match local {
             Ok(i) => {
                 let page = match i.primary_page {
@@ -86,9 +86,7 @@ impl<T: Engine> ServiceRegistry for T {
         debug!("Adding service {} to store", opts.id);
 
         // Add located service to local tracking
-        let i = self
-            .service_register(opts.id.clone(), pages.clone())
-            .await?;
+        let i = self.svc_register(opts.id.clone(), pages.clone()).await?;
 
         debug!("Stored service: {:?}", i);
 

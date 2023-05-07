@@ -119,7 +119,8 @@ impl Store {
         sql_query(
             "CREATE TABLE services (
             service_id TEXT NOT NULL UNIQUE PRIMARY KEY, 
-            service_index TEGER NOT NULL, 
+            service_index INTEGER NOT NULL,
+            kind TEXT NOT NULL, 
             state TEXT NOT NULL, 
 
             public_key TEXT NOT NULL, 

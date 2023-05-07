@@ -158,5 +158,6 @@ impl PushOptions {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PublishInfo {
     pub index: u32,
-    //pub sig: Signature,
+    pub sig: Signature,
+    pub subscribers: usize,
 }

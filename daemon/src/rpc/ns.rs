@@ -29,7 +29,7 @@ use crate::error::Error;
 use crate::rpc::locate::ServiceRegistry;
 use crate::rpc::ops::Res;
 
-use super::ops::{Engine, OpKind, RpcKind};
+use super::ops::{Engine, OpKind};
 
 #[async_trait::async_trait]
 pub trait NameService {
@@ -76,7 +76,7 @@ impl<T: Engine> NameService for T {
         // Persist service and page to local store
         debug!("Storing service instance");
         let id = service.id();
-        match self.service_create(service, primary_page.clone()).await {
+        match self.svc_create(service, primary_page.clone()).await {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to create service: {:?}", e);
@@ -92,7 +92,7 @@ impl<T: Engine> NameService for T {
 
         debug!("Created NameService {}", id);
 
-        let info = self.service_get(id).await?;
+        let info = self.svc_get(id).await?;
 
         Ok(info)
     }
@@ -102,7 +102,7 @@ impl<T: Engine> NameService for T {
         debug!("Locating nameservice for search: {:?}", opts);
 
         // Resolve nameserver using provided options
-        let ns = self.service_resolve(opts.ns).await;
+        let ns = self.svc_resolve(opts.ns).await;
 
         // TODO: support lookups by prefix
 
@@ -214,7 +214,7 @@ impl<T: Engine> NameService for T {
         debug!("Locating nameservice for register: {:?}", opts);
 
         // Resolve nameserver using provided options
-        let ns = self.service_resolve(opts.ns.clone()).await;
+        let ns = self.svc_resolve(opts.ns.clone()).await;
 
         // TODO: support lookups by prefix
         // Check we found a viable name service
@@ -250,7 +250,7 @@ impl<T: Engine> NameService for T {
 
         // Lookup service to be registered
         // TODO: fallback / use DHT if service is not known locally?
-        let target = match self.service_resolve(opts.target.into()).await {
+        let target = match self.svc_resolve(opts.target.into()).await {
             Ok(s) => s,
             Err(e) => {
                 error!("No matching target service found: {:?}", e);
@@ -281,7 +281,7 @@ impl<T: Engine> NameService for T {
         // Generate name service data block
         let body = Some(TertiaryData { tids: tids.clone() });
         let res = self
-            .service_update(
+            .svc_update(
                 ns.id(),
                 Box::new(move |s, _| {
                     // First, create a data block for the new registration
@@ -426,6 +426,10 @@ mod test {
 
     #[async_trait::async_trait]
     impl Engine for MockEngine {
+        fn id(&self) -> Id {
+            unimplemented!()
+        }
+
         async fn exec(&self, op: OpKind) -> Result<Res, CoreError> {
             let mut i = self.inner.lock().unwrap();
 

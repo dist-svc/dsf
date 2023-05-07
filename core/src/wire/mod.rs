@@ -311,9 +311,9 @@ mod test {
     use super::*;
 
     use crate::{
+        crypto::SecKey,
         keys::NullKeySource,
         prelude::{Body, Header},
-        crypto::SecKey,
     };
 
     fn setup() -> (Id, Keys) {

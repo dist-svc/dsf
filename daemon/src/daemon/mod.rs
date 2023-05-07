@@ -6,6 +6,8 @@ pub mod dht;
 
 pub mod net;
 
+pub mod ops;
+
 pub mod dsf;
 pub use dsf::*;
 

@@ -192,7 +192,7 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
     table.set_format(*prettytable::format::consts::FORMAT_CLEAN);
 
     // Add a row per time
-    table.add_row(row![b => "Service ID", "Index", "State", "Updated", "PublicKey", "PrivateKey", "SecretKey", "Subscribers", "Replicas", "Primary Page"]);
+    table.add_row(row![b => "Service ID", "Index", "Kind", "State", "Updated", "PublicKey", "PrivateKey", "SecretKey", "Subscribers", "Replicas", "Primary Page"]);
 
     for s in services {
         let pk = match no_trunc {
@@ -211,6 +211,7 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
         table.add_row(row![
             s.id.to_string(),
             s.index.to_string(),
+            s.kind.to_string(),
             s.state.to_string(),
             s.last_updated
                 .map(systemtime_to_humantime)

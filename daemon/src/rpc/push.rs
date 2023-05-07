@@ -1,6 +1,7 @@
 //! Push operation, forwards data for a known (and authorised) service.
 //! This is provided for brokering / delegation / gateway operation.
 
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::future::Future;
 use std::pin::Pin;
@@ -10,7 +11,8 @@ use dsf_core::wire::Container;
 use futures::channel::mpsc;
 use futures::prelude::*;
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
+use rpc::ServiceInfo;
 use tracing::{span, Level};
 
 use dsf_core::prelude::*;
@@ -25,115 +27,58 @@ use crate::daemon::net::{NetFuture, NetIf};
 use crate::daemon::Dsf;
 use crate::error::Error;
 
-pub enum PushState {
-    Init,
-    Pending(NetFuture),
-    Done,
-    Error(DsfError),
+#[async_trait::async_trait]
+pub trait PushData {
+    /// Publish data using a known service
+    async fn push_data(&self, options: PushOptions) -> Result<PublishInfo, DsfError>;
 }
 
-pub struct PushOp {
-    pub(crate) opts: PushOptions,
-    pub(crate) state: PushState,
+#[async_trait::async_trait]
+impl<T: Engine> PushData for T {
+    async fn push_data(&self, options: PushOptions) -> Result<PublishInfo, DsfError> {
+        info!("Push: {:?}", &options);
+
+        // Resolve service id / index to a service instance
+        let svc = self.svc_resolve(options.service).await?;
+        let _info = self.svc_get(svc.id()).await?;
+
+        // TODO: Parse RPC data to container and validate
+
+        // TODO: Add to local store
+
+        // TODO: Push to subscribers
+
+        todo!("Implement data push")
+    }
 }
 
-pub struct PushFuture {
-    rx: mpsc::Receiver<rpc::Response>,
-}
+/// Helper function to push published objects to subscribers
+pub(super) async fn push_data<E: Engine>(
+    e: &E,
+    info: &ServiceInfo,
+    objects: Vec<Container>,
+) -> Result<HashMap<Id, NetResponse>, DsfError> {
+    // Fetch service subscribers
+    let subs = e.subscribers_get(info.id.clone()).await?;
 
-impl Future for PushFuture {
-    type Output = Result<PublishInfo, DsfError>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        let resp = match self.rx.poll_next_unpin(ctx) {
-            Poll::Ready(Some(r)) => r,
-            _ => return Poll::Pending,
-        };
-
-        match resp.kind() {
-            rpc::ResponseKind::Published(r) => Poll::Ready(Ok(r)),
-            rpc::ResponseKind::Error(e) => Poll::Ready(Err(e.into())),
-            _ => Poll::Pending,
+    // Resolve subscribers to peers for net operation
+    let mut peers = Vec::with_capacity(subs.len());
+    for s in &subs {
+        match e.peer_get(s.clone()).await {
+            Ok(p) => peers.push(p),
+            Err(e) => {
+                warn!("Failed to lookup peer {:#}: {:?}", s, e);
+            }
         }
     }
-}
 
-impl<Net> Dsf<Net>
-where
-    Dsf<Net>: NetIf<Interface = Net>,
-{
-    /// Push pre-signed data for a locally known service
-    pub fn push(&mut self, options: PushOptions) -> Result<PushFuture, Error> {
-        let req_id = rand::random();
-        let (tx, rx) = mpsc::channel(1);
+    debug!("Push to {}(/{}) subscribers", peers.len(), subs.len());
 
-        // Create connect object
-        let op = RpcOperation {
-            rpc_id: req_id,
-            kind: RpcKind::push(options),
-            done: tx,
-        };
+    // Issue network request
+    let req = net::RequestBody::PushData(info.id.clone(), objects);
+    let resp = e.net_req(req, peers).await?;
 
-        // Add to tracking
-        debug!("Adding RPC op {} to tracking", req_id);
-        self.rpc_ops.insert(req_id, op);
+    // TODO: process subscriber responses
 
-        Ok(PushFuture { rx })
-    }
-
-    // TODO: implement this
-    pub fn poll_rpc_push(
-        &mut self,
-        _req_id: u64,
-        register_op: &mut PushOp,
-        _ctx: &mut Context,
-        mut _done: mpsc::Sender<rpc::Response>,
-    ) -> Result<bool, DsfError> {
-        let PushOp { opts, state } = register_op;
-
-        // Resolve ID from ID or Index options
-        let id = match self.resolve_identifier(&opts.service) {
-            Ok(id) => id,
-            Err(_e) => {
-                error!("no matching service for");
-                return Err(DsfError::UnknownService);
-            }
-        };
-
-        match state {
-            PushState::Init => {
-                debug!("Starting push operation");
-
-                // Fetch the known service from the service list
-                let _service_info = match self.services().find(&id) {
-                    Some(s) => s,
-                    None => {
-                        // Only known services can be registered
-                        error!("unknown service (id: {})", id);
-                        *state = PushState::Error(DsfError::UnknownService);
-                        return Err(DsfError::UnknownService);
-                    }
-                };
-
-                // Parse out / validate incoming data
-                let mut data = opts.data.to_vec();
-                let _base = match Container::parse(&mut data, self) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        error!("Invalid data for push");
-                        return Err(e);
-                    }
-                };
-
-                // TODO: check data validity (kind, index, etc.)
-
-                // TODO: Push data to subs
-                // (beware of the loop possibilities here)
-
-                Ok(false)
-            }
-            PushState::Pending(_req) => Ok(false),
-            _ => Ok(true),
-        }
-    }
+    Ok(resp)
 }

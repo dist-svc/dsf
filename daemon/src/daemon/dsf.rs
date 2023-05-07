@@ -1,4 +1,4 @@
-use crate::rpc::Op;
+use crate::daemon::ops::Op;
 use crate::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -30,7 +30,6 @@ use crate::core::services::{ServiceInfo, ServiceManager, ServiceState};
 use crate::core::subscribers::SubscriberManager;
 
 use super::net::{ByteSink, NetIf, NetOp, NetSink};
-use crate::rpc::ops::{RpcKind, RpcOperation};
 
 use crate::error::Error;
 use crate::store::Store;
@@ -44,6 +43,9 @@ pub type DsfDht = Dht<Id, Peer, Data, RequestId>;
 pub struct Dsf<Net = NetSink> {
     /// Inernal storage for daemon service
     service: Service,
+
+    /// Last primary page for peer service
+    last_primary: Option<Container>,
 
     /// Peer manager
     peers: PeerManager,
@@ -70,10 +72,9 @@ pub struct Dsf<Net = NetSink> {
     /// RPC request channel
     pub(crate) op_rx: mpsc::UnboundedReceiver<Op>,
     pub(crate) op_tx: mpsc::UnboundedSender<Op>,
-    pub(crate) ops: HashMap<u64, Op>,
 
     /// Tracking for RPC operations
-    pub(crate) rpc_ops: HashMap<u64, RpcOperation>,
+    pub(crate) ops: HashMap<u64, Op>,
 
     /// Tracking for network operations (collections of requests with retries etc.)
     pub(crate) net_ops: HashMap<RequestId, NetOp>,
@@ -127,6 +128,7 @@ where
         // Create DSF object
         let s = Self {
             service,
+            last_primary: None,
 
             peers,
             services,
@@ -143,7 +145,6 @@ where
             op_tx,
             op_rx,
             ops: HashMap::new(),
-            rpc_ops: HashMap::new(),
 
             net_sink,
             net_requests: HashMap::new(),
@@ -202,16 +203,23 @@ where
         }
     }
 
-    pub(crate) fn primary<T: MutableData>(
-        &mut self,
-        buff: T,
-    ) -> Result<(usize, Container<T>), Error> {
+    pub(crate) fn primary(&mut self) -> Result<Container, Error> {
+        // Check whether we have a cached primary page
+        match self.last_primary.as_ref() {
+            Some(c) if !c.expired() => return Ok(c.clone()),
+            _ => (),
+        }
+
+        // Otherwise, generate a new one
         // TODO: this should generate a peer page / contain peer contact info
-        let (n, c) = self
+        let (_, c) = self
             .service
-            .publish_primary(Default::default(), buff)
+            .publish_primary_buff(Default::default())
             .map_err(Error::Core)?;
-        Ok((n, c))
+
+        self.last_primary = Some(c.to_owned());
+
+        Ok(c.to_owned())
     }
 
     /// Store pages in the database at the provided ID
@@ -574,10 +582,6 @@ where
 
         // Poll on internal network operations
         self.poll_net_ops(ctx);
-
-        // Poll on internal RPC operations
-        // TODO: handle errors?
-        let _ = self.poll_rpc(ctx);
 
         // Poll on internal base operations
         let _ = self.poll_exec(ctx);

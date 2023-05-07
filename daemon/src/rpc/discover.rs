@@ -21,8 +21,34 @@ use crate::{
     core::services::ServiceState,
     daemon::net::NetFuture,
     daemon::{net::NetIf, Dsf},
-    error::Error as DsfError,
+    error::Error,
 };
+
+#[async_trait::async_trait]
+pub trait Discover {
+    /// Publish data using a known service
+    async fn discover(&self, options: DiscoverOptions) -> Result<Vec<ServiceInfo>, DsfError>;
+}
+
+#[async_trait::async_trait]
+impl<T: Engine> Discover for T {
+    async fn discover(&self, options: DiscoverOptions) -> Result<Vec<ServiceInfo>, DsfError> {
+        // Build discovery request
+        let net_req_body = NetRequestBody::Discover(
+            options.body.clone().unwrap_or(vec![]),
+            options.filters.clone(),
+        );
+
+        // Issue discovery request
+
+        // Parse discovery results
+
+        // Store matching services
+
+        // Return matching service information
+        todo!()
+    }
+}
 
 pub struct DiscoverOp {
     pub(crate) opts: DiscoverOptions,
@@ -55,96 +81,6 @@ impl Future for DiscoverFuture {
             rpc::ResponseKind::Services(r) => Poll::Ready(Ok(r)),
             rpc::ResponseKind::Error(e) => Poll::Ready(Err(e.into())),
             _ => Poll::Pending,
-        }
-    }
-}
-
-impl<Net> Dsf<Net>
-where
-    Dsf<Net>: NetIf<Interface = Net>,
-{
-    /// Discover local services
-    pub fn discover(&mut self, options: DiscoverOptions) -> Result<DiscoverFuture, DsfError> {
-        let req_id = rand::random();
-
-        let (tx, rx) = mpsc::channel(1);
-
-        // Create connect object
-        let op = RpcOperation {
-            rpc_id: req_id,
-            kind: RpcKind::discover(options),
-            done: tx,
-        };
-
-        // Add to tracking
-        debug!("Adding RPC op {} (discover) to tracking", req_id);
-        self.rpc_ops.insert(req_id, op);
-
-        Ok(DiscoverFuture { rx })
-    }
-
-    pub fn poll_rpc_discover(
-        &mut self,
-        req_id: u64,
-        discover_op: &mut DiscoverOp,
-        ctx: &mut Context,
-        mut done: mpsc::Sender<rpc::Response>,
-    ) -> Result<bool, DsfError> {
-        let span = span!(Level::DEBUG, "discover");
-        let _enter = span.enter();
-
-        let DiscoverOp { opts, state } = discover_op;
-
-        match state {
-            DiscoverState::Init => {
-                info!("Discover: {:?}", opts);
-
-                // Set request flags for initial connection
-                let flags = Flags::ADDRESS_REQUEST | Flags::PUB_KEY_REQUEST;
-
-                // Build discovery request
-                let net_req_id = rand::random();
-                let net_req_body = NetRequestBody::Discover(
-                    opts.body.clone().unwrap_or(vec![]),
-                    opts.filters.clone(),
-                );
-                let req = NetRequest::new(self.id(), net_req_id, net_req_body, flags);
-
-                // Broadcast discovery request
-                // TODO: this mechanism doesn't work because responses _may_ be unwrapped
-                // service pages... need to figure out how to handle this properly
-                let b = self.net_broacast(req);
-
-                *state = DiscoverState::Pending(b);
-                ctx.waker().clone().wake();
-
-                Ok(false)
-            }
-            DiscoverState::Pending(b) => {
-                match b.poll_unpin(ctx) {
-                    Poll::Ready(v) => {
-                        debug!("Broadcast discovery complete! {:?}", v);
-
-                        // TODO: update services in daemon etc.?
-
-                        // TODO: Build service listing
-                        let i = vec![];
-
-                        // Send RPC response
-                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Services(i));
-                        let _ = done.try_send(resp);
-
-                        // Update state for cleanup
-                        *state = DiscoverState::Done;
-                        ctx.waker().clone().wake();
-
-                        Ok(false)
-                    }
-                    _ => Ok(false),
-                }
-            }
-            DiscoverState::Done => Ok(true),
-            DiscoverState::Error => Ok(true),
         }
     }
 }

@@ -1,6 +1,6 @@
 use core::ops::Add;
 
-use encdec::Encode;
+use encdec::{Decode, DecodeOwned, Encode};
 
 use crate::{
     base::{DataBody, Header, MaybeEncrypted, PageBody},
@@ -151,6 +151,15 @@ impl<'a> Default for SecondaryOptions<'a> {
         }
     }
 }
+
+/// Secondary data block, published by peers when replicating
+#[derive(Clone, PartialEq, Debug, Encode, DecodeOwned)]
+pub struct SecondaryData {
+    /// List of TIDs for registry linking
+    pub sig: Signature,
+}
+
+impl DataBody for SecondaryData {}
 
 #[derive(Clone, Debug)]
 pub struct DataOptions<'a, Body: DataBody = &'a [u8]> {

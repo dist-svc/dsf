@@ -57,7 +57,7 @@ impl<T: Engine> PubSub for T {
         info!("Subscribing to service: {:?}", options);
 
         // Lookup local service information
-        let target = match self.service_resolve(options.service.clone()).await {
+        let target = match self.svc_resolve(options.service.clone()).await {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -154,7 +154,7 @@ impl<T: Engine> PubSub for T {
         }
 
         // Update local service state
-        self.service_update(
+        self.svc_update(
             target.id(),
             Box::new(|svc, state| {
                 *state = ServiceState::Subscribed;

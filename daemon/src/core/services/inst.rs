@@ -48,6 +48,7 @@ impl ServiceInst {
         ServiceInfo {
             id: service.id(),
             index: self.index,
+            kind: service.kind().into(),
             state: self.state,
             last_updated: self.last_updated,
             primary_page: self.primary_page.as_ref().map(|v| v.signature()),

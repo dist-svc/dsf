@@ -6,11 +6,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use dsf_core::base::DataBody;
 use dsf_core::wire::Container;
 use futures::channel::mpsc;
 use futures::prelude::*;
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
+use rpc::ServiceInfo;
 use tracing::{span, Level};
 
 use dsf_core::prelude::*;
@@ -23,204 +25,97 @@ use crate::core::peers::Peer;
 use crate::daemon::net::{NetFuture, NetIf};
 use crate::daemon::Dsf;
 use crate::error::Error;
+use crate::rpc::push::push_data;
 
 use super::ops::*;
 
-pub enum PublishState {
-    Init,
-    Pending(NetFuture),
-    Done,
-    Error(Error),
+#[async_trait::async_trait]
+pub trait PublishData {
+    /// Publish data using a known service
+    async fn publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError>;
 }
 
-pub struct PublishOp {
-    pub(crate) opts: PublishOptions,
-    pub(crate) state: PublishState,
-}
+#[async_trait::async_trait]
+impl<T: Engine> PublishData for T {
+    async fn publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError> {
+        info!("Publish: {:?}", &options);
 
-pub struct PublishFuture {
-    rx: mpsc::Receiver<rpc::Response>,
-}
+        // Resolve service id / index to a service instance
+        let svc = self.svc_resolve(options.service).await?;
+        let info = self.svc_get(svc.id()).await?;
 
-impl Future for PublishFuture {
-    type Output = Result<PublishInfo, DsfError>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        let resp = match self.rx.poll_next_unpin(ctx) {
-            Poll::Ready(Some(r)) => r,
-            _ => return Poll::Pending,
-        };
-
-        match resp.kind() {
-            rpc::ResponseKind::Published(r) => Poll::Ready(Ok(r)),
-            rpc::ResponseKind::Error(e) => Poll::Ready(Err(e.into())),
-            _ => Poll::Pending,
+        // Check we have private keys for signing data objects
+        if info.private_key.is_none() {
+            return Err(DsfError::NoPrivateKey);
         }
+
+        // Perform publish operation
+        let block = publish_data(self, &info, options.data.unwrap_or_default()).await?;
+
+        // Forward to subscribers
+        let resps = push_data(self, &info, vec![block.clone()]).await?;
+
+        // TODO: process subscriber responses
+
+        Ok(PublishInfo {
+            index: block.header().index(),
+            sig: block.signature(),
+            subscribers: resps.len(),
+        })
     }
 }
 
-impl<Net> Dsf<Net>
-where
-    Dsf<Net>: NetIf<Interface = Net>,
-{
-    /// Publish a locally known service
-    pub async fn publish(&mut self, options: PublishOptions) -> Result<PublishFuture, Error> {
-        let req_id = rand::random();
-        let (tx, rx) = mpsc::channel(1);
+/// Helper function to publish an abstract data object
+pub(super) async fn publish_data<E: Engine, B: DataBody>(
+    e: &E,
+    info: &ServiceInfo,
+    body: B,
+) -> Result<Container, DsfError> {
+    // Pre-encode body
+    let n = body.encode_len().map_err(|_| DsfError::EncodeFailed)?;
+    let mut b = vec![0u8; n];
+    body.encode(&mut b).map_err(|_| DsfError::EncodeFailed)?;
 
-        // Create connect object
-        let op = RpcOperation {
-            rpc_id: req_id,
-            kind: RpcKind::publish(options),
-            done: tx,
-        };
+    debug!("Building data object");
 
-        // Add to tracking
-        debug!("Adding RPC op {} to tracking", req_id);
-        self.rpc_ops.insert(req_id, op);
+    // Setup publishing options
+    let data_options = DataOptions {
+        //data_kind: opts.kind.into(),
+        body: Some(b),
+        ..Default::default()
+    };
 
-        Ok(PublishFuture { rx })
-    }
+    // Build and sign data object
+    let r = e
+        .svc_update(
+            info.id.clone(),
+            Box::new(move |svc, _state| {
+                let (_n, c) = svc.publish_data_buff(data_options.clone())?;
+                Ok(Res::Pages(vec![c.to_owned()]))
+            }),
+        )
+        .await;
 
-    pub fn poll_rpc_publish(
-        &mut self,
-        req_id: u64,
-        register_op: &mut PublishOp,
-        ctx: &mut Context,
-        mut done: mpsc::Sender<rpc::Response>,
-    ) -> Result<bool, DsfError> {
-        let PublishOp { opts, state } = register_op;
-
-        let span = span!(Level::DEBUG, "publish");
-        let _enter = span.enter();
-
-        match state {
-            PublishState::Init => {
-                debug!("Starting publish operation");
-
-                // Resolve ID from ID or Index options
-                let id = match self.resolve_identifier(&opts.service) {
-                    Ok(id) => id,
-                    Err(_e) => {
-                        error!("no matching service for");
-                        return Err(DsfError::UnknownService);
-                    }
-                };
-
-                let services = self.services();
-                // Fetch the known service from the service list
-                let service_info = match services.find(&id) {
-                    Some(s) => s,
-                    None => {
-                        // Only known services can be registered
-                        error!("unknown service (id: {})", id);
-                        *state = PublishState::Error(Error::UnknownService);
-                        return Err(DsfError::UnknownService);
-                    }
-                };
-
-                // Fetch the private key for signing service pages
-                let _private_key = match service_info.private_key {
-                    Some(s) => s,
-                    None => {
-                        // Only known services can be registered
-                        error!("no service private key (id: {})", id);
-                        *state = PublishState::Error(Error::NoPrivateKey);
-                        return Err(DsfError::NoPrivateKey);
-                    }
-                };
-
-                // Setup publishing object
-                let body = match &opts.data {
-                    Some(d) => &d[..],
-                    None => &[],
-                };
-                let data_options = DataOptions {
-                    data_kind: opts.kind.into(),
-                    body: Some(body),
-                    ..Default::default()
-                };
-
-                let mut page: Option<Container> = None;
-
-                services.update_inst(&id, |s| {
-                    let mut buff = vec![0u8; 1024];
-                    let opts = data_options.clone();
-
-                    info!("Generating data page");
-                    let (_n, c) = s.service.publish_data(opts, &mut buff).unwrap();
-                    page = Some(c.to_owned());
-                });
-
-                let page = page.unwrap();
-
-                let _info = PublishInfo {
-                    index: page.header().index(),
-                };
-
-                debug!("Storing data page");
-
-                // Store new service data
-                match self.data().store_data(&page) {
-                    Ok(_) => (),
-                    Err(e) => {
-                        error!("Error storing service data: {:?}", e);
-                        *state = PublishState::Error(e);
-                        return Err(DsfError::Unknown);
-                    }
-                }
-
-                // Generate requests
-                // Generate push data message
-                let req = net::Request::new(
-                    self.id(),
-                    rand::random(),
-                    net::RequestBody::PushData(id.clone(), vec![page]),
-                    Flags::default(),
-                );
-
-                // Fetch subscribers for the specified service
-                let subscribers = match self.subscribers().find_peers(&id) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        error!("Error finding peers for matching subscribers");
-                        *state = PublishState::Error(e);
-                        return Err(DsfError::Unknown);
-                    }
-                };
-
-                // Resolve subscriber IDs to peer instances
-                let peers: Vec<_> = subscribers
-                    .iter()
-                    .filter_map(|peer_id| self.peers().find(peer_id))
-                    .collect();
-
-                // Issue request to peers
-                let op = self.net_op(peers, req);
-
-                *state = PublishState::Pending(op);
-                Ok(false)
-            }
-            PublishState::Pending(op) => {
-                // Poll on network operation completion
-                match op.poll_unpin(ctx) {
-                    Poll::Ready(_d) => {
-                        debug!("Publish requests complete");
-
-                        // TODO: fix this to be real publish info (use _d)
-                        let i = PublishInfo { index: 0 };
-
-                        // TODO: send completion
-                        let resp = rpc::Response::new(req_id, rpc::ResponseKind::Published(i));
-
-                        done.try_send(resp).unwrap();
-                    }
-                    _ => (),
-                };
-
-                Ok(false)
-            }
-            _ => Ok(true),
+    // Handle build results
+    let block = match r {
+        Ok(Res::Pages(p)) if p.len() == 1 => p[0].clone(),
+        Err(e) => {
+            error!("Failed to build data object: {:?}", e);
+            return Err(e);
         }
+        _ => unimplemented!(),
+    };
+
+    debug!("Storing new object: {:#}", block.signature());
+
+    // Add object to storage
+    if let Err(e) = e.object_put(block.clone()).await {
+        error!("Failed to store object: {:?}", e);
+        return Err(e);
     }
+
+    // TODO: Update service last-signed info?
+
+    // Return published block
+    Ok(block)
 }

@@ -6,7 +6,7 @@ use diesel::prelude::*;
 
 use chrono::NaiveDateTime;
 
-use dsf_core::prelude::*;
+use dsf_core::{prelude::*, types::ServiceKind};
 use dsf_rpc::{ServiceInfo, ServiceState};
 
 use super::{from_dt, to_dt, Store, StoreError};
@@ -14,6 +14,7 @@ use super::{from_dt, to_dt, Store, StoreError};
 type ServiceFields = (
     String,
     i32,
+    String,
     String,
     String,
     Option<String>,
@@ -54,6 +55,7 @@ impl Store {
         let values = (
             service_id.eq(info.id.to_string()),
             service_index.eq(info.index as i32),
+            kind.eq(info.kind.to_string()),
             state.eq(info.state.to_string()),
             public_key.eq(info.public_key.to_string()),
             pri_key,
@@ -95,6 +97,7 @@ impl Store {
             .select((
                 service_id,
                 service_index,
+                kind,
                 state,
                 public_key,
                 private_key,
@@ -125,6 +128,7 @@ impl Store {
             .select((
                 service_id,
                 service_index,
+                kind,
                 state,
                 public_key,
                 private_key,
@@ -161,6 +165,7 @@ impl Store {
         let (
             r_id,
             r_index,
+            r_kind,
             r_state,
             r_pub_key,
             r_pri_key,
@@ -178,7 +183,7 @@ impl Store {
             id: Id::from_str(r_id)?,
             index: *r_index as usize,
             state: ServiceState::from_str(r_state)?,
-
+            kind: ServiceKind::from_str(r_kind)?,
             primary_page: r_pp.as_ref().map(|v| Signature::from_str(&v).unwrap()),
             replica_page: r_rp.as_ref().map(|v| Signature::from_str(&v).unwrap()),
 
@@ -205,6 +210,7 @@ mod test {
     use std::time::SystemTime;
 
     extern crate tracing_subscriber;
+    use dsf_core::types::ServiceKind;
     use tracing_subscriber::{filter::LevelFilter, FmtSubscriber};
 
     use super::Store;
@@ -234,6 +240,7 @@ mod test {
             id,
             index: 10,
             state: ServiceState::Registered,
+            kind: ServiceKind::Peer,
             public_key,
             private_key: Some(private_key),
             secret_key: Some(secret_key),

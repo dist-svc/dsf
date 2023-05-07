@@ -22,6 +22,7 @@ use crate::daemon::net::NetIf;
 use crate::daemon::*;
 use crate::error::Error;
 use crate::io::*;
+use crate::rpc::bootstrap::Bootstrap;
 use crate::store::*;
 
 use crate::daemon::Options as DaemonOptions;
@@ -236,12 +237,12 @@ impl Engine {
 
         if !options.no_bootstrap {
             // Create future bootstrap event
-            let b = dsf.bootstrap().unwrap();
+            let exec = dsf.exec();
 
             // Await on this in the future
             task::spawn(async move {
                 tokio::time::sleep(Duration::from_secs(2)).await;
-                let _ = b.await;
+                let _ = exec.bootstrap().await;
             });
         }
 

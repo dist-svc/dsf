@@ -16,7 +16,7 @@ mod kinds;
 pub use kinds::*;
 // Service extensions
 mod publisher;
-pub use publisher::{DataOptions, PrimaryOptions, Publisher, SecondaryOptions};
+pub use publisher::{DataOptions, PrimaryOptions, Publisher, SecondaryData, SecondaryOptions};
 
 mod subscriber;
 pub use subscriber::Subscriber;

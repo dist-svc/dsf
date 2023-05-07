@@ -6,6 +6,7 @@ table! {
         service_id -> Text,
         service_index -> Integer,
 
+        kind -> Text,
         state -> Text,
 
         public_key -> Text,

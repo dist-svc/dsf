@@ -2,13 +2,15 @@
 
 use std::collections::HashMap;
 
+use diesel::types::ops::Add;
+use dsf_core::service::{PrimaryOptions, SecondaryOptions, TertiaryOptions};
 use dsf_core::wire::Container;
 use futures::channel::mpsc;
 use futures::Future;
 
 use dsf_core::net::{Request as NetRequest, Response as NetResponse};
-use dsf_core::prelude::{DsfError as CoreError, Id, NetRequestBody, Service};
-use dsf_core::types::{CryptoHash, Signature};
+use dsf_core::prelude::{DsfError as CoreError, Id, NetRequestBody, PageInfo, Service};
+use dsf_core::types::{Address, CryptoHash, Signature};
 
 use dsf_rpc::*;
 
@@ -16,105 +18,13 @@ use crate::core::peers::Peer;
 use crate::core::replicas::ReplicaInst;
 use crate::error::Error;
 
-use super::connect::{ConnectOp, ConnectState};
-use super::lookup::{LookupOp, LookupState};
-
-use super::create::{CreateOp, CreateState};
-use super::register::{RegisterOp, RegisterState};
-
 use super::discover::{DiscoverOp, DiscoverState};
-use super::publish::{PublishOp, PublishState};
-use super::push::{PushOp, PushState};
-
-use super::bootstrap::{BootstrapOp, BootstrapState};
 
 pub type RpcSender = mpsc::Sender<Response>;
 
-/// RPC operation container object
-/// Used to track RPC operation kind / state / response etc.
-pub struct RpcOperation {
-    pub rpc_id: u64,
-    pub kind: RpcKind,
-    pub done: RpcSender,
-}
-
-#[derive(strum_macros::Display)]
-pub enum RpcKind {
-    Connect(ConnectOp),
-    Lookup(LookupOp),
-
-    Create(CreateOp),
-    Register(RegisterOp),
-    Publish(PublishOp),
-
-    Discover(DiscoverOp),
-
-    Push(PushOp),
-
-    Bootstrap(BootstrapOp),
-}
-
-impl RpcKind {
-    pub fn connect(opts: ConnectOptions) -> Self {
-        RpcKind::Connect(ConnectOp {
-            opts,
-            state: ConnectState::Init,
-        })
-    }
-
-    pub fn lookup(opts: peer::SearchOptions) -> Self {
-        RpcKind::Lookup(LookupOp {
-            opts,
-            state: LookupState::Init,
-        })
-    }
-
-    pub fn create(opts: CreateOptions) -> Self {
-        RpcKind::Create(CreateOp {
-            id: None,
-            opts,
-            state: CreateState::Init,
-        })
-    }
-
-    pub fn register(opts: RegisterOptions) -> Self {
-        RpcKind::Register(RegisterOp {
-            opts,
-            state: RegisterState::Init,
-        })
-    }
-
-    pub fn publish(opts: PublishOptions) -> Self {
-        RpcKind::Publish(PublishOp {
-            opts,
-            state: PublishState::Init,
-        })
-    }
-
-    pub fn discover(opts: DiscoverOptions) -> Self {
-        RpcKind::Discover(DiscoverOp {
-            opts,
-            state: DiscoverState::Init,
-        })
-    }
-
-    pub fn push(opts: PushOptions) -> Self {
-        RpcKind::Push(PushOp {
-            opts,
-            state: PushState::Init,
-        })
-    }
-
-    pub fn bootstrap(opts: ()) -> Self {
-        RpcKind::Bootstrap(BootstrapOp {
-            opts,
-            state: BootstrapState::Init,
-        })
-    }
-}
-
 /// Basic engine operation, used to construct higher-level functions
 pub enum OpKind {
+    DhtConnect(Address),
     DhtSearch(Id),
     DhtLocate(Id),
     DhtPut(Id, Vec<Container>),
@@ -125,6 +35,10 @@ pub enum OpKind {
     ServiceRegister(Id, Vec<Container>),
     ServiceUpdate(Id, UpdateFn),
 
+    Publish(Id, PageInfo),
+
+    SubscribersGet(Id),
+
     PeerGet(Id),
 
     ReplicaUpdate(Id, Vec<ReplicaInst>),
@@ -134,11 +48,14 @@ pub enum OpKind {
     ObjectPut(Container),
 
     Net(NetRequestBody, Vec<Peer>),
+
+    Primary,
 }
 
 impl core::fmt::Debug for OpKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::DhtConnect(addr) => f.debug_tuple("DhtConnect").field(addr).finish(),
             Self::DhtLocate(id) => f.debug_tuple("DhtLocate").field(id).finish(),
             Self::DhtSearch(id) => f.debug_tuple("DhtSearch").field(id).finish(),
             Self::DhtPut(id, pages) => f.debug_tuple("DhtPut").field(id).field(pages).finish(),
@@ -151,7 +68,11 @@ impl core::fmt::Debug for OpKind {
             }
             Self::ServiceUpdate(id, _f) => f.debug_tuple("ServiceUpdate").field(id).finish(),
 
+            Self::Publish(id, info) => f.debug_tuple("Publish").field(id).field(info).finish(),
+
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
+
+            Self::SubscribersGet(id) => f.debug_tuple("SubscribersGet").field(id).finish(),
 
             Self::ReplicaGet(id) => f.debug_tuple("ReplicaGet").field(id).finish(),
 
@@ -164,6 +85,7 @@ impl core::fmt::Debug for OpKind {
             Self::ObjectGet(id, sig) => f.debug_tuple("ObjectGet").field(id).field(sig).finish(),
             Self::ObjectPut(o) => f.debug_tuple("ObjectPut").field(o).finish(),
             Self::Net(req, peers) => f.debug_tuple("Net").field(req).field(peers).finish(),
+            Self::Primary => f.debug_tuple("Primary").finish(),
         }
     }
 }
@@ -174,6 +96,7 @@ pub type UpdateFn =
 /// Basic engine response, used to construct higher-level functions
 #[derive(Clone, PartialEq, Debug)]
 pub enum Res {
+    Ok,
     Id(Id),
     Service(Service),
     ServiceInfo(ServiceInfo),
@@ -190,8 +113,19 @@ pub enum Res {
 pub trait Engine: Sync + Send {
     //type Output: Future<Output=Result<Res, CoreError>> + Send;
 
+    /// Fetch own / peer ID
+    fn id(&self) -> Id;
+
     /// Base execute function, non-blocking, returns a future result
     async fn exec(&self, op: OpKind) -> Result<Res, CoreError>;
+
+    /// Connect to a peer to establish DHT connection
+    async fn dht_connect(&self, addr: Address) -> Result<Vec<Peer>, CoreError> {
+        match self.exec(OpKind::DhtConnect(addr)).await? {
+            Res::Peers(p) => Ok(p),
+            _ => Err(CoreError::Unknown),
+        }
+    }
 
     /// Lookup a peer using the DHT
     async fn dht_locate(&self, id: Id) -> Result<Peer, CoreError> {
@@ -211,9 +145,9 @@ pub trait Engine: Sync + Send {
     }
 
     /// Store pages in the DHT
-    async fn dht_put(&self, id: Id, pages: Vec<Container>) -> Result<Vec<Id>, CoreError> {
+    async fn dht_put(&self, id: Id, pages: Vec<Container>) -> Result<Vec<Peer>, CoreError> {
         match self.exec(OpKind::DhtPut(id, pages)).await? {
-            Res::Ids(p) => Ok(p),
+            Res::Peers(p) => Ok(p),
             _ => Err(CoreError::Unknown),
         }
     }
@@ -227,7 +161,7 @@ pub trait Engine: Sync + Send {
     }
 
     /// Resolve a service index to ID
-    async fn service_resolve(&self, identifier: ServiceIdentifier) -> Result<Service, CoreError> {
+    async fn svc_resolve(&self, identifier: ServiceIdentifier) -> Result<Service, CoreError> {
         match self.exec(OpKind::ServiceResolve(identifier)).await? {
             Res::Service(s) => Ok(s),
             _ => Err(CoreError::Unknown),
@@ -235,7 +169,7 @@ pub trait Engine: Sync + Send {
     }
 
     /// Fetch a service object by ID
-    async fn service_get(&self, service: Id) -> Result<ServiceInfo, CoreError> {
+    async fn svc_get(&self, service: Id) -> Result<ServiceInfo, CoreError> {
         match self.exec(OpKind::ServiceGet(service)).await? {
             Res::ServiceInfo(s) => Ok(s),
             _ => Err(CoreError::Unknown),
@@ -243,7 +177,7 @@ pub trait Engine: Sync + Send {
     }
 
     /// Create a new service
-    async fn service_create(
+    async fn svc_create(
         &self,
         service: Service,
         primary_page: Container,
@@ -258,11 +192,7 @@ pub trait Engine: Sync + Send {
     }
 
     /// Register a newly discovered service from the provided pages
-    async fn service_register(
-        &self,
-        id: Id,
-        pages: Vec<Container>,
-    ) -> Result<ServiceInfo, CoreError> {
+    async fn svc_register(&self, id: Id, pages: Vec<Container>) -> Result<ServiceInfo, CoreError> {
         match self.exec(OpKind::ServiceRegister(id, pages)).await? {
             Res::ServiceInfo(s) => Ok(s),
             _ => Err(CoreError::Unknown),
@@ -270,7 +200,7 @@ pub trait Engine: Sync + Send {
     }
 
     /// Execute an update function on a mutable service instance
-    async fn service_update(&self, service: Id, f: UpdateFn) -> Result<Res, CoreError> {
+    async fn svc_update(&self, service: Id, f: UpdateFn) -> Result<Res, CoreError> {
         self.exec(OpKind::ServiceUpdate(service, f)).await
     }
 
@@ -294,6 +224,14 @@ pub trait Engine: Sync + Send {
     async fn replica_update(&self, id: Id, replicas: Vec<ReplicaInst>) -> Result<(), CoreError> {
         match self.exec(OpKind::ReplicaUpdate(id, replicas)).await? {
             Res::Id(_) => Ok(()),
+            _ => Err(CoreError::NotFound),
+        }
+    }
+
+    /// Fetch subscribers for a known service
+    async fn subscribers_get(&self, id: Id) -> Result<Vec<Id>, CoreError> {
+        match self.exec(OpKind::SubscribersGet(id)).await? {
+            Res::Ids(v) => Ok(v),
             _ => Err(CoreError::NotFound),
         }
     }

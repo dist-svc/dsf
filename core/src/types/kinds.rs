@@ -8,16 +8,34 @@ use strum::{Display, EnumString};
 use crate::error::Error;
 
 /// [ServiceKind] enumerates different types of services
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Display, EnumString)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ServiceKind {
     Generic,
     Peer,
-    Replica,
-    Registry,
-    Private,
-    Unknown(i16),
+    Name,
+    Unknown,
+}
+
+impl From<ServiceKind> for PageKind {
+    fn from(value: ServiceKind) -> Self {
+        match value {
+            ServiceKind::Peer => PageKind::Peer,
+            ServiceKind::Name => PageKind::Name,
+            _ => PageKind::Generic,
+        }
+    }
+}
+
+impl From<PageKind> for ServiceKind {
+    fn from(value: PageKind) -> Self {
+        match value {
+            PageKind::Peer => ServiceKind::Peer,
+            PageKind::Name => ServiceKind::Name,
+            _ => ServiceKind::Generic,
+        }
+    }
 }
 
 /// [Kind] combines BaseKind and SubKinds
@@ -359,6 +377,8 @@ pub enum DataKind {
     Generic = 0x00,
     /// Name service data object
     Name = 0x01,
+    /// Per replica data object
+    Replica = 0x02,
 }
 
 impl From<DataKind> for Kind {

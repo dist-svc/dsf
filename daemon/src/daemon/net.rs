@@ -30,6 +30,7 @@ use dsf_core::wire::Container;
 use crate::daemon::Dsf;
 use crate::error::Error as DaemonError;
 
+use crate::rpc::register::RegisterService;
 use crate::rpc::subscribe::PubSub;
 use crate::{
     core::{
@@ -364,7 +365,7 @@ where
         NetFuture { rx }
     }
 
-    pub fn net_broacast(&mut self, req: net::Request) -> NetFuture {
+    pub fn net_broadcast(&mut self, req: net::Request) -> NetFuture {
         let req_id = req.id;
 
         // Create net operation
@@ -930,11 +931,11 @@ where
                     service: ServiceIdentifier::id(service_id.clone()),
                     no_replica: false,
                 };
-                let reg = self.register(opts)?;
 
+                let exec = self.exec();
                 // Task to await registration completion
                 tokio::task::spawn(async move {
-                    let resp = match reg.await {
+                    let resp = match exec.service_register(opts).await {
                         Ok(_v) => net::ResponseBody::Status(Status::Ok),
                         Err(e) => {
                             error!("Registration failed: {:?}", e);

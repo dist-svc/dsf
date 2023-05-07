@@ -19,6 +19,7 @@ pub struct ServiceInfo {
     pub id: Id,
     pub index: usize,
 
+    pub kind: ServiceKind,
     pub state: ServiceState,
 
     pub public_key: PublicKey,
@@ -42,10 +43,17 @@ impl From<&Service> for ServiceInfo {
     /// Create a default service info object for a service.
     /// Note that fields undefined within the service will be zero-initialised
     fn from(svc: &Service) -> Self {
+        let kind = match svc.kind() {
+            PageKind::Name => ServiceKind::Name,
+            PageKind::Peer => ServiceKind::Peer,
+            _ => ServiceKind::Generic,
+        };
+
         Self {
             id: svc.id(),
             index: svc.version() as usize,
             state: ServiceState::Created,
+            kind,
             public_key: svc.public_key(),
             private_key: svc.private_key(),
             secret_key: svc.secret_key(),
