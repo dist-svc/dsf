@@ -79,7 +79,7 @@ impl<D: PageBody> Net for Service<D> {
         buff: B,
     ) -> Result<Container<B>, Error> {
         // Create generic header
-        let header = Header {
+        let mut header = Header {
             kind: Kind::from(RequestKind::from(&req.data)),
             flags: req.flags,
             index: req.id as u32,
@@ -87,7 +87,7 @@ impl<D: PageBody> Net for Service<D> {
         };
 
         // Setup builder
-        let b = Builder::new(buff).id(&self.id).header(&header);
+        let mut b = Builder::new(buff).id(&self.id).header(&header);
 
         // Encode body
         let b = match &req.data {
@@ -107,11 +107,19 @@ impl<D: PageBody> Net for Service<D> {
                 Ok(n)
             })?,
             // TODO: filter on options here too
-            RequestBody::Discover(body, _opts) => b.body(body.as_slice())?,
+            RequestBody::Discover(app_id, body, _opts) => {
+                b.header_mut().set_application_id(*app_id);
+                b.body(body.as_slice())?
+            },
         };
 
         // Attach options
         let b = b.private_options(&[])?.public();
+
+        let b = match &req.data {
+            RequestBody::Discover(_, _, o) => b.public_options(o)?,
+            _ => b.public_options(&[])?,
+        };
 
         // Encrypt if running symmetric mode
         //let b = self.encrypt_message(req.flags, keys, b)?;

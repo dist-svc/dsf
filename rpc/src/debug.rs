@@ -34,3 +34,11 @@ pub enum DhtCommands {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Subcommand)]
 pub enum DatastoreCommands {}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+
+pub struct BootstrapInfo {
+    pub connected: usize,
+    pub registrations: usize,
+    pub subscriptions: usize,
+}

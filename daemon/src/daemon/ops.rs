@@ -30,6 +30,7 @@ impl<Net> Dsf<Net>
 where
     Dsf<Net>: NetIf<Interface = Net>,
 {
+    /// Create an [ExecHandle] for executing async RPCs
     pub(crate) fn exec(&self) -> ExecHandle {
         ExecHandle {
             peer_id: self.id(),
@@ -133,7 +134,8 @@ where
                 OpKind::Publish(ref _id, _info) => {
                     todo!()
                 }
-                OpKind::DhtConnect(ref addr) => {
+                OpKind::DhtConnect(ref addr, ref id) => {
+                    let id = id.clone();
                     // TODO: refactor this ungainly mess
                     match self.dht_mut().connect_start() {
                         Ok((s, req_id, dht_req)) => {
@@ -150,7 +152,9 @@ where
                             );
                             net_req.common.public_key = Some(self.service().public_key());
 
-                            if let Err(e) = self.net_send(&[(addr.clone(), None)], net_req.into()) {
+                            if let Err(e) =
+                                self.net_send(&[(addr.clone(), id.clone())], net_req.into())
+                            {
                                 error!("Failed to send connect message: {:?}", e);
                             }
                         }
@@ -196,6 +200,13 @@ where
                         .unwrap_or(Err(CoreError::NotFound));
 
                     if let Err(e) = op.done.try_send(r) {
+                        error!("Failed to send operation response: {:?}", e);
+                    };
+                }
+                OpKind::PeerList => {
+                    let r = self.peers().list().drain(..).map(|(_id, p)| p).collect();
+
+                    if let Err(e) = op.done.try_send(Ok(Res::Peers(r))) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
@@ -285,6 +296,19 @@ where
                         NetRequest::new(self.id(), rand::random(), body.clone(), Flags::default());
 
                     let s = self.net_op(peers.clone(), req);
+                    op.state = OpState::Net(s);
+                    self.ops.insert(op_id, op);
+                }
+                OpKind::NetBcast(ref body) => {
+                    let mut req = NetRequest::new(
+                        self.id(),
+                        rand::random(),
+                        body.clone(),
+                        Flags::PUB_KEY_REQUEST | Flags::ADDRESS_REQUEST,
+                    );
+                    req.set_public_key(self.service().public_key());
+
+                    let s = self.net_broadcast(req);
                     op.state = OpState::Net(s);
                     self.ops.insert(op_id, op);
                 }

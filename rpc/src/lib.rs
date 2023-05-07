@@ -226,6 +226,8 @@ pub enum ResponseKind {
 
     Page(Container),
 
+    Bootstrap(BootstrapInfo),
+
     //Value(String),
     Unrecognised,
 

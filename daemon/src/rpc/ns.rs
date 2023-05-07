@@ -288,10 +288,7 @@ impl<T: Engine> NameService for T {
                     let (_, d) = s.publish_data_buff::<TertiaryData>(DataOptions {
                         data_kind: DataKind::Name as u8,
                         body: body.clone(),
-                        public_options: &[
-                            Options::issued(issued.clone()),
-                            Options::expiry(expiry.clone()),
-                        ],
+                        public_options: &[Options::expiry(expiry.clone())],
                         ..Default::default()
                     })?;
 

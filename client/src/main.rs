@@ -119,7 +119,7 @@ fn handle_response(resp: ResponseKind, no_trunc: bool) {
         }
         ResponseKind::Service(info) => {
             println!("Created / Located service");
-            print_services(&[info], no_trunc);
+            print_service(&info, no_trunc);
         }
         ResponseKind::Services(services) => {
             print_services(&services, no_trunc);
@@ -180,6 +180,37 @@ fn print_peers(peers: &[(Id, PeerInfo)], no_trunc: bool) {
     table.printstd();
 }
 
+fn print_service(service: &ServiceInfo, _no_trunc: bool) {
+    println!("Service {} (index: {})", service.id, service.index);
+
+    println!("  kind: {}", service.kind);
+    println!("  state: {}", service.state);
+
+    println!("  subscribers: {}", service.subscribers);
+    println!("  replicas: {}", service.replicas);
+
+    if let Some(u) = &service.last_updated {
+        println!("  updated: {}", systemtime_to_humantime(u.clone()));
+    }
+
+    if let Some(s) = &service.primary_page {
+        println!("  primary page: {:#}", s);
+    }
+
+    if let Some(s) = &service.replica_page {
+        println!("  replica page: {}", s);
+    }
+
+    println!("  is_origin: {}", match service.origin {
+        true => true,
+        false => false,
+    });
+
+    println!("  has_private_key: {}", service.private_key.as_ref().map(|_| "true").unwrap_or("false"));
+
+    println!("  has_secret_key: {}", service.secret_key.as_ref().map(|_| "true").unwrap_or("false"));
+}
+
 fn print_services(services: &[ServiceInfo], no_trunc: bool) {
     if services.len() == 0 {
         warn!("No services found");
@@ -195,6 +226,11 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
     table.add_row(row![b => "Service ID", "Index", "Kind", "State", "Updated", "PublicKey", "PrivateKey", "SecretKey", "Subscribers", "Replicas", "Primary Page"]);
 
     for s in services {
+        let id = match no_trunc {
+            true => format!("{}", s.id),
+            false => format!("{:#}", s.id),
+        };
+
         let pk = match no_trunc {
             true => format!("{}", s.public_key),
             false => format!("{:#}", s.public_key),
@@ -209,7 +245,7 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
         };
 
         table.add_row(row![
-            s.id.to_string(),
+            id,
             s.index.to_string(),
             s.kind.to_string(),
             s.state.to_string(),

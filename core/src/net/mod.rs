@@ -125,17 +125,7 @@ impl Message {
         key_source: &K,
     ) -> Result<Message, Error> {
         let header = base.header();
-        let app_id = header.application_id();
         let kind = header.kind();
-
-        // Check for DSF messages
-        if app_id != 0 {
-            error!(
-                "Error converting application-specific base object {:?} to message",
-                kind
-            );
-            return Err(Error::InvalidMessageType);
-        }
 
         // Parse request and response types
         if kind.is_request() {
@@ -152,6 +142,8 @@ impl Message {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Common {
+    pub app_id: u16,
+    
     pub from: Id,
     pub id: RequestId,
     pub flags: Flags,

@@ -52,7 +52,7 @@ impl<T: Engine> Connect for T {
         debug!("Starting DHT connect");
 
         // Issue connect request to provided address
-        let peers = match self.dht_connect(options.address.into()).await {
+        let peers = match self.dht_connect(options.address.into(), None).await {
             Ok(v) => v,
             Err(e) => {
                 error!(

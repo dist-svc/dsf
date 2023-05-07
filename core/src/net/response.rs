@@ -109,6 +109,7 @@ impl Response {
     pub fn new(from: Id, id: RequestId, data: ResponseBody, mut flags: Flags) -> Response {
         flags.remove(Flags::SYMMETRIC_DIR);
         let common = Common {
+            app_id: 0,
             from,
             id,
             flags,
@@ -223,6 +224,7 @@ impl Response {
 
         // Fetch other message specific options
         let common = Common {
+            app_id: 0,
             from: base.id(),
             id: header.index() as u16,
             flags: header.flags(),

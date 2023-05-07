@@ -127,9 +127,13 @@ pub enum ServiceCommands {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
 pub struct ListOptions {
-    #[clap(long = "application-id")]
+    #[clap(long)]
     /// Application ID for filtering
     pub application_id: Option<u16>,
+
+    #[clap(long)]
+    /// Service type for filtering
+    pub kind: Option<ServiceKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser, Default)]
@@ -228,10 +232,16 @@ pub struct LocateOptions {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
 pub struct DiscoverOptions {
+    /// Application ID for discovery
+    #[clap(long)]
+    pub application_id: u16,
+
     /// Application-specific body for filtering
+    #[clap(long)]
     pub body: Option<Data>,
 
-    /// Otions for filtering
+    /// Options for filtering
+    #[clap(long)]
     pub filters: Vec<Options>,
 }
 

@@ -12,7 +12,8 @@ edition = "2018"
 [features]
 std = [ "thiserror", "dsf-core/std" ]
 alloc = [ "dsf-core/alloc" ]
-default = [ "std", "alloc", "sled" ]
+full = []
+default = [ "std", "alloc", "sled", "full" ]
 
 [dependencies]
 dsf-core = { version = "*", default_features = false }

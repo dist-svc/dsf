@@ -271,6 +271,10 @@ impl<B: PageBody> Service<B> {
             _ => false,
         }
     }
+    
+    pub fn app_id(&self) -> u16 {
+        self.application_id
+    }
 
     pub fn version(&self) -> u32 {
         self.version

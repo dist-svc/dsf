@@ -22,13 +22,18 @@ use super::discover::{DiscoverOp, DiscoverState};
 
 pub type RpcSender = mpsc::Sender<Response>;
 
-/// Basic engine operation, used to construct higher-level functions
+/// Basic engine operations, used to construct higher-level async functions
 pub enum OpKind {
-    DhtConnect(Address),
+    /// Connect to the DHT via unknown peer
+    DhtConnect(Address, Option<Id>),
+    /// Search for pages at an address in the DHT
     DhtSearch(Id),
+    /// Locate nearby peers for a DHT address
     DhtLocate(Id),
+    /// Store pages at an address in the DHT
     DhtPut(Id, Vec<Container>),
 
+    /// Resolve a service identifier to a service instance
     ServiceResolve(ServiceIdentifier),
     ServiceGet(Id),
     ServiceCreate(Service, Container),
@@ -37,25 +42,40 @@ pub enum OpKind {
 
     Publish(Id, PageInfo),
 
+    /// Fetch subscribers for a known service
     SubscribersGet(Id),
 
+    /// Fetch peer information by peer ID
     PeerGet(Id),
+    /// List known peers
+    PeerList,
 
+    /// Update available replicas for a service
     ReplicaUpdate(Id, Vec<ReplicaInst>),
+    /// Fetch replica information by peer ID
     ReplicaGet(Id),
 
+    /// Fetch an object by service ID and signature
     ObjectGet(Id, Signature),
+    /// Store an object
     ObjectPut(Container),
 
+    /// Issue a network request to the listed peers
     Net(NetRequestBody, Vec<Peer>),
 
+    /// Issue a broadcast network request
+    NetBcast(NetRequestBody),
+
+    /// Fetch or generate a new primary page for the peer service
     Primary,
 }
 
 impl core::fmt::Debug for OpKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::DhtConnect(addr) => f.debug_tuple("DhtConnect").field(addr).finish(),
+            Self::DhtConnect(addr, id) => {
+                f.debug_tuple("DhtConnect").field(addr).field(id).finish()
+            }
             Self::DhtLocate(id) => f.debug_tuple("DhtLocate").field(id).finish(),
             Self::DhtSearch(id) => f.debug_tuple("DhtSearch").field(id).finish(),
             Self::DhtPut(id, pages) => f.debug_tuple("DhtPut").field(id).field(pages).finish(),
@@ -71,7 +91,7 @@ impl core::fmt::Debug for OpKind {
             Self::Publish(id, info) => f.debug_tuple("Publish").field(id).field(info).finish(),
 
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
-
+            Self::PeerList => f.debug_tuple("PeerList").finish(),
             Self::SubscribersGet(id) => f.debug_tuple("SubscribersGet").field(id).finish(),
 
             Self::ReplicaGet(id) => f.debug_tuple("ReplicaGet").field(id).finish(),
@@ -84,7 +104,11 @@ impl core::fmt::Debug for OpKind {
 
             Self::ObjectGet(id, sig) => f.debug_tuple("ObjectGet").field(id).field(sig).finish(),
             Self::ObjectPut(o) => f.debug_tuple("ObjectPut").field(o).finish(),
+
             Self::Net(req, peers) => f.debug_tuple("Net").field(req).field(peers).finish(),
+
+            Self::NetBcast(req) => f.debug_tuple("NetBcast").field(req).finish(),
+
             Self::Primary => f.debug_tuple("Primary").finish(),
         }
     }
@@ -120,8 +144,8 @@ pub trait Engine: Sync + Send {
     async fn exec(&self, op: OpKind) -> Result<Res, CoreError>;
 
     /// Connect to a peer to establish DHT connection
-    async fn dht_connect(&self, addr: Address) -> Result<Vec<Peer>, CoreError> {
-        match self.exec(OpKind::DhtConnect(addr)).await? {
+    async fn dht_connect(&self, addr: Address, id: Option<Id>) -> Result<Vec<Peer>, CoreError> {
+        match self.exec(OpKind::DhtConnect(addr, id)).await? {
             Res::Peers(p) => Ok(p),
             _ => Err(CoreError::Unknown),
         }
@@ -156,6 +180,14 @@ pub trait Engine: Sync + Send {
     async fn peer_get(&self, id: Id) -> Result<Peer, CoreError> {
         match self.exec(OpKind::PeerGet(id)).await? {
             Res::Peers(p) if p.len() == 1 => Ok(p[0].clone()),
+            _ => Err(CoreError::Unknown),
+        }
+    }
+
+    /// List known peers
+    async fn peer_list(&self) -> Result<Vec<Peer>, CoreError> {
+        match self.exec(OpKind::PeerList).await? {
+            Res::Peers(p) => Ok(p),
             _ => Err(CoreError::Unknown),
         }
     }
@@ -243,6 +275,14 @@ pub trait Engine: Sync + Send {
         peers: Vec<Peer>,
     ) -> Result<HashMap<Id, NetResponse>, CoreError> {
         match self.exec(OpKind::Net(req, peers)).await? {
+            Res::Responses(r) => Ok(r),
+            _ => Err(CoreError::Unknown),
+        }
+    }
+
+    // Issue a broadcast network request
+    async fn net_bcast(&self, req: NetRequestBody) -> Result<HashMap<Id, NetResponse>, CoreError> {
+        match self.exec(OpKind::NetBcast(req)).await? {
             Res::Responses(r) => Ok(r),
             _ => Err(CoreError::Unknown),
         }

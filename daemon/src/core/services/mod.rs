@@ -132,27 +132,6 @@ impl ServiceManager {
         return Ok(None);
     }
 
-    /// Fetch data for a given service
-    #[cfg(nope)]
-    pub fn data(&self, id: &Id, n: usize) -> Result<Vec<DataInfo>, DsfError> {
-        let service = match self.find(id) {
-            Some(s) => s,
-            None => return Err(DsfError::UnknownService),
-        };
-
-        let s = service;
-
-        let d = s.get_data(n).map(|d| DataInfo {
-            service: id.clone(),
-            index: d.version(),
-            body: d.body().clone(),
-            previous: None,
-            signature: d.signature().unwrap(),
-        });
-
-        Ok(d.collect())
-    }
-
     /// Update a service instance (if found)
     pub fn with<F, R>(&mut self, id: &Id, mut f: F) -> Option<R>
     where

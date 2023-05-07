@@ -22,8 +22,9 @@ use crate::{
     },
     error::{CoreError, Error},
     rpc::{
-        connect::Connect, create::CreateService, locate::ServiceRegistry, lookup::PeerRegistry,
-        ns::NameService, publish::PublishData, register::RegisterService, subscribe::PubSub,
+        bootstrap::Bootstrap, connect::Connect, create::CreateService, discover::Discover,
+        locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService, publish::PublishData,
+        register::RegisterService, subscribe::PubSub,
     },
 };
 
@@ -101,9 +102,20 @@ where
                     Err(_e) => Some(ResponseKind::None),
                 }
             }
-            RequestKind::Service(ServiceCommands::List(_options)) => {
+            RequestKind::Service(ServiceCommands::List(opts)) => {
                 let mut services = self.services().list();
                 services.sort_by_key(|s| s.index);
+
+                // Filter by application ID
+                if let Some(a) = opts.application_id {
+                    // TODO: implement filtering
+                }
+
+                // Filter by service kind
+                if let Some(k) = opts.kind {
+                    services = services.drain(..).filter(|s| s.kind == k).collect();
+                }
+
                 // TODO: clear keys unless specifically requested
                 Some(ResponseKind::Services(services))
             }
@@ -178,13 +190,10 @@ where
         }
 
         // Otherwise queue up request for async execution
-        match req.kind() {
-            //RequestKind::Peer(PeerCommands::Connect(opts)) => RpcKind::connect(opts),
-            //RequestKind::Peer(PeerCommands::Search(opts)) => RpcKind::lookup(opts),
-            //#[cfg(nope)]
-            RequestKind::Peer(c) => {
-                let mut exec = self.exec();
+        let mut exec = self.exec();
 
+        match req.kind() {
+            RequestKind::Peer(c) => {
                 tokio::task::spawn(async move {
                     debug!("Starting async peer op");
 
@@ -212,8 +221,6 @@ where
                 return Ok(());
             }
             RequestKind::Data(c) => {
-                let exec = self.exec();
-
                 tokio::task::spawn(async move {
                     debug!("Starting async data rpc: {:?}", c);
                     let r = match c {
@@ -236,8 +243,6 @@ where
                 return Ok(());
             }
             RequestKind::Service(c) => {
-                let exec = self.exec();
-
                 tokio::task::spawn(async move {
                     debug!("Starting async service rpc: {:?}", c);
                     let r = match c {
@@ -256,7 +261,9 @@ where
                         ServiceCommands::Subscribe(opts) => {
                             exec.subscribe(opts).await.map(ResponseKind::Subscribed)
                         }
-                        ServiceCommands::Discover(opts) => unimplemented!(),
+                        ServiceCommands::Discover(opts) => {
+                            exec.discover(opts).await.map(ResponseKind::Services)
+                        }
                         _ => unimplemented!(),
                     };
 
@@ -275,8 +282,6 @@ where
 
             //RequestKind::Data(DataCommands::Query(options)) => unimplemented!(),
             RequestKind::Ns(c) => {
-                let exec = self.exec();
-
                 tokio::task::spawn(async move {
                     debug!("Starting NS op: {:?}", c);
                     // Run NS operation
@@ -304,10 +309,7 @@ where
                 });
                 return Ok(());
             }
-            RequestKind::Debug(DebugCommands::Bootstrap) => unimplemented!(),
             RequestKind::Debug(c) => {
-                let exec = self.exec();
-
                 tokio::task::spawn(async move {
                     debug!("Starting async debug task");
                     let r = match c {
@@ -315,8 +317,13 @@ where
                             Ok(i) => ResponseKind::Pages(i),
                             Err(e) => ResponseKind::Error(e),
                         },
+                        DebugCommands::Bootstrap => match exec.bootstrap().await {
+                            Ok(i) => ResponseKind::Bootstrap(i),
+                            Err(e) => ResponseKind::Error(e),
+                        },
                         _ => ResponseKind::Error(DsfError::Unimplemented),
                     };
+
                     if let Err(e) = done.clone().try_send(Response::new(req_id, r)) {
                         error!("Failed to send RPC response: {:?}", e);
                     }
@@ -324,7 +331,7 @@ where
                 return Ok(());
             }
             _ => {
-                error!("RPC operation {:?} unimplemented", req.kind());
+                error!("RPC operation {:?} not yet implemented", req.kind());
                 return Ok(());
             }
         }

@@ -216,6 +216,7 @@ impl Net {
     /// Start listening on the provided UDP address
     async fn listen_udp(&mut self, address: SocketAddr) -> Result<u32, NetError> {
         let socket = UdpSocket::bind(address).await?;
+        socket.set_broadcast(true)?;
         let interface = self.index;
 
         let mut rx_sink = self.rx_sink.clone();

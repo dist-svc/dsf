@@ -66,7 +66,7 @@ pub enum RequestBody {
 
     Register(Id, Vec<Container>),
     Unregister(Id),
-    Discover(Vec<u8>, Vec<Options>),
+    Discover(u16, Vec<u8>, Vec<Options>),
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -286,7 +286,7 @@ impl From<&RequestBody> for RequestKind {
             RequestBody::PushData(_, _) => RequestKind::PushData,
             RequestBody::Register(_, _) => RequestKind::Register,
             RequestBody::Unregister(_) => RequestKind::Unregister,
-            RequestBody::Discover(_, _) => RequestKind::Discover,
+            RequestBody::Discover(_, _, _) => RequestKind::Discover,
         }
     }
 }
@@ -294,6 +294,7 @@ impl From<&RequestBody> for RequestKind {
 impl<D> Request<D> {
     pub fn new(from: Id, request_id: RequestId, data: D, flags: Flags) -> Self {
         let common = Common {
+            app_id: 0,
             from,
             id: request_id,
             flags: flags | Flags::SYMMETRIC_DIR,
@@ -415,7 +416,7 @@ impl Request {
             }
             RequestKind::Discover => {
                 // TODO: pass through discover options
-                RequestBody::Discover(body.to_vec(), public_options)
+                RequestBody::Discover(header.application_id(), body.to_vec(), public_options)
             }
         };
 
@@ -423,6 +424,7 @@ impl Request {
         //let remote_address = Base::filter_address_option(&mut public_options);
 
         let common = Common {
+            app_id: 0,
             from: base.id(),
             id: header.index() as u16,
             flags: header.flags(),

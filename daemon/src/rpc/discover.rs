@@ -33,20 +33,32 @@ pub trait Discover {
 #[async_trait::async_trait]
 impl<T: Engine> Discover for T {
     async fn discover(&self, options: DiscoverOptions) -> Result<Vec<ServiceInfo>, DsfError> {
+        info!("Discover: {:?}", options);
+
         // Build discovery request
         let net_req_body = NetRequestBody::Discover(
+            options.application_id,
             options.body.clone().unwrap_or(vec![]),
             options.filters.clone(),
         );
 
         // Issue discovery request
+        let r = match self.net_bcast(net_req_body).await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Broadcast request failed: {:?}", e);
+                return Err(DsfError::NotFound);
+            }
+        };
+
+        debug!("Received {} responses", r.len());
 
         // Parse discovery results
 
         // Store matching services
 
         // Return matching service information
-        todo!()
+        Ok(vec![])
     }
 }
 

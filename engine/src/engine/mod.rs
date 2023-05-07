@@ -182,7 +182,7 @@ where
 
         // Generate discovery request
         let req_id = self.next_req_id();
-        let req_body = NetRequestBody::Discover(body.to_vec(), opts.to_vec());
+        let req_body = NetRequestBody::Discover(self.svc.app_id(), body.to_vec(), opts.to_vec());
         let mut req = NetRequest::new(
             self.id(),
             req_id,
@@ -527,7 +527,7 @@ where
         // Handle request messages
         let resp: EngineResponse<[u8; N]> = match &req.data {
             Hello | Ping => NetResponseBody::Status(Status::Ok).into(),
-            Discover(body, options) => {
+            Discover(_, body, options) => {
                 debug!("Received discovery from {} ({:?})", req.common.from, from);
 
                 // TODO: only for matching application_ids
@@ -559,7 +559,14 @@ where
                     // Respond with page if filters pass
                     let buff = [0u8; N];
                     match self.store.fetch_page(&self.pri, buff) {
-                        Ok(Some(p)) => EngineResponse::Page(p),
+                        #[cfg(not(feature = "full"))]
+                        Ok(Some(p)) => {
+                            EngineResponse::Page(p)    
+                        },
+                        #[cfg(feature = "full")]
+                        Ok(Some(p)) => {
+                            EngineResponse::Net(NetResponseBody::ValuesFound(self.id(), vec![p.to_owned()]))
+                        }
                         _ => EngineResponse::None,
                     }
                 }
@@ -964,17 +971,28 @@ mod test {
         let req = NetRequest::new(
             p.id(),
             1,
-            NetRequestBody::Discover(filter_body, vec![]),
+            NetRequestBody::Discover(0, filter_body, vec![]),
             Default::default(),
         );
         let (resp, _evt) = e.handle_req(&from, req).expect("Failed to handle message");
 
         // Check response
         let buff = [0u8; 512];
+        let page = e.store.fetch_page(&e.pri, buff).unwrap().unwrap();
+
+        #[cfg(not(feature = "full"))]
         assert_eq!(
             resp,
-            e.store.fetch_page(&e.pri, buff).unwrap().unwrap().into()
+            page.into()
         );
+
+        #[cfg(feature = "full")]
+        {
+            assert_eq!(
+                resp,
+                EngineResponse::Net(NetResponseBody::ValuesFound(e.id(), vec![page.to_owned()]))
+            );
+        }
     }
 
     #[test]

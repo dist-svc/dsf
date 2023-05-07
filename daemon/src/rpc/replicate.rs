@@ -103,7 +103,6 @@ pub(super) async fn fetch_replica<E: Engine>(
     let target_id = info.id.clone();
     let page_signature = info.primary_page.clone().unwrap();
 
-    // TODO: service update isn't going to work for dsf service...
     let r = e
         .svc_update(
             e.id(),
