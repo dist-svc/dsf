@@ -4,21 +4,18 @@ use core::marker::PhantomData;
 
 use byteorder::{ByteOrder, LittleEndian};
 
-use dsf_core::crypto::{Crypto, PubKey as _};
-use dsf_core::keys::{KeySource, Keys};
-use dsf_core::prelude::*;
-use dsf_core::types::{ImmutableData, MutableData, SIGNATURE_LEN};
-use dsf_core::wire::Container;
+use dsf_core::{
+    crypto::{Crypto, PubKey as _},
+    keys::{KeySource, Keys},
+    prelude::*,
+    types::{ImmutableData, MutableData},
+    wire::Container,
+};
 
 #[cfg(feature = "std")]
 mod mem_store;
 #[cfg(feature = "std")]
 pub use mem_store::MemoryStore;
-
-#[cfg(feature = "sled")]
-mod sled_store;
-#[cfg(feature = "sled")]
-pub use sled_store::SledStore;
 
 #[cfg(feature = "sqlite")]
 mod sqlite_store;
@@ -62,9 +59,6 @@ pub trait Store: KeySource {
     /// Fetch previous object information
     fn get_last(&self) -> Result<Option<ObjectInfo>, Self::Error>;
 
-    /// Update previous object information
-    fn set_last(&mut self, info: &ObjectInfo) -> Result<(), Self::Error>;
-
     // Fetch peer information
     fn get_peer(&self, id: &Id) -> Result<Option<Peer<Self::Address>>, Self::Error>;
 
@@ -78,17 +72,13 @@ pub trait Store: KeySource {
     // Iterate through known peers
     fn peers<'a>(&'a self) -> Self::Iter<'a>;
 
-    // Store a page
-    fn store_page<T: ImmutableData>(
-        &mut self,
-        sig: &Signature,
-        p: &Container<T>,
-    ) -> Result<(), Self::Error>;
+    // Store an object, updating last object information
+    fn store_page<T: ImmutableData>(&mut self, p: &Container<T>) -> Result<(), Self::Error>;
 
     // Fetch a stored page
     fn fetch_page<T: MutableData>(
         &mut self,
-        sig: &Signature,
+        f: ObjectFilter,
         buff: T,
     ) -> Result<Option<Container<T>>, Self::Error>;
 
@@ -101,6 +91,13 @@ pub trait Store: KeySource {
         id: &Id,
         f: F,
     ) -> Result<R, Self::Error>;
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ObjectFilter {
+    Latest,
+    Sig(Signature),
+    Index(u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]

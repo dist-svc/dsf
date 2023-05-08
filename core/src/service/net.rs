@@ -79,7 +79,7 @@ impl<D: PageBody> Net for Service<D> {
         buff: B,
     ) -> Result<Container<B>, Error> {
         // Create generic header
-        let mut header = Header {
+        let header = Header {
             kind: Kind::from(RequestKind::from(&req.data)),
             flags: req.flags,
             index: req.id as u32,
@@ -96,7 +96,7 @@ impl<D: PageBody> Net for Service<D> {
             | RequestBody::FindValue(id)
             | RequestBody::Subscribe(id)
             | RequestBody::Unsubscribe(id)
-            | RequestBody::Query(id)
+            | RequestBody::Query(id, _)
             | RequestBody::Locate(id)
             | RequestBody::Unregister(id) => b.body(id.as_ref())?,
             RequestBody::Store(id, pages)
@@ -106,17 +106,20 @@ impl<D: PageBody> Net for Service<D> {
                 n += Container::encode_pages(pages, &mut buff[n..])?;
                 Ok(n)
             })?,
-            // TODO: filter on options here too
             RequestBody::Discover(app_id, body, _opts) => {
                 b.header_mut().set_application_id(*app_id);
                 b.body(body.as_slice())?
-            },
+            }
         };
 
         // Attach options
         let b = b.private_options(&[])?.public();
 
         let b = match &req.data {
+            RequestBody::Query(_, idx) => match idx {
+                Some(v) => b.public_options(&[Options::Index(*v)])?,
+                _ => b.public_options(&[])?,
+            },
             RequestBody::Discover(_, _, o) => b.public_options(o)?,
             _ => b.public_options(&[])?,
         };
@@ -314,7 +317,7 @@ mod test {
             Request::new(
                 source.clone(),
                 request_id,
-                RequestBody::Query(target.clone()),
+                RequestBody::Query(target.clone(), None),
                 flags.clone(),
             ),
             Request::new(

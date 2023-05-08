@@ -43,7 +43,7 @@ impl<T: Engine> Discover for T {
         );
 
         // Issue discovery request
-        let r = match self.net_bcast(net_req_body).await {
+        let responses = match self.net_bcast(net_req_body).await {
             Ok(v) => v,
             Err(e) => {
                 error!("Broadcast request failed: {:?}", e);
@@ -51,14 +51,32 @@ impl<T: Engine> Discover for T {
             }
         };
 
-        debug!("Received {} responses", r.len());
+        debug!("Received {} responses", responses.len());
 
         // Parse discovery results
+        let mut services = vec![];
+        for (_peer_id, resp) in responses {
+            // TODO: add peers to tracking?
 
-        // Store matching services
+            let (id, pages) = match resp.data {
+                NetResponseBody::ValuesFound(id, pages) => (id, pages),
+                _ => continue,
+            };
+
+            // Store matching services
+            let info = match self.svc_register(id, pages).await {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("Failed to register service: {:?}", e);
+                    continue;
+                }
+            };
+
+            services.push(info);
+        }
 
         // Return matching service information
-        Ok(vec![])
+        Ok(services)
     }
 }
 

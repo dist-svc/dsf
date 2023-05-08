@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 use dsf_core::prelude::MaybeEncrypted;
 use log::{debug, error, info, trace, warn};
 
-use dsf_core::types::{Id, ImmutableData};
+use dsf_core::types::{Id, ImmutableData, Signature};
 use dsf_core::{keys::Keys, wire::Container};
 
 pub use dsf_rpc::data::DataInfo;
@@ -68,6 +68,31 @@ impl DataManager {
         }
 
         Ok(results)
+    }
+
+    pub fn get_object(&self, service_id: &Id, sig: &Signature) -> Result<Option<DataInst>, Error> {
+        // Load service info
+        let service = match self.store.find_service(service_id)? {
+            Some(s) => s,
+            None => return Err(Error::NotFound),
+        };
+        let keys = Keys {
+            pub_key: Some(service.public_key.clone()),
+            sec_key: service.secret_key.clone(),
+            ..Default::default()
+        };
+
+        let object = match self.store.load_object(sig, &keys)? {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+
+        let i = DataInfo::from_block(&object, &keys)?;
+
+        Ok(Some(DataInst {
+            info: i,
+            page: object,
+        }))
     }
 
     /// Store data for a given service

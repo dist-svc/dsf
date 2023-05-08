@@ -74,84 +74,38 @@ impl<T: Engine> PubSub for T {
         // TODO: handle case where we have no peers
         // TODO: handle case where we already have replica info?
 
-        // Update service information from DHT
-        let pages = match self.dht_search(target.id()).await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Failed to perform DHT lookup for replica pages: {:?}", e);
-                return Err(e);
-            }
-        };
-
-        debug!("Search complete, found {} pages", pages.len());
-
-        // TODO: filter for primary pages / annotations & update
-
-        // Filter for replica pages & update
-
-        let mut replicas = vec![];
-        for p in &pages {
-            // TODO: check other page fields here (id etc.)
-            if let PageInfo::Secondary(s) = &p.info()? {
-                let info = ReplicaInfo {
-                    peer_id: s.peer_id.clone(),
-
-                    version: p.header().index(),
-                    page_id: p.id(),
-
-                    //peer: None,
-                    issued: p.public_options_iter().issued().unwrap().into(),
-                    expiry: p.public_options_iter().expiry().map(|v| v.into()),
-                    updated: SystemTime::now(),
-
-                    active: false,
-                };
-                replicas.push(ReplicaInst {
-                    info,
-                    page: p.clone(),
-                });
-            }
-        }
-        self.replica_update(target.id(), replicas.clone()).await?;
-
-        debug!("Located {} replicas", replicas.len());
-
-        // Lookup peer services for available replicas
-        // TODO: skip if no known peers / not connected to DHT?
         let mut peers = vec![];
-        for r in &replicas {
-            match self.peer_get(r.info.peer_id.clone()).await {
-                Ok(v) => peers.push(v),
-                Err(e) => {
-                    error!("Failed to lookup replica peer {}: {:?}", r.info.peer_id, e);
-                }
+
+        // Attempt direct peer connection if available
+        // TODO: this needs to be configurable / balanced based on QoS etc.
+        if let Ok(p) = self.peer_get(target.id()).await {
+            debug!("Found peer matching service ID, attempting direct subscription");
+            peers.push(p);
+        } else {
+            // Resolve replicas via DHT
+            let replicas = find_replicas(self, target.id()).await?;
+
+            debug!("Located {} replicas", replicas.len());
+
+            // Lookup peer services for available replicas
+            // TODO: skip if no known peers / not connected to DHT?
+            for r in &replicas {
+                let peer = match self.peer_get(r.info.peer_id.clone()).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!("Failed to lookup replica peer {}: {:?}", r.info.peer_id, e);
+                        continue;
+                    }
+                };
+
+                peers.push(peer)
             }
         }
 
         debug!("Issuing subscribe request to {} peers", peers.len());
 
         // Issue subscription requests
-        let req = net::RequestBody::Subscribe(target.id());
-        let resps = self.net_req(req, peers).await?;
-        debug!("responses: {:?}", resps);
-
-        // Check responses
-        let mut subs = vec![];
-        for (peer_id, r) in &resps {
-            let sub_id = match &r.data {
-                net::ResponseBody::Status(s) if *s == net::Status::Ok => peer_id.clone(),
-                net::ResponseBody::ValuesFound(service_id, _pages) => service_id.clone(),
-                _ => continue,
-            };
-
-            subs.push(SubscriptionInfo {
-                service_id: sub_id,
-                kind: SubscriptionKind::Peer(peer_id.clone()),
-                updated: Some(SystemTime::now()),
-                expiry: None,
-                qos: QosPriority::None,
-            })
-        }
+        let subs = do_subscribe(self, target.id(), &peers).await?;
 
         // Update local service state
         self.svc_update(
@@ -173,4 +127,85 @@ impl<T: Engine> PubSub for T {
     async fn unsubscribe(&self, _options: SubscribeOptions) -> Result<(), DsfError> {
         todo!()
     }
+}
+
+pub(super) async fn find_replicas<E: Engine>(
+    e: &E,
+    target_id: Id,
+) -> Result<Vec<ReplicaInst>, DsfError> {
+    debug!("Searching for service {:#} via DHT", target_id);
+
+    // Fetch service and replica information from DHT
+    let pages = match e.dht_search(target_id.clone()).await {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Failed to perform DHT lookup for replica pages: {:?}", e);
+            return Err(e);
+        }
+    };
+
+    debug!("Search complete, found {} pages", pages.len());
+
+    // TODO: filter for primary pages / annotations & update
+
+    // Filter for replica pages & update
+    let mut replicas = vec![];
+    for p in &pages {
+        // TODO: check other page fields here (id etc.)
+        if let PageInfo::Secondary(s) = &p.info()? {
+            let info = ReplicaInfo {
+                peer_id: s.peer_id.clone(),
+
+                version: p.header().index(),
+                page_id: p.id(),
+
+                //peer: None,
+                issued: p.public_options_iter().issued().unwrap().into(),
+                expiry: p.public_options_iter().expiry().map(|v| v.into()),
+                updated: SystemTime::now(),
+
+                active: false,
+            };
+            replicas.push(ReplicaInst {
+                info,
+                page: p.clone(),
+            });
+        }
+    }
+
+    // Update replica tracking in engine
+    e.replica_update(target_id, replicas.clone()).await?;
+
+    Ok(replicas)
+}
+
+async fn do_subscribe<E: Engine>(
+    e: &E,
+    target_id: Id,
+    peers: &[Peer],
+) -> Result<Vec<SubscriptionInfo>, DsfError> {
+    // Issue subscription requests
+    let req = net::RequestBody::Subscribe(target_id);
+    let resps = e.net_req(req, peers.to_vec()).await?;
+    debug!("responses: {:?}", resps);
+
+    // Check responses
+    let mut subs = vec![];
+    for (peer_id, r) in &resps {
+        let sub_id = match &r.data {
+            net::ResponseBody::Status(s) if *s == net::Status::Ok => peer_id.clone(),
+            net::ResponseBody::ValuesFound(service_id, _pages) => service_id.clone(),
+            _ => continue,
+        };
+
+        subs.push(SubscriptionInfo {
+            service_id: sub_id,
+            kind: SubscriptionKind::Peer(peer_id.clone()),
+            updated: Some(SystemTime::now()),
+            expiry: None,
+            qos: QosPriority::None,
+        })
+    }
+
+    Ok(subs)
 }

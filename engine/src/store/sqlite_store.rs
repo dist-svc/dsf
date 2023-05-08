@@ -1,15 +1,15 @@
+//! sqlite backed engine storage
+
 use core::str::FromStr;
 use std::collections::{hash_map::Iter, HashMap};
 
 use diesel::{
-    deserialize::FromSql,
     prelude::*,
     r2d2::{ConnectionManager, Pool},
-    serialize::ToSql,
-    sql_query, Connection, ConnectionError, RunQueryDsl, SqliteConnection,
+    sql_query, RunQueryDsl, SqliteConnection,
 };
 use dsf_core::{prelude::*, types::BaseKind};
-use log::{debug, error};
+use log::debug;
 
 use super::*;
 
@@ -17,14 +17,20 @@ pub struct SqliteStore<Addr: Clone + Debug = std::net::SocketAddr> {
     pool: Pool<ConnectionManager<SqliteConnection>>,
     peers: HashMap<Id, Peer<Addr>>,
     services: HashMap<Id, Service>,
+    keys: Keys,
     _addr: PhantomData<Addr>,
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "thiserror", derive(thiserror::Error))]
 pub enum SqliteError {
+    #[cfg_attr(feature = "thiserror", error("Connection error {0}"))]
     Connect(diesel::result::ConnectionError),
+    #[cfg_attr(feature = "thiserror", error("Database error {0}"))]
     Diesel(diesel::result::Error),
+    #[cfg_attr(feature = "thiserror", error("Parser error"))]
     Parse,
+    #[cfg_attr(feature = "thiserror", error("Pool error"))]
     R2d2,
 }
 
@@ -62,14 +68,15 @@ table! {
     }
 }
 
-impl<Addr: Clone + Debug> SqliteStore<Addr> {
+impl<Addr: Clone + Debug + 'static> SqliteStore<Addr> {
     pub fn new(path: &str) -> Result<Self, SqliteError> {
         debug!("Connecting to store: {}", path);
         let mgr = ConnectionManager::new(path);
-        let pool = Pool::new(mgr).map_err(|e| SqliteError::R2d2)?;
+        let pool = Pool::new(mgr).map_err(|_e| SqliteError::R2d2)?;
 
         let mut s = Self {
             pool,
+            keys: Keys::default(),
             peers: HashMap::new(),
             services: HashMap::new(),
             _addr: PhantomData,
@@ -79,21 +86,25 @@ impl<Addr: Clone + Debug> SqliteStore<Addr> {
             println!("Failed to create tables: {:?}", e);
         }
 
+        if let Some(ident) = s.get_ident()? {
+            s.keys = ident;
+        }
+
         Ok(s)
     }
 
     fn create_tables(&mut self) -> Result<(), SqliteError> {
         let mut conn = self.pool.get().map_err(|_| SqliteError::R2d2)?;
 
-        sql_query(
+        let _ = sql_query(
             "CREATE TABLE ident (
                 pri_key TEXT NOT NULL UNIQUE PRIMARY KEY,
                 sec_key TEXT NOT NULL
             );",
         )
-        .execute(&mut conn)?;
+        .execute(&mut conn);
 
-        sql_query(
+        let _ = sql_query(
             "CREATE TABLE peers (
                 peer_id TEXT NOT NULL UNIQUE PRIMARY KEY,
                 pub_key TEXT NOT NULL,
@@ -103,9 +114,9 @@ impl<Addr: Clone + Debug> SqliteStore<Addr> {
                 subscribed BOOLEAN NOT NULL
             );",
         )
-        .execute(&mut conn)?;
+        .execute(&mut conn);
 
-        sql_query(
+        let _ = sql_query(
             "CREATE TABLE objects (
                 signature TEXT NOT NULL UNIQUE PRIMARY KEY,
                 object_index INTEGER NOT NULL,
@@ -113,7 +124,7 @@ impl<Addr: Clone + Debug> SqliteStore<Addr> {
                 data BLOB NOT NULL
             );",
         )
-        .execute(&mut conn)?;
+        .execute(&mut conn);
 
         Ok(())
     }
@@ -232,11 +243,6 @@ impl<Addr: Clone + Debug + 'static> Store for SqliteStore<Addr> {
         }))
     }
 
-    /// Update previous object information
-    fn set_last(&mut self, info: &ObjectInfo) -> Result<(), Self::Error> {
-        todo!()
-    }
-
     fn get_peer(&self, id: &Id) -> Result<Option<Peer<Self::Address>>, Self::Error> {
         let p = self.peers.get(id);
         Ok(p.map(|p| p.clone()))
@@ -255,17 +261,13 @@ impl<Addr: Clone + Debug + 'static> Store for SqliteStore<Addr> {
         Ok(f(p))
     }
 
-    fn store_page<T: ImmutableData>(
-        &mut self,
-        sig: &Signature,
-        p: &Container<T>,
-    ) -> Result<(), Self::Error> {
+    fn store_page<T: ImmutableData>(&mut self, p: &Container<T>) -> Result<(), Self::Error> {
         use self::objects::dsl::*;
 
         let values = (
             object_index.eq(p.header().index() as i32),
             kind.eq(p.header().kind().base_kind.to_string()),
-            signature.eq(sig.to_string()),
+            signature.eq(p.signature().to_string()),
             data.eq(p.raw()),
         );
 
@@ -278,19 +280,31 @@ impl<Addr: Clone + Debug + 'static> Store for SqliteStore<Addr> {
 
     fn fetch_page<T: MutableData>(
         &mut self,
-        sig: &Signature,
+        f: ObjectFilter,
         mut buff: T,
     ) -> Result<Option<Container<T>>, Self::Error> {
         use self::objects::dsl::*;
 
         let mut conn = self.pool.get().map_err(|_| SqliteError::R2d2)?;
 
-        let v = objects
+        let q = objects
             .select((signature, object_index, kind, data))
-            .filter(signature.eq(sig.to_string()))
-            .limit(1)
-            .load::<(String, i32, String, Vec<u8>)>(&mut conn)
-            .map_err(SqliteError::Diesel)?;
+            .limit(1);
+
+        let v = match f {
+            ObjectFilter::Latest => q
+                .order_by(object_index.desc())
+                .load::<(String, i32, String, Vec<u8>)>(&mut conn),
+            ObjectFilter::Index(n) => {
+                q.filter(object_index.eq(n as i32))
+                    .load::<(String, i32, String, Vec<u8>)>(&mut conn)
+            }
+            ObjectFilter::Sig(s) => {
+                q.filter(signature.eq(s.to_string()))
+                    .load::<(String, i32, String, Vec<u8>)>(&mut conn)
+            }
+        }
+        .map_err(SqliteError::Diesel)?;
 
         if v.len() != 1 {
             return Ok(None);
@@ -301,7 +315,7 @@ impl<Addr: Clone + Debug + 'static> Store for SqliteStore<Addr> {
         let b = buff.as_mut();
         b[..v.3.len()].copy_from_slice(&v.3);
 
-        let c = match Container::parse(buff, &Keys::default()) {
+        let c = match Container::parse(buff, &self.keys) {
             Ok(v) => v,
             Err(e) => {
                 println!("Failed to parse container: {:?}", e);
@@ -350,10 +364,10 @@ mod tests {
     use std::net::SocketAddr;
 
     use dsf_core::{
-        crypto::{Crypto, Hash, PubKey, SecKey},
+        crypto::{Crypto, PubKey, SecKey},
         prelude::*,
     };
-    use tempfile::{tempfile, NamedTempFile};
+    use tempfile::NamedTempFile;
 
     use super::*;
 
@@ -395,12 +409,12 @@ mod tests {
         let (_n, p) = s.publish_primary(Default::default(), &mut buff).unwrap();
 
         // Write to store
-        store.store_page(&p.signature(), &p).unwrap();
+        store.store_page(&p).unwrap();
 
         // Retrieve from store
         let mut buff = vec![0u8; 1024];
         let p1 = store
-            .fetch_page(&p.signature(), &mut buff)
+            .fetch_page(ObjectFilter::Sig(p.signature()), &mut buff)
             .unwrap()
             .unwrap();
 

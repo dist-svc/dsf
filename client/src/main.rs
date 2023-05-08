@@ -201,14 +201,31 @@ fn print_service(service: &ServiceInfo, _no_trunc: bool) {
         println!("  replica page: {}", s);
     }
 
-    println!("  is_origin: {}", match service.origin {
-        true => true,
-        false => false,
-    });
+    println!(
+        "  is_origin: {}",
+        match service.origin {
+            true => true,
+            false => false,
+        }
+    );
 
-    println!("  has_private_key: {}", service.private_key.as_ref().map(|_| "true").unwrap_or("false"));
+    println!(
+        "  has_private_key: {}",
+        service
+            .private_key
+            .as_ref()
+            .map(|_| "true")
+            .unwrap_or("false")
+    );
 
-    println!("  has_secret_key: {}", service.secret_key.as_ref().map(|_| "true").unwrap_or("false"));
+    println!(
+        "  has_secret_key: {}",
+        service
+            .secret_key
+            .as_ref()
+            .map(|_| "true")
+            .unwrap_or("false")
+    );
 }
 
 fn print_services(services: &[ServiceInfo], no_trunc: bool) {

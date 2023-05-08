@@ -271,7 +271,7 @@ impl<B: PageBody> Service<B> {
             _ => false,
         }
     }
-    
+
     pub fn app_id(&self) -> u16 {
         self.application_id
     }

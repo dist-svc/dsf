@@ -9,7 +9,10 @@ use std::time::Instant;
 use std::time::{Duration, SystemTime};
 
 use dsf_core::types::address::{IPV4_BROADCAST, IPV6_BROADCAST};
-use dsf_rpc::{LocateOptions, QosPriority, RegisterOptions, ServiceIdentifier, SubscribeOptions};
+use dsf_core::types::BaseKind;
+use dsf_rpc::{
+    LocateOptions, QosPriority, RegisterOptions, ServiceIdentifier, ServiceState, SubscribeOptions,
+};
 use kad::common::message;
 use log::{debug, error, info, trace, warn};
 
@@ -212,18 +215,84 @@ where
 {
     pub async fn handle_net_raw(&mut self, msg: crate::io::NetMessage) -> Result<(), DaemonError> {
         // Decode message
-        let decoded = match self.net_decode(&msg.data).await {
+        let (container, _n) = Container::from(&msg.data);
+        let header = container.header();
+        let id: Id = container.id().into();
+
+        let mut data = msg.data.to_vec();
+
+        // Handle unwrapped objects (eg. from constrained services)
+        if !header.kind().is_message() {
+            debug!(
+                "Handling raw {:?} object from service: {:#}",
+                id,
+                header.kind()
+            );
+
+            match self.services().find(&id) {
+                Some(info) if info.state == ServiceState::Subscribed || info.subscribed => {
+                    match header.kind().base_kind {
+                        BaseKind::Page => {
+                            debug!(
+                                "Receive service page {:#} index {}",
+                                id,
+                                container.header().index()
+                            );
+                            if let Err(e) = self.service_register(&id, vec![container.to_owned()]) {
+                                error!("Failed to update service: {:?}", e);
+                            }
+                        }
+                        BaseKind::Block => {
+                            debug!(
+                                "Receive service data {:#} index {}",
+                                id,
+                                container.header().index()
+                            );
+                            if let Err(e) = self.data().store_data(&container.to_owned()) {
+                                error!("Failed to store data object: {:?}", e);
+                            };
+                        }
+                        _ => (),
+                    }
+                }
+                None => debug!("No matching service for ID: {:#}", id),
+                _ => debug!("Not subscribed to service ID: {:#}", id),
+            }
+
+            return Ok(());
+        }
+
+        // Parse out message object
+        // TODO: pass secret keys for encode / decode here
+        let (message, _n) = match net::Message::parse(&mut data, self) {
             Ok(v) => v,
             Err(e) => {
-                warn!("error decoding message from {:?}: {:?}", msg.address, e);
+                error!("Error decoding base message: {:?}", e);
                 return Ok(());
             }
         };
 
-        trace!("Net message: {:?}", decoded);
+        // TODO: handle crypto mode errors
+        // (eg. message encoded with SYMMETRIC but no pubkey for derivation)
+
+        // Upgrade to symmetric mode on incoming symmetric message
+        // TODO: there needs to be another transition for this in p2p comms
+        if message.flags().contains(Flags::SYMMETRIC_MODE) {
+            self.peers().update(&message.from(), |p| {
+                if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
+                    warn!(
+                        "Enabling symmetric message crypto for peer: {}",
+                        message.from()
+                    );
+                    p.flags |= PeerFlags::SYMMETRIC_ENABLED;
+                }
+            });
+        }
+
+        trace!("Net message: {:?}", message);
 
         // Route responses as required internally
-        match decoded {
+        match message {
             NetMessage::Response(resp) => {
                 self.handle_net_resp(msg.address, resp)?;
             }
@@ -249,43 +318,6 @@ where
         Ok(())
     }
 
-    pub async fn net_decode(&mut self, data: &[u8]) -> Result<net::Message, DaemonError> {
-        // Decode message
-        let (container, _n) = Container::from(&data);
-        let _id: Id = container.id().into();
-
-        let mut data = data.to_vec();
-
-        // Parse out message object
-        // TODO: pass secret keys for encode / decode here
-        let (message, _n) = match net::Message::parse(&mut data, self) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Error decoding base message: {:?}", e);
-                return Err(e.into());
-            }
-        };
-
-        // TODO: handle crypto mode errors
-        // (eg. message encoded with SYMMETRIC but no pubkey for derivation)
-
-        // Upgrade to symmetric mode on incoming symmetric message
-        // TODO: there needs to be another transition for this in p2p comms
-        if message.flags().contains(Flags::SYMMETRIC_MODE) {
-            self.peers().update(&message.from(), |p| {
-                if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
-                    warn!(
-                        "Enabling symmetric message crypto for peer: {}",
-                        message.from()
-                    );
-                    p.flags |= PeerFlags::SYMMETRIC_ENABLED;
-                }
-            });
-        }
-
-        Ok(message)
-    }
-
     pub fn net_encode(
         &mut self,
         id: Option<&Id>,
@@ -306,6 +338,13 @@ where
 
         if sym {
             *msg.flags_mut() |= Flags::SYMMETRIC_MODE;
+        }
+
+        // Temporary patch to always include public key in messages...
+        // this should only be required for constrained services that may
+        // not have capacity for caching peer keys etc.
+        if !sym {
+            msg.set_public_key(self.pub_key());
         }
 
         trace!("Encoding message: {:?}", msg);
@@ -701,12 +740,12 @@ where
 
                 Ok(net::ResponseBody::Status(net::Status::Ok))
             }
-            net::RequestBody::Query(id) => {
+            net::RequestBody::Query(id, _index) => {
                 info!("Query request from: {} for service: {}", from, id);
                 let _service = match self.services().find(&id) {
                     Some(s) => s,
                     None => {
-                        // Only known services can be registered
+                        // Only known services can be queried
                         error!("no service found (id: {})", id);
                         return Ok(net::ResponseBody::Status(net::Status::InvalidRequest));
                     }

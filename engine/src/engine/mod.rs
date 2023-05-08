@@ -1,5 +1,5 @@
 use crate::log::{debug, error, info, trace, warn, Debug};
-use crate::store::SubscribeState;
+use crate::store::{ObjectFilter, SubscribeState};
 use dsf_core::api::Application;
 use dsf_core::types::{BaseKind, ImmutableData};
 use dsf_core::wire::Container;
@@ -11,7 +11,7 @@ use dsf_core::{net::Status, options::Options, prelude::*};
 use crate::{
     comms::Comms,
     error::EngineError,
-    store::{ObjectInfo, Peer, Store},
+    store::{Peer, Store},
 };
 
 #[cfg(feature = "std")]
@@ -102,8 +102,10 @@ where
 
         // Attempt to load existing keys
         if let Some(k) = store.get_ident().map_err(EngineError::Store)? {
-            debug!("Using existing keys: {:?}", k);
+            debug!("Using existing service (keys: {:?})", k);
             sb = sb.keys(k);
+        } else {
+            debug!("Creating new service");
         }
 
         // Attempt to load last sig for continuation
@@ -112,12 +114,16 @@ where
             debug!("Using last info: {:?}", s);
             sb = sb.last_signature(s.sig);
             sb = sb.version(s.page_index);
+            sb = sb.index(s.block_index.max(s.page_index) + 1)
         }
 
         // TODO: fetch existing page if available?
 
         // Create service
         let mut svc = sb.body(info).build().map_err(EngineError::Core)?;
+
+        // Store created service keys
+        store.set_ident(&svc.keys()).map_err(EngineError::Store)?;
 
         // TODO: do not regenerate page if not required
 
@@ -131,17 +137,9 @@ where
 
         trace!("Generated new page: {:?} sig: {}", p, sig);
 
-        // Update last signature in store
-        let published = ObjectInfo {
-            page_index: p.header().index(),
-            block_index: 0,
-            sig: sig.clone(),
-        };
-        store.set_last(&published).map_err(EngineError::Store)?;
-
-        // Store page if possible
+        // Store page, updating last published information
         // TODO: we _really_ do need to keep the primary page for continued use...
-        store.store_page(&sig, &p).map_err(EngineError::Store)?;
+        store.store_page(&p).map_err(EngineError::Store)?;
 
         // TODO: setup forward to subscribers?
 
@@ -215,7 +213,7 @@ where
         // Fetch or generate primary page
         let primary_page = match self
             .store
-            .fetch_page(&self.pri, buff)
+            .fetch_page(ObjectFilter::Sig(self.pri.clone()), buff)
             .map_err(EngineError::Store)?
         {
             Some(p) => p,
@@ -245,21 +243,8 @@ where
 
         trace!("Generated new page: {:?} sig: {}", p, sig);
 
-        // Update last signature in store
-        let published = ObjectInfo {
-            page_index: p.header().index(),
-            block_index: 0,
-            sig: sig.clone(),
-        };
-        self.store
-            .set_last(&published)
-            .map_err(EngineError::Store)?;
-
-        // Store page if possible
-        // TODO: we _really_ do need to keep the primary page for continued use...
-        self.store
-            .store_page(&sig, &p)
-            .map_err(EngineError::Store)?;
+        // Store page, updating last published information
+        self.store.store_page(&p).map_err(EngineError::Store)?;
 
         self.pri = sig;
 
@@ -290,22 +275,11 @@ where
         let data = p.raw();
         let sig = p.signature();
 
-        let info = ObjectInfo {
-            page_index: self.svc.version(),
-            block_index: p.header().index(),
-            sig: sig.clone(),
-        };
-
         #[cfg(not(feature = "defmt"))]
         debug!("Publishing object: {:02x?}", p);
 
-        // Update last sig
-        self.store.set_last(&info).map_err(EngineError::Store)?;
-
-        // Write to store
-        self.store
-            .store_page(&sig, &p)
-            .map_err(EngineError::Store)?;
+        // Store object, updating last published information
+        self.store.store_page(&p).map_err(EngineError::Store)?;
 
         // Send updated page to subscribers
         for (id, peer) in self.store.peers() {
@@ -558,7 +532,10 @@ where
                     // TODO: check if page has expired and reissue if required
                     // Respond with page if filters pass
                     let buff = [0u8; N];
-                    match self.store.fetch_page(&self.pri, buff) {
+                    match self
+                        .store
+                        .fetch_page(ObjectFilter::Sig(self.pri.clone()), buff)
+                    {
                         #[cfg(not(feature = "full"))]
                         Ok(Some(p)) => EngineResponse::Page(p),
                         #[cfg(feature = "full")]
@@ -570,19 +547,32 @@ where
                     }
                 }
             }
-            Query(id) if id == &self.svc.id() => {
+            Query(id, idx) if id == &self.svc.id() => {
                 debug!(
                     "Sending service information to {} ({:?})",
                     req.common.from, from
                 );
 
+                let filter = match idx {
+                    Some(n) => ObjectFilter::Index(*n),
+                    _ => ObjectFilter::Latest,
+                };
+
                 let buff = [0u8; N];
                 if let Some(p) = self
                     .store
-                    .fetch_page(&self.pri, buff)
+                    .fetch_page(filter, buff)
                     .map_err(EngineError::Store)?
                 {
-                    p.into()
+                    #[cfg(not(feature = "full"))]
+                    {
+                        EngineResponse::Page(p)
+                    }
+
+                    #[cfg(feature = "full")]
+                    {
+                        NetResponseBody::PullData(self.id(), vec![p.to_owned()]).into()
+                    }
                 } else {
                     NetResponseBody::Status(Status::InvalidRequest).into()
                 }
@@ -738,6 +728,9 @@ where
             //PullData(_, _) => (),
             (_, NetResponseBody::Status(status)) => {
                 debug!("Received status: {:?} for peer: {:?}", status, peer);
+            }
+            (_, NetResponseBody::ValuesFound(_id, pages)) => {
+                debug!("Received pages: {:?}", pages);
             }
             _ => todo!(),
         };
@@ -977,7 +970,11 @@ mod test {
 
         // Check response
         let buff = [0u8; 512];
-        let page = e.store.fetch_page(&e.pri, buff).unwrap().unwrap();
+        let page = e
+            .store
+            .fetch_page(ObjectFilter::Sig(e.pri.clone()), buff)
+            .unwrap()
+            .unwrap();
 
         #[cfg(not(feature = "full"))]
         assert_eq!(resp, page.into());

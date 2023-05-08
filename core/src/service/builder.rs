@@ -162,8 +162,6 @@ impl<B: PageBody> ServiceBuilder<B> {
     /// Enable service encryption
     /// this is equivalent to .secret_key(crypto::new_sk().unwrap()).encrypted(true);
     pub fn encrypt(mut self) -> Self {
-        let secret_key = Crypto::new_sk().unwrap();
-        self.secret_key = Some(secret_key);
         self.encrypted = true;
         self
     }
@@ -204,6 +202,11 @@ impl<B: PageBody> ServiceBuilder<B> {
             _ => panic!("Invalid service builder configuration"),
         };
 
+        let secret_key = match self.secret_key {
+            Some(sk) => sk,
+            None => Crypto::new_sk().unwrap(),
+        };
+
         let body = match self.body {
             Some(b) => MaybeEncrypted::Cleartext(b),
             None => MaybeEncrypted::None,
@@ -222,7 +225,7 @@ impl<B: PageBody> ServiceBuilder<B> {
             public_key,
             private_key,
             encrypted: self.encrypted,
-            secret_key: self.secret_key,
+            secret_key: Some(secret_key),
             last_sig: None,
         })
     }

@@ -210,7 +210,9 @@ impl Store {
         // Find service id and last page
         let results = identity
             .select((service_id, public_key, private_key, secret_key, last_page))
-            .load::<(String, String, String, Option<String>, String)>(&mut self.pool.get().unwrap())?;
+            .load::<(String, String, String, Option<String>, String)>(
+                &mut self.pool.get().unwrap(),
+            )?;
 
         if results.len() != 1 {
             return Ok(None);
@@ -271,15 +273,11 @@ impl Store {
         );
 
         // Check if the identity already exists
-        let results = identity
-            .select(service_id)
-            .load::<String>(&mut conn)?;
+        let results = identity.select(service_id).load::<String>(&mut conn)?;
 
         // Create or update
         if results.len() != 0 {
-            diesel::update(identity)
-                .set(values)
-                .execute(&mut conn)?;
+            diesel::update(identity).set(values).execute(&mut conn)?;
         } else {
             diesel::insert_into(identity)
                 .values(values)

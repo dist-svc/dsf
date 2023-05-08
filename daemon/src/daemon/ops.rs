@@ -233,8 +233,9 @@ where
 
                     // Otherwise fallback to db
                     if page.is_none() {
-                        todo!("Implement store object fetch");
-                        //let o = self.store.
+                        if let Some(d) = self.data().get_object(id, &sig)? {
+                            page = Some(d.page);
+                        }
                     }
 
                     // And return the response object

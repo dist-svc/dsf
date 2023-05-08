@@ -48,6 +48,8 @@ pub enum Options {
     Serial(OptionString),
     Building(OptionString),
     Room(OptionString),
+
+    Index(u32),
 }
 
 #[derive(
@@ -81,6 +83,7 @@ pub enum OptionKind {
     Coord = 0x000e,        // Coordinates (lat, lng, alt)
     Manufacturer = 0x000f, // Manufacturer name (string)
     Serial = 0x0010,       // Device serial (string)
+    Index = 0x0011,        // Object index
 }
 
 impl From<&Options> for OptionKind {
@@ -104,6 +107,7 @@ impl From<&Options> for OptionKind {
             Options::Room(_) => OptionKind::Room,
             Options::Manufacturer(_) => OptionKind::Manufacturer,
             Options::Serial(_) => OptionKind::Serial,
+            Options::Index(_) => OptionKind::Index,
         }
     }
 }
@@ -270,6 +274,7 @@ impl<'a> Decode<'a> for Options {
                 OptionString::decode(d).map(|(v, _)| Options::Manufacturer(v))
             }
             OptionKind::Serial => OptionString::decode(d).map(|(v, _)| Options::Serial(v)),
+            OptionKind::Index => Ok(Options::Index(LittleEndian::read_u32(d))),
         };
 
         let o = match r {
@@ -308,6 +313,7 @@ impl Encode for Options {
             Options::Limit(_) => 4,
             Options::Metadata(m) => m.key.len() + m.value.len() + 1,
             Options::Coord(_) => 3 * 4,
+            Options::Index(_) => 4,
         };
 
         Ok(OPTION_HEADER_LEN + n)
@@ -383,6 +389,10 @@ impl Encode for Options {
                 LittleEndian::write_f32(&mut data[12..16], v.alt);
 
                 3 * 4
+            }
+            Options::Index(n) => {
+                LittleEndian::write_u32(&mut data[4..], *n);
+                4
             }
             _ => todo!(),
         };
@@ -545,6 +555,7 @@ mod tests {
             Options::issued(SystemTime::now()),
             Options::expiry(SystemTime::now()),
             Options::Limit(13),
+            Options::Index(1234),
         ];
 
         for o in tests.iter() {

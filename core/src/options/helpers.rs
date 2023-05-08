@@ -80,6 +80,7 @@ pub trait Filters {
     fn prev_sig(&self) -> Option<Signature>;
     fn address(&self) -> Option<Address>;
     fn name(&self) -> Option<OptionString>;
+    fn index(&self) -> Option<u32>;
 }
 
 /// Filter implementation for [`OptionsIter`]
@@ -161,6 +162,18 @@ impl<T: AsRef<[u8]>> Filters for OptionsIter<T> {
             _ => None,
         })
     }
+
+    fn index(&self) -> Option<u32> {
+        let mut s = OptionsIter {
+            index: 0,
+            buff: self.buff.as_ref(),
+        };
+
+        s.find_map(|o| match o {
+            Options::Index(v) => Some(v),
+            _ => None,
+        })
+    }
 }
 
 /// [`Filters`] implementation for types implementing Iterator over Options
@@ -211,6 +224,13 @@ impl<'a, T: Iterator<Item = &'a Options> + Clone> Filters for T {
         self.clone().find_map(|o| match o {
             Options::IPv4(addr) => Some((*addr).into()),
             Options::IPv6(addr) => Some((*addr).into()),
+            _ => None,
+        })
+    }
+
+    fn index(&self) -> Option<u32> {
+        self.clone().find_map(|o| match o {
+            Options::Index(v) => Some(*v),
             _ => None,
         })
     }
@@ -274,6 +294,7 @@ impl Display for Options {
             Options::Room(o) => write!(f, "room: {}", o)?,
             Options::Issued(t) => write!(f, "issued: {}", t)?,
             Options::Expiry(t) => write!(f, "expiry: {}", t)?,
+            Options::Index(t) => write!(f, "index: {}", t)?,
             _ => write!(f, "{:?}", self)?,
         }
 

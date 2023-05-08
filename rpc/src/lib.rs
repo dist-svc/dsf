@@ -228,6 +228,8 @@ pub enum ResponseKind {
 
     Bootstrap(BootstrapInfo),
 
+    Sync(SyncInfo),
+
     //Value(String),
     Unrecognised,
 

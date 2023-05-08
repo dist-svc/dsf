@@ -73,10 +73,6 @@ pub enum DataCommands {
     /// List service data
     List(ListOptions),
 
-    #[clap(name = "sync")]
-    /// Synchronize service data
-    Update {},
-
     #[clap(name = "query")]
     /// Fetch data from a service
     Query {},
@@ -86,8 +82,12 @@ pub enum DataCommands {
     Publish(PublishOptions),
 
     #[clap(name = "push")]
-    /// Push pre-signed data for a known server
+    /// Push pre-signed data for a known service
     Push(PushOptions),
+
+    #[clap(name = "sync")]
+    /// Sync data for a known service
+    Sync(SyncOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
@@ -160,4 +160,18 @@ pub struct PublishInfo {
     pub index: u32,
     pub sig: Signature,
     pub subscribers: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
+pub struct SyncOptions {
+    #[clap(flatten)]
+    pub service: ServiceIdentifier,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SyncInfo {
+    /// Total object available
+    pub total: usize,
+    /// Number of synced objects
+    pub synced: usize,
 }

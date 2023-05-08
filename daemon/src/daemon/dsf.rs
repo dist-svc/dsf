@@ -465,6 +465,9 @@ where
             }
         };
 
+        // Store primary page
+        self.data().store_data(&primary_page)?;
+
         debug!("Updating replicas");
 
         // Update listed replicas

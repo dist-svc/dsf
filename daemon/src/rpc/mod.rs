@@ -24,7 +24,7 @@ use crate::{
     rpc::{
         bootstrap::Bootstrap, connect::Connect, create::CreateService, discover::Discover,
         locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService, publish::PublishData,
-        register::RegisterService, subscribe::PubSub,
+        register::RegisterService, subscribe::PubSub, sync::SyncData,
     },
 };
 
@@ -44,6 +44,7 @@ pub mod push;
 pub mod register;
 pub mod replicate;
 pub mod subscribe;
+pub mod sync;
 
 impl<Net> Dsf<Net>
 where
@@ -227,6 +228,7 @@ where
                         DataCommands::Publish(opts) => {
                             exec.publish(opts).await.map(|v| ResponseKind::Published(v))
                         }
+                        DataCommands::Sync(opts) => exec.sync(opts).await.map(ResponseKind::Sync),
                         _ => unimplemented!(),
                     };
 
@@ -279,8 +281,6 @@ where
                 });
                 return Ok(());
             }
-
-            //RequestKind::Data(DataCommands::Query(options)) => unimplemented!(),
             RequestKind::Ns(c) => {
                 tokio::task::spawn(async move {
                     debug!("Starting NS op: {:?}", c);

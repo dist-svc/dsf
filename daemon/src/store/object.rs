@@ -63,6 +63,7 @@ impl Store {
         let results = object
             .filter(service_id.eq(id.to_string()))
             .select((service_id, raw_data, previous, signature))
+            .order_by(object_index.asc())
             .load::<PageFields>(&mut self.pool.get().unwrap())?;
 
         let mut objects = Vec::with_capacity(results.len());

@@ -295,20 +295,26 @@ impl<'de, K, const N: usize> serde::Deserialize<'de> for Array<K, N> {
 }
 
 #[cfg(feature = "diesel2")]
-impl <K, DB: diesel::backend::Backend, const N: usize> diesel::serialize::ToSql<Self, DB> for Array<K, N> {
-    fn to_sql<'b>(&'b self, out: &mut diesel::serialize::Output<'b, '_, DB>) -> diesel::serialize::Result {
+impl<K, DB: diesel::backend::Backend, const N: usize> diesel::serialize::ToSql<Self, DB>
+    for Array<K, N>
+{
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, DB>,
+    ) -> diesel::serialize::Result {
         out.set_value(self.to_string());
         Ok(diesel::serialize::IsNull::No)
     }
 }
 
 #[cfg(feature = "diesel2")]
-impl <K, DB: diesel::backend::Backend, const N: usize> diesel::deserialize::FromSql<Self, DB> for Array<K, N> {
+impl<K, DB: diesel::backend::Backend, const N: usize> diesel::deserialize::FromSql<Self, DB>
+    for Array<K, N>
+{
     fn from_sql(bytes: diesel::backend::RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
         todo!()
     }
 }
-
 
 #[cfg(test)]
 mod tests {

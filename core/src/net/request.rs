@@ -61,7 +61,7 @@ pub enum RequestBody {
     Locate(Id),
     Subscribe(Id),
     Unsubscribe(Id),
-    Query(Id),
+    Query(Id, Option<u32>),
     PushData(Id, Vec<Container>),
 
     Register(Id, Vec<Container>),
@@ -282,7 +282,7 @@ impl From<&RequestBody> for RequestKind {
             RequestBody::Locate(_) => RequestKind::Locate,
             RequestBody::Subscribe(_) => RequestKind::Subscribe,
             RequestBody::Unsubscribe(_) => RequestKind::Unsubscribe,
-            RequestBody::Query(_) => RequestKind::Query,
+            RequestBody::Query(_, _) => RequestKind::Query,
             RequestBody::PushData(_, _) => RequestKind::PushData,
             RequestBody::Register(_, _) => RequestKind::Register,
             RequestBody::Unregister(_) => RequestKind::Unregister,
@@ -375,7 +375,10 @@ impl Request {
             RequestKind::Query => {
                 let mut id = Id::default();
                 id.copy_from_slice(&body[0..ID_LEN]);
-                RequestBody::Query(id)
+
+                let index = Filters::index(&public_options.iter());
+
+                RequestBody::Query(id, index)
             }
             RequestKind::Locate => {
                 let mut id = Id::default();

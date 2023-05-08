@@ -234,8 +234,6 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
 
     filtered.extend(map.drain().map(|(_k, v)| v.clone()));
 
-    // TODO: if there is no primary page, can we reject secondary pages?
-
     // Reduce tertiary pages by publisher (via a hashmap to leave only the latest value)
     let tertiary = ordered.iter().filter_map(|c| match c.info() {
         Ok(PageInfo::ServiceLink(s)) if &c.id() == id => Some((s.peer_id, c.clone())),

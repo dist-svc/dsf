@@ -143,7 +143,7 @@ impl Message {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Common {
     pub app_id: u16,
-    
+
     pub from: Id,
     pub id: RequestId,
     pub flags: Flags,

@@ -11,7 +11,7 @@ use crate::error::Error;
 #[derive(PartialEq, Debug, Clone, Display, EnumString)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[strum(serialize_all="snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ServiceKind {
     Generic,
     Peer,
