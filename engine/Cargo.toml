@@ -13,7 +13,10 @@ edition = "2018"
 std = [ "thiserror", "dsf-core/std" ]
 alloc = [ "dsf-core/alloc" ]
 full = []
-default = [ "std", "alloc", "sled", "full" ]
+sled = [ "dep:sled" ]
+sqlite = [ "diesel", "libsqlite3-sys", "dsf-core/diesel" ]
+
+default = [ "std", "alloc", "sled", "sqlite", "full" ]
 
 [dependencies]
 dsf-core = { version = "*", default_features = false }
@@ -29,6 +32,9 @@ structopt = { version = "0.3.8", optional = true }
 futures = { version = "0.3.1", optional = true }
 sled = { version = "0.34.7", optional = true }
 thiserror = { version = "*", optional = true }
+diesel = { version = "2.0.4", features = ["sqlite", "extras", "chrono", "r2d2"], optional = true }
+libsqlite3-sys = { version = "0.26.0", optional = true, features = [ "bundled" ] }
+
 
 [dev-dependencies]
 simplelog = "0.12.1"

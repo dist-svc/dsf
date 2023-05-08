@@ -33,6 +33,8 @@ impl Store {
     pub fn save_service(&self, info: &ServiceInfo) -> Result<(), StoreError> {
         use crate::store::schema::services::dsl::*;
 
+        let mut conn = self.pool.get().unwrap();
+
         let pri_key = info
             .private_key
             .as_ref()
@@ -72,17 +74,17 @@ impl Store {
         let r = services
             .filter(service_id.eq(info.id.to_string()))
             .select(service_index)
-            .load::<i32>(&self.pool.get().unwrap())?;
+            .load::<i32>(&mut conn)?;
 
         if r.len() != 0 {
             diesel::update(services)
                 .filter(service_id.eq(info.id.to_string()))
                 .set(values)
-                .execute(&self.pool.get().unwrap())?;
+                .execute(&mut conn)?;
         } else {
             diesel::insert_into(services)
                 .values(values)
-                .execute(&self.pool.get().unwrap())?;
+                .execute(&mut conn)?;
         }
 
         Ok(())
@@ -110,7 +112,7 @@ impl Store {
                 original,
                 subscribed,
             ))
-            .load::<ServiceFields>(&self.pool.get().unwrap())?;
+            .load::<ServiceFields>(&mut self.pool.get().unwrap())?;
 
         let mut v = vec![];
         for r in &results {
@@ -141,7 +143,7 @@ impl Store {
                 original,
                 subscribed,
             ))
-            .load::<ServiceFields>(&self.pool.get().unwrap())?;
+            .load::<ServiceFields>(&mut self.pool.get().unwrap())?;
 
         let mut v = vec![];
         for r in &results {
@@ -156,7 +158,7 @@ impl Store {
 
         diesel::delete(services)
             .filter(service_id.eq(info.id.to_string()))
-            .execute(&self.pool.get().unwrap())?;
+            .execute(&mut self.pool.get().unwrap())?;
 
         Ok(())
     }

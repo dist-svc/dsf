@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use diesel::types::ops::Add;
 use dsf_core::service::{PrimaryOptions, SecondaryOptions, TertiaryOptions};
 use dsf_core::wire::Container;
 use futures::channel::mpsc;

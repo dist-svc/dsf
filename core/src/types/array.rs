@@ -24,7 +24,9 @@ use crate::{
 
 /// Basic const-generic array type to override display etc.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Array<K, const N: usize>(pub(super) [u8; N], pub(super) PhantomData<K>);
+#[cfg_attr(feature = "diesel", derive(diesel::SqlType))]
+#[cfg_attr(feature = "diesel", diesel(sqlite_type(name = "Text")))]
+pub struct Array<K: 'static, const N: usize>(pub(super) [u8; N], pub(super) PhantomData<K>);
 
 impl<K, const N: usize> Array<K, N> {
     /// Fetch array instance length
@@ -291,6 +293,22 @@ impl<'de, K, const N: usize> serde::Deserialize<'de> for Array<K, N> {
         deserializer.deserialize_str(B64Visitor::<Array<K, N>>(PhantomData))
     }
 }
+
+#[cfg(feature = "diesel2")]
+impl <K, DB: diesel::backend::Backend, const N: usize> diesel::serialize::ToSql<Self, DB> for Array<K, N> {
+    fn to_sql<'b>(&'b self, out: &mut diesel::serialize::Output<'b, '_, DB>) -> diesel::serialize::Result {
+        out.set_value(self.to_string());
+        Ok(diesel::serialize::IsNull::No)
+    }
+}
+
+#[cfg(feature = "diesel2")]
+impl <K, DB: diesel::backend::Backend, const N: usize> diesel::deserialize::FromSql<Self, DB> for Array<K, N> {
+    fn from_sql(bytes: diesel::backend::RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
+        todo!()
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

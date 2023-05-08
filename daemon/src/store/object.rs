@@ -14,6 +14,8 @@ pub type PageFields = (String, Vec<u8>, Option<String>, String);
 impl Store {
     // Store an item
     pub fn save_object<T: ImmutableData>(&self, page: &Container<T>) -> Result<(), StoreError> {
+        let mut conn = self.pool.get().unwrap();
+
         // TODO: is it possible to have an invalid container here?
         // constructors _should_ make this impossible, but, needs to be checked.
         let sig = signature.eq(page.signature().to_string());
@@ -36,17 +38,17 @@ impl Store {
         let r = object
             .filter(sig.clone())
             .select(service_id)
-            .load::<String>(&self.pool.get().unwrap())?;
+            .load::<String>(&mut conn)?;
 
         if r.len() != 0 {
             diesel::update(object)
                 .filter(sig)
                 .set(values)
-                .execute(&self.pool.get().unwrap())?;
+                .execute(&mut conn)?;
         } else {
             diesel::insert_into(object)
                 .values(values)
-                .execute(&self.pool.get().unwrap())?;
+                .execute(&mut conn)?;
         }
 
         Ok(())
@@ -61,7 +63,7 @@ impl Store {
         let results = object
             .filter(service_id.eq(id.to_string()))
             .select((service_id, raw_data, previous, signature))
-            .load::<PageFields>(&self.pool.get().unwrap())?;
+            .load::<PageFields>(&mut self.pool.get().unwrap())?;
 
         let mut objects = Vec::with_capacity(results.len());
 
@@ -86,7 +88,7 @@ impl Store {
     pub fn delete_object(&self, sig: &Signature) -> Result<(), StoreError> {
         diesel::delete(object)
             .filter(signature.eq(sig.to_string()))
-            .execute(&self.pool.get().unwrap())?;
+            .execute(&mut self.pool.get().unwrap())?;
 
         Ok(())
     }
@@ -99,7 +101,7 @@ impl Store {
         let results = object
             .filter(signature.eq(sig.to_string()))
             .select((service_id, raw_data, previous, signature))
-            .load::<PageFields>(&self.pool.get().unwrap())?;
+            .load::<PageFields>(&mut self.pool.get().unwrap())?;
 
         if results.len() == 0 {
             return Ok(None);

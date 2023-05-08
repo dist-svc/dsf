@@ -20,6 +20,11 @@ mod sled_store;
 #[cfg(feature = "sled")]
 pub use sled_store::SledStore;
 
+#[cfg(feature = "sqlite")]
+mod sqlite_store;
+#[cfg(feature = "sqlite")]
+pub use sqlite_store::SqliteStore;
+
 bitflags::bitflags! {
     /// Features supported by a store interface
     pub struct StoreFlags: u16 {

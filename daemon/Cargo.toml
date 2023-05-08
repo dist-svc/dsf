@@ -14,7 +14,7 @@ default-run = "dsfd"
 profile = []
 jemalloc = ["jemallocator"]
 store = []
-default = ["store", "no_deadlocks", "libsqlite3-sys/bundled"] 
+default = ["store", "no_deadlocks" ] 
 
 # Debian packaging metadata (for cargo-deb)
 [package.metadata.deb]
@@ -65,13 +65,13 @@ tokio = { version = "1.26.0", features = [ "full" ] }
 tracing-futures = "0.2.4"
 tracing-subscriber = { version = "0.3.17", features = [ "env-filter" ] }
 chrono = { version = "0.4.6", features = ["serde"] }
-diesel = { features = ["sqlite", "extras", "chrono", "r2d2"], version = "1.4.5" }
+diesel = { features = ["sqlite", "extras", "chrono", "r2d2"], version = "2.0.4" }
 log = { features = ["max_level_trace", "release_max_level_trace"], version = "0.4.6" }
 serde = { features = ["derive"], version = "1.0" }
 tracing = { features = ["max_level_trace", "release_max_level_trace"], version = "0.1.22" }
 humantime = "2.0.0"
 igd = { version = "0.10.0", features = ["aio"] }
-libsqlite3-sys = { version = "0.9.1" }
+libsqlite3-sys = { version = "0.26.0", features = [ "bundled" ] }
 
 dsf-core = { version = "0.3.0", features = ["serde", "std"] }
 dsf-rpc = { version = "0.3.0", features = ["std"] }

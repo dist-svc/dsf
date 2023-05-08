@@ -18,7 +18,7 @@ alloc = ["base64/alloc", "chrono/alloc", "pretty-hex/alloc", "encdec/alloc", "de
 serde = ["dep:serde", "heapless/serde"]
 clap = [ "dep:clap" ]
 
-default = ["std", "alloc", "serde", "clap"]
+default = ["std", "alloc", "serde", "clap", "diesel" ]
 
 [dependencies]
 aead = { version = "0.4.3", default_features = false, features = [ "rand_core" ] }
@@ -37,7 +37,7 @@ crypto_kx = { version = "0.0.2", default_features = false }
 curve25519-dalek = { version = "3.2.1", default_features = false }
 defmt = { version = "0.3.0", optional = true }
 derivative = "2.2.0"
-diesel = { version = "1.4.3", optional = true }
+diesel = { version = "2.0.4", optional = true }
 digest = { version = "0.10.3", default_features = false, features = [ "core-api", "rand_core" ] }
 
 # libsodium replacements...

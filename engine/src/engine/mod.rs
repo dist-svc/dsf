@@ -560,13 +560,12 @@ where
                     let buff = [0u8; N];
                     match self.store.fetch_page(&self.pri, buff) {
                         #[cfg(not(feature = "full"))]
-                        Ok(Some(p)) => {
-                            EngineResponse::Page(p)    
-                        },
+                        Ok(Some(p)) => EngineResponse::Page(p),
                         #[cfg(feature = "full")]
-                        Ok(Some(p)) => {
-                            EngineResponse::Net(NetResponseBody::ValuesFound(self.id(), vec![p.to_owned()]))
-                        }
+                        Ok(Some(p)) => EngineResponse::Net(NetResponseBody::ValuesFound(
+                            self.id(),
+                            vec![p.to_owned()],
+                        )),
                         _ => EngineResponse::None,
                     }
                 }
@@ -981,10 +980,7 @@ mod test {
         let page = e.store.fetch_page(&e.pri, buff).unwrap().unwrap();
 
         #[cfg(not(feature = "full"))]
-        assert_eq!(
-            resp,
-            page.into()
-        );
+        assert_eq!(resp, page.into());
 
         #[cfg(feature = "full")]
         {

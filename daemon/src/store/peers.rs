@@ -34,6 +34,8 @@ use crate::store::schema::peers::dsl::*;
 impl Store {
     // Store an item with it's associated page
     pub fn save_peer(&self, info: &PeerInfo) -> Result<(), StoreError> {
+        let mut conn = self.pool.get().unwrap();
+
         let (s, k) = match &info.state {
             PeerState::Known(k) => (
                 state.eq(KNOWN.to_string()),
@@ -64,17 +66,17 @@ impl Store {
         let r = peers
             .filter(peer_id.eq(info.id.to_string()))
             .select(peer_id)
-            .load::<String>(&self.pool.get().unwrap())?;
+            .load::<String>(&mut conn)?;
 
         if r.len() != 0 {
             diesel::update(peers)
                 .filter(peer_id.eq(info.id.to_string()))
                 .set(values)
-                .execute(&self.pool.get().unwrap())?;
+                .execute(&mut conn)?;
         } else {
             diesel::insert_into(peers)
                 .values(values)
-                .execute(&self.pool.get().unwrap())?;
+                .execute(&mut conn)?;
         }
 
         Ok(())
@@ -95,7 +97,7 @@ impl Store {
                 received,
                 blocked,
             ))
-            .load::<PeerFields>(&self.pool.get().unwrap())?;
+            .load::<PeerFields>(&mut self.pool.get().unwrap())?;
 
         let p: Vec<PeerInfo> = results
             .iter()
@@ -129,7 +131,7 @@ impl Store {
                 received,
                 blocked,
             ))
-            .load::<PeerFields>(&self.pool.get().unwrap())?;
+            .load::<PeerFields>(&mut self.pool.get().unwrap())?;
 
         let p = results
             .iter()
@@ -148,7 +150,7 @@ impl Store {
     pub fn delete_peer(&self, peer: &PeerInfo) -> Result<(), StoreError> {
         diesel::delete(peers)
             .filter(peer_id.eq(peer.id.to_string()))
-            .execute(&self.pool.get().unwrap())?;
+            .execute(&mut self.pool.get().unwrap())?;
 
         Ok(())
     }

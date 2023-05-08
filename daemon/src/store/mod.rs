@@ -116,6 +116,8 @@ impl Store {
     ///
     /// This is called automatically in the `new` function
     pub fn create_tables(&self) -> Result<(), StoreError> {
+        let mut conn = self.pool.get().unwrap();
+
         sql_query(
             "CREATE TABLE services (
             service_id TEXT NOT NULL UNIQUE PRIMARY KEY, 
@@ -137,7 +139,7 @@ impl Store {
             subscribed BOOLEAN NOT NULL
         );",
         )
-        .execute(&self.pool.get().unwrap())?;
+        .execute(&mut conn)?;
 
         sql_query(
             "CREATE TABLE peers (
@@ -155,7 +157,7 @@ impl Store {
             blocked BOOLEAN NOT NULL
         );",
         )
-        .execute(&self.pool.get().unwrap())?;
+        .execute(&mut conn)?;
 
         sql_query(
             "CREATE TABLE object (
@@ -168,7 +170,7 @@ impl Store {
             signature TEXT NOT NULL PRIMARY KEY
         );",
         )
-        .execute(&self.pool.get().unwrap())?;
+        .execute(&mut conn)?;
 
         sql_query(
             "CREATE TABLE identity (
@@ -181,21 +183,23 @@ impl Store {
             last_page TEXT NOT NULL
         );",
         )
-        .execute(&self.pool.get().unwrap())?;
+        .execute(&mut conn)?;
 
         Ok(())
     }
 
     pub fn drop_tables(&self) -> Result<(), StoreError> {
-        sql_query("DROP TABLE IF EXISTS services;").execute(&self.pool.get().unwrap())?;
+        let mut conn = self.pool.get().unwrap();
 
-        sql_query("DROP TABLE IF EXISTS peers;").execute(&self.pool.get().unwrap())?;
+        sql_query("DROP TABLE IF EXISTS services;").execute(&mut conn)?;
 
-        sql_query("DROP TABLE IF EXISTS data;").execute(&self.pool.get().unwrap())?;
+        sql_query("DROP TABLE IF EXISTS peers;").execute(&mut conn)?;
 
-        sql_query("DROP TABLE IF EXISTS object;").execute(&self.pool.get().unwrap())?;
+        sql_query("DROP TABLE IF EXISTS data;").execute(&mut conn)?;
 
-        sql_query("DROP TABLE IF EXISTS identity;").execute(&self.pool.get().unwrap())?;
+        sql_query("DROP TABLE IF EXISTS object;").execute(&mut conn)?;
+
+        sql_query("DROP TABLE IF EXISTS identity;").execute(&mut conn)?;
 
         Ok(())
     }
@@ -206,7 +210,7 @@ impl Store {
         // Find service id and last page
         let results = identity
             .select((service_id, public_key, private_key, secret_key, last_page))
-            .load::<(String, String, String, Option<String>, String)>(&self.pool.get().unwrap())?;
+            .load::<(String, String, String, Option<String>, String)>(&mut self.pool.get().unwrap())?;
 
         if results.len() != 1 {
             return Ok(None);
@@ -241,6 +245,8 @@ impl Store {
     ) -> Result<(), StoreError> {
         use crate::store::schema::identity::dsl::*;
 
+        let mut conn = self.pool.get().unwrap();
+
         let pub_key = public_key.eq(service.public_key().to_string());
         let pri_key = service.private_key().map(|v| private_key.eq(v.to_string()));
         let sec_key = service.secret_key().map(|v| secret_key.eq(v.to_string()));
@@ -267,17 +273,17 @@ impl Store {
         // Check if the identity already exists
         let results = identity
             .select(service_id)
-            .load::<String>(&self.pool.get().unwrap())?;
+            .load::<String>(&mut conn)?;
 
         // Create or update
         if results.len() != 0 {
             diesel::update(identity)
                 .set(values)
-                .execute(&self.pool.get().unwrap())?;
+                .execute(&mut conn)?;
         } else {
             diesel::insert_into(identity)
                 .values(values)
-                .execute(&self.pool.get().unwrap())?;
+                .execute(&mut conn)?;
         }
 
         Ok(())
