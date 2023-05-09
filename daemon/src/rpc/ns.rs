@@ -280,6 +280,7 @@ impl<T: Engine> NameService for T {
 
         // Generate name service data block
         let body = Some(TertiaryData { tids: tids.clone() });
+        let target_id = target.id();
         let res = self
             .svc_update(
                 ns.id(),
@@ -288,6 +289,7 @@ impl<T: Engine> NameService for T {
                     let (_, d) = s.publish_data_buff::<TertiaryData>(DataOptions {
                         data_kind: DataKind::Name.into(),
                         body: body.clone(),
+                        private_options: &[Options::peer_id(target_id.clone())],
                         public_options: &[Options::expiry(expiry.clone())],
                         ..Default::default()
                     })?;
