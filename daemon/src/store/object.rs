@@ -59,16 +59,21 @@ impl Store {
         &self,
         id: &Id,
         key_source: &K,
+        offset: usize,
+        limit: usize,
     ) -> Result<Vec<Container>, StoreError> {
+        // Request in reverse order to apply offset / limit from tail
         let results = object
             .filter(service_id.eq(id.to_string()))
             .select((service_id, raw_data, previous, signature))
-            .order_by(object_index.asc())
+            .order_by(object_index.desc())
+            .offset(offset as i64)
+            .limit(limit as i64)
             .load::<PageFields>(&mut self.pool.get().unwrap())?;
 
+        // Parse objects in reverse to return to ascending order
         let mut objects = Vec::with_capacity(results.len());
-
-        for r in results {
+        for r in results.iter().rev() {
             let (_r_id, r_raw, _r_previous, r_signature) = &r;
 
             let v = match Container::parse(r_raw.clone(), key_source) {
@@ -157,7 +162,7 @@ mod test {
         );
         assert_eq!(
             vec![page.to_owned()],
-            store.find_objects(&s.id(), &keys).unwrap()
+            store.find_objects(&s.id(), &keys, 0, 10).unwrap()
         );
 
         // Delete data

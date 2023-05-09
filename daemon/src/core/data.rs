@@ -48,21 +48,19 @@ impl DataManager {
 
         // TODO: apply offset to query
         let offset = page_bounds.offset.unwrap_or(0);
-        let count = page_bounds.count.unwrap_or(10);
+        let count = page_bounds.count.unwrap_or(3);
 
         // TODO: filter by time bounds (where possible)
 
         // Load data from store
         // TODO: filter (and sort?) via db rather than in post
-        let mut data = self.store.find_objects(service_id, &keys)?;
+        let mut data = self.store.find_objects(service_id, &keys, offset, count)?;
 
         debug!("Retrieved {} objects: {:?}", data.len(), data);
 
-        let limit = data.len().min(offset + count);
-
         // Generate info objects for data
-        let mut results = Vec::with_capacity(limit);
-        for d in data.drain(offset..offset + limit) {
+        let mut results = Vec::with_capacity(data.len());
+        for d in data.drain(..) {
             let i = DataInfo::from_block(&d, &keys)?;
             results.push(DataInst { info: i, page: d })
         }

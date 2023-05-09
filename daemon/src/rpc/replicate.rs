@@ -109,7 +109,7 @@ pub(super) async fn fetch_replica<E: Engine>(
             Box::new(move |svc, _state| {
                 // Publish replica data object
                 let primary_opts = DataOptions {
-                    data_kind: DataKind::Replica as u8,
+                    data_kind: DataKind::Replica.into(),
                     body: Some(SecondaryData {
                         sig: page_signature.clone(),
                     }),

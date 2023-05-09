@@ -5,7 +5,7 @@
 
 use std::collections::{hash_map::Iter, HashMap};
 
-use dsf_core::{prelude::*, types::BaseKind};
+use dsf_core::{prelude::*, types::Kind};
 
 use super::*;
 
@@ -92,9 +92,9 @@ impl<Addr: Clone + Debug + 'static> Store for MemoryStore<Addr> {
 
         // Update last page information
         self.last_sig = Some(p.signature());
-        match header.kind().base_kind {
-            BaseKind::Page => self.last_page = header.index(),
-            BaseKind::Block => self.last_block = header.index(),
+        match header.kind() {
+            Kind::Page { .. } => self.last_page = header.index(),
+            Kind::Data { .. } => self.last_block = header.index(),
             _ => (),
         }
 

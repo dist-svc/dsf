@@ -32,9 +32,9 @@ mod offsets {
     pub const PROTO_VERSION: usize = 0;
     pub const APPLICATION_ID: usize = PROTO_VERSION + 1;
     pub const OBJECT_KIND: usize = APPLICATION_ID + 2;
-    pub const FLAGS: usize = OBJECT_KIND + 2;
+    pub const FLAGS: usize = OBJECT_KIND + 1;
     pub const INDEX: usize = FLAGS + 2;
-    pub const DATA_LEN: usize = INDEX + 3;
+    pub const DATA_LEN: usize = INDEX + 4;
     pub const PRIVATE_OPTIONS_LEN: usize = DATA_LEN + 2;
     pub const PUBLIC_OPTIONS_LEN: usize = PRIVATE_OPTIONS_LEN + 2;
     pub const ID: usize = PUBLIC_OPTIONS_LEN + 2;

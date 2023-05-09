@@ -286,7 +286,7 @@ impl<T: Engine> NameService for T {
                 Box::new(move |s, _| {
                     // First, create a data block for the new registration
                     let (_, d) = s.publish_data_buff::<TertiaryData>(DataOptions {
-                        data_kind: DataKind::Name as u8,
+                        data_kind: DataKind::Name.into(),
                         body: body.clone(),
                         public_options: &[Options::expiry(expiry.clone())],
                         ..Default::default()

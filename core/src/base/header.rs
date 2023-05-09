@@ -119,12 +119,8 @@ impl Encode for Header {
 
         n += self.kind.encode(&mut buff[n..])?;
 
-        buff[n..][..3].copy_from_slice(&[
-            self.index as u8,
-            (self.index >> 8) as u8,
-            (self.index >> 16) as u8,
-        ]);
-        n += 3;
+        LittleEndian::write_u32(&mut buff[n..], self.index);
+        n += 4;
 
         LittleEndian::write_u16(&mut buff[n..], self.flags.bits());
         n += 2;
@@ -165,9 +161,8 @@ impl DecodeOwned for Header {
         let (kind, m) = Kind::decode_owned(&buff[n..])?;
         n += m;
 
-        let d = &buff[n..];
-        let index = u32::from_le_bytes([d[0], d[1], d[2], 0]);
-        n += 3;
+        let index = LittleEndian::read_u32(&buff[n..]);
+        n += 4;
 
         let f = LittleEndian::read_u16(&buff[n..]);
         let flags = Flags::from_bits_truncate(f);
@@ -195,5 +190,52 @@ impl DecodeOwned for Header {
             },
             n,
         ))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn header_encode_decode() {
+        let h = Header {
+            protocol_version: 2,
+            application_id: 0x3456,
+            kind: Kind::data(true, 0x15),
+            index: 0x12345678,
+            flags: Flags::CONSTRAINED,
+            data_len: 0x0123,
+            private_options_len: 0x4321,
+            public_options_len: 0x7654,
+        };
+
+        let mut buff = [0u8; 16];
+        let n = h.encode(&mut buff).unwrap();
+        assert_eq!(n, 16);
+
+        let expected = [
+            0x02,
+            0x56,
+            0x34,
+            0b0111_0101,
+            0x78,
+            0x56,
+            0x34,
+            0x12,
+            0x80,
+            0x00,
+            0x23,
+            0x01,
+            0x21,
+            0x43,
+            0x54,
+            0x76,
+        ];
+        assert_eq!(
+            buff, expected,
+            "mismatch (actual: {:02x?}, expected: {:02x?}",
+            buff, expected
+        );
     }
 }

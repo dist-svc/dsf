@@ -1,7 +1,6 @@
 use core::convert::TryFrom;
 
 use encdec::{DecodeOwned, Encode};
-use modular_bitfield::prelude::*;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::{Display, EnumString};
 
@@ -16,7 +15,7 @@ pub enum ServiceKind {
     Generic,
     Peer,
     Name,
-    Unknown,
+    Application,
 }
 
 impl From<ServiceKind> for PageKind {
@@ -39,57 +38,152 @@ impl From<PageKind> for ServiceKind {
     }
 }
 
-/// [Kind] combines BaseKind and SubKinds
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Kind {
-    /// Base object type
-    pub base_kind: BaseKind,
-    /// Sub object type
-    pub sub_kind: SubKind,
+pub enum Kind {
+    Page { app: bool, variant: u8 },
+    Data { app: bool, variant: u8 },
+    Request { variant: u8 },
+    Response { variant: u8 },
 }
 
-impl core::fmt::Display for Kind {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let index = self.sub_kind.index();
-        let app = self.sub_kind.app();
+#[derive(Debug, Copy, Clone, PartialEq, EnumString, Display)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[strum(serialize_all = "snake_case")]
+pub enum BaseKind {
+    Page,
+    Data,
+    Request,
+    Response,
+}
 
-        write!(f, "{} ", self.base_kind)?;
-
-        match self.base_kind {
-            BaseKind::Page => match PageKind::try_from(index) {
-                Ok(k) if !app => write!(f, "({k})")?,
-                _ => write!(f, "({index:02x})")?,
-            },
-            BaseKind::Block => match DataKind::try_from(index) {
-                Ok(k) if !app => write!(f, "({k})")?,
-                _ => write!(f, "({index:02x})")?,
-            },
-            BaseKind::Request => match RequestKind::try_from(index) {
-                Ok(k) if !app => write!(f, "({k})")?,
-                _ => write!(f, "({index:02x})")?,
-            },
-            BaseKind::Response => match ResponseKind::try_from(index) {
-                Ok(k) if !app => write!(f, "({k})")?,
-                _ => write!(f, "({index:02x})")?,
-            },
+impl Kind {
+    pub fn variant(&self) -> u8 {
+        match self {
+            Kind::Page { variant, .. }
+            | Kind::Data { variant, .. }
+            | Kind::Request { variant }
+            | Kind::Response { variant } => *variant,
         }
+    }
 
-        Ok(())
+    pub fn base(&self) -> BaseKind {
+        match self {
+            Kind::Page { .. } => BaseKind::Page,
+            Kind::Data { .. } => BaseKind::Data,
+            Kind::Request { .. } => BaseKind::Request,
+            Kind::Response { .. } => BaseKind::Response,
+        }
+    }
+
+    pub fn is_application(&self) -> bool {
+        match self {
+            Self::Page { app, .. } | Self::Data { app, .. } if *app => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_page(&self) -> bool {
+        match self {
+            Self::Page { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_data(&self) -> bool {
+        match self {
+            Self::Data { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_request(&self) -> bool {
+        match self {
+            Self::Request { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_response(&self) -> bool {
+        match self {
+            Self::Response { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_message(&self) -> bool {
+        self.is_request() || self.is_response()
+    }
+
+    pub fn page(app: bool, variant: u8) -> Self {
+        Self::Page { app, variant }
+    }
+
+    pub fn data(app: bool, variant: u8) -> Self {
+        Self::Data { app, variant }
+    }
+
+    pub fn request(variant: u8) -> Self {
+        Self::Request { variant }
+    }
+
+    pub fn response(variant: u8) -> Self {
+        Self::Response { variant }
     }
 }
 
-pub enum Kind2 {
-    Page(PageKind),
-    Data(DataKind),
-    Request(RequestKind),
-    Response(ResponseKind),
+impl From<u8> for Kind {
+    fn from(value: u8) -> Self {
+        match (value >> 6) & 0b11 {
+            0b00 => Kind::Page {
+                app: (value >> 5) & 0b1 != 0,
+                variant: value & 0b0001_1111,
+            },
+            0b01 => Kind::Data {
+                app: (value >> 5) & 0b1 != 0,
+                variant: value & 0b0001_1111,
+            },
+            0b10 => Kind::Request {
+                variant: value & 0b0011_1111,
+            },
+            0b11 => Kind::Response {
+                variant: value & 0b0011_1111,
+            },
+            _ => unreachable!(),
+        }
+    }
 }
 
-impl From<Kind> for u16 {
+impl From<Kind> for u8 {
     fn from(value: Kind) -> Self {
-        u16::from_le_bytes([value.base_kind as u8, value.sub_kind.bytes[0]])
+        let mut b = 0;
+        match value {
+            Kind::Page { app, variant } => {
+                b |= 0b00 << 6;
+                if app {
+                    b |= 1 << 5;
+                }
+                b |= variant & 0b0001_1111;
+            }
+            Kind::Data { app, variant } => {
+                b |= 0b01 << 6;
+                if app {
+                    b |= 1 << 5;
+                }
+                b |= variant & 0b0001_1111;
+            }
+            Kind::Request { variant } => {
+                b |= 0b10 << 6;
+                b |= variant & 0b0011_1111;
+            }
+            Kind::Response { variant } => {
+                b |= 0b11 << 6;
+                b |= variant & 0b0011_1111;
+            }
+        }
+        b
     }
 }
 
@@ -97,18 +191,17 @@ impl Encode for Kind {
     type Error = Error;
 
     fn encode_len(&self) -> Result<usize, Self::Error> {
-        Ok(2)
+        Ok(1)
     }
 
     fn encode(&self, buff: &mut [u8]) -> Result<usize, Self::Error> {
-        if buff.len() < 2 {
+        if buff.len() < 1 {
             return Err(Error::BufferLength);
         }
 
-        buff[0] = self.base_kind as u8;
-        buff[1] = self.sub_kind.bytes[0];
+        buff[0] = (*self).into();
 
-        Ok(2)
+        Ok(1)
     }
 }
 
@@ -118,104 +211,38 @@ impl DecodeOwned for Kind {
     type Error = Error;
 
     fn decode_owned(buff: &[u8]) -> Result<(Self::Output, usize), Self::Error> {
-        if buff.len() < 2 {
+        if buff.len() < 1 {
             return Err(Error::BufferLength);
         }
 
-        let base_kind = BaseKind::try_from(buff[0]).map_err(|_| Error::InvalidPageKind)?;
+        let s = Self::from(buff[0]);
 
-        let sub_kind = SubKind::from_bytes([buff[1]]);
+        Ok((s, 1))
+    }
+}
 
-        Ok((
-            Self {
-                base_kind,
-                sub_kind,
+impl core::fmt::Display for Kind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Kind::Page { app, variant } => match PageKind::try_from(*variant) {
+                Ok(k) if !app => write!(f, "Page({k})")?,
+                _ => write!(f, "Page({variant:02x})")?,
             },
-            2,
-        ))
-    }
-}
-
-/// [BaseKind] differentiates between pages, blocks, and messages
-#[derive(Copy, Clone, PartialEq, Debug, Display, EnumString, TryFromPrimitive)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u8)]
-pub enum BaseKind {
-    /// Page object (for storage in the DHT)
-    Page = 0,
-    /// Data object (for pub/sub/distribution)
-    Block = 1,
-    /// Request message
-    Request = 2,
-    /// Response message
-    Response = 3,
-}
-
-/// [SubKind] identifies sub-object types (eg. types of page / block / request / response)
-#[bitfield]
-#[derive(Copy, Clone, PartialEq, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u8)]
-pub struct SubKind {
-    /// Object kind index
-    pub index: B7,
-    /// Application flag, indicates object is application defined / external to DSF
-    pub app: bool,
-}
-
-impl Kind {
-    pub fn is_application(&self) -> bool {
-        self.sub_kind.app()
-    }
-
-    pub fn is_page(&self) -> bool {
-        self.base_kind == BaseKind::Page
-    }
-
-    pub fn is_request(&self) -> bool {
-        self.base_kind == BaseKind::Request
-    }
-
-    pub fn is_response(&self) -> bool {
-        self.base_kind == BaseKind::Response
-    }
-
-    pub fn is_message(&self) -> bool {
-        self.is_request() || self.is_response()
-    }
-
-    pub fn is_data(&self) -> bool {
-        self.base_kind == BaseKind::Block
-    }
-
-    pub fn page(index: u8) -> Self {
-        Kind {
-            base_kind: BaseKind::Page,
-            sub_kind: SubKind::new().with_index(index),
+            Kind::Data { app, variant } => match DataKind::try_from(*variant) {
+                Ok(k) if !app => write!(f, "Data({k})")?,
+                _ => write!(f, "Data({variant:02x})")?,
+            },
+            Kind::Request { variant } => match RequestKind::try_from(*variant) {
+                Ok(k) => write!(f, "Request({k})")?,
+                _ => write!(f, "Request({variant:02x})")?,
+            },
+            Kind::Response { variant } => match ResponseKind::try_from(*variant) {
+                Ok(k) => write!(f, "Response({k})")?,
+                _ => write!(f, "Response({variant:02x})")?,
+            },
         }
-    }
 
-    pub fn request(index: u8) -> Self {
-        Kind {
-            base_kind: BaseKind::Request,
-            sub_kind: SubKind::new().with_index(index),
-        }
-    }
-
-    pub fn response(index: u8) -> Self {
-        Kind {
-            base_kind: BaseKind::Response,
-            sub_kind: SubKind::new().with_index(index),
-        }
-    }
-
-    pub fn data(index: u8) -> Self {
-        Kind {
-            base_kind: BaseKind::Block,
-            sub_kind: SubKind::new().with_index(index),
-        }
+        Ok(())
     }
 }
 
@@ -262,8 +289,8 @@ pub enum PageKind {
     /// Block link page, tertiary, published by name services, links a hashed value to a block published by the name service
     BlockLink = 0x05,
 
-    /// Private page kind, do not parse
-    Private = 0x7F,
+    /// Application specific primary page
+    Application = 0b0010_0000,
 }
 
 impl TryFrom<Kind> for PageKind {
@@ -271,12 +298,17 @@ impl TryFrom<Kind> for PageKind {
 
     fn try_from(v: Kind) -> Result<Self, Self::Error> {
         // Check kind mask
-        if v.base_kind != BaseKind::Page {
-            return Err(KindError::InvalidKind(v));
-        }
+        let (app, variant) = match v {
+            Kind::Page { app, variant } => (app, variant),
+            _ => return Err(KindError::InvalidKind(v)),
+        };
 
         // Convert to page kind
-        match PageKind::try_from(v.sub_kind.index()) {
+        if app {
+            return Ok(PageKind::Application);
+        }
+
+        match PageKind::try_from(variant) {
             Ok(v) => Ok(v),
             Err(_e) => Err(KindError::InvalidKind(v)),
         }
@@ -285,10 +317,8 @@ impl TryFrom<Kind> for PageKind {
 
 impl From<PageKind> for Kind {
     fn from(p: PageKind) -> Kind {
-        Kind {
-            base_kind: BaseKind::Page,
-            sub_kind: SubKind::new().with_index(p as u8),
-        }
+        let app = matches!(p, PageKind::Application);
+        Kind::page(app, p as u8)
     }
 }
 
@@ -315,10 +345,7 @@ pub enum RequestKind {
 
 impl From<RequestKind> for Kind {
     fn from(k: RequestKind) -> Self {
-        Kind {
-            base_kind: BaseKind::Request,
-            sub_kind: SubKind::new().with_index(k as u8),
-        }
+        Kind::request(k as u8)
     }
 }
 
@@ -326,11 +353,11 @@ impl TryFrom<Kind> for RequestKind {
     type Error = KindError;
 
     fn try_from(value: Kind) -> Result<Self, Self::Error> {
-        if value.base_kind != BaseKind::Request || value.sub_kind.app() {
+        if !value.is_request() {
             return Err(KindError::InvalidKind(value));
         }
 
-        RequestKind::try_from(value.sub_kind.index()).map_err(|_| KindError::Unrecognized(value))
+        RequestKind::try_from(value.variant()).map_err(|_| KindError::Unrecognized(value))
     }
 }
 
@@ -349,10 +376,7 @@ pub enum ResponseKind {
 
 impl From<ResponseKind> for Kind {
     fn from(k: ResponseKind) -> Self {
-        Kind {
-            base_kind: BaseKind::Response,
-            sub_kind: SubKind::new().with_index(k as u8),
-        }
+        Kind::response(k as u8)
     }
 }
 
@@ -360,11 +384,11 @@ impl TryFrom<Kind> for ResponseKind {
     type Error = KindError;
 
     fn try_from(value: Kind) -> Result<Self, Self::Error> {
-        if value.base_kind != BaseKind::Response || value.sub_kind.app() {
+        if !value.is_response() {
             return Err(KindError::InvalidKind(value));
         }
 
-        ResponseKind::try_from(value.sub_kind.index()).map_err(|_| KindError::Unrecognized(value))
+        ResponseKind::try_from(value.variant()).map_err(|_| KindError::Unrecognized(value))
     }
 }
 
@@ -380,14 +404,15 @@ pub enum DataKind {
     Name = 0x01,
     /// Per replica data object
     Replica = 0x02,
+
+    /// Application data object
+    Application = 0b0010_0000,
 }
 
 impl From<DataKind> for Kind {
     fn from(k: DataKind) -> Self {
-        Kind {
-            base_kind: BaseKind::Block,
-            sub_kind: SubKind::new().with_index(k as u8),
-        }
+        let app = matches!(k, DataKind::Application);
+        Kind::data(app, k as u8)
     }
 }
 
@@ -395,11 +420,18 @@ impl TryFrom<Kind> for DataKind {
     type Error = KindError;
 
     fn try_from(value: Kind) -> Result<Self, Self::Error> {
-        if value.base_kind != BaseKind::Block || value.sub_kind.app() {
-            return Err(KindError::InvalidKind(value));
+        // Check kind mask
+        let (app, variant) = match value {
+            Kind::Data { app, variant } => (app, variant),
+            _ => return Err(KindError::InvalidKind(value)),
+        };
+
+        // Convert to data kind
+        if app {
+            return Ok(DataKind::Application);
         }
 
-        DataKind::try_from(value.sub_kind.index()).map_err(|_| KindError::Unrecognized(value))
+        DataKind::try_from(variant).map_err(|_| KindError::Unrecognized(value))
     }
 }
 
@@ -410,16 +442,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_kinds() {
+        let tests = vec![
+            (Kind::page(false, 0x04), [0b0000_0100]),
+            (Kind::page(true, 0x05), [0b0010_0101]),
+            (Kind::data(false, 0x06), [0b0100_0110]),
+            (Kind::data(true, 0x08), [0b0110_1000]),
+            (Kind::request(0x19), [0b1001_1001]),
+            (Kind::response(0x2a), [0b1110_1010]),
+        ];
+
+        test_kind_coersions(&tests, |_| ())
+    }
+
+    #[test]
     fn test_page_kinds() {
         let tests = vec![
             // Pages
-            (PageKind::Generic, [0b0000_0000, 0b0000_0000]),
-            (PageKind::Peer, [0b0000_0000, 0b0000_0001]),
-            (PageKind::Replica, [0b0000_0000, 0b0000_0010]),
-            (PageKind::Name, [0b0000_0000, 0b0000_0011]),
-            (PageKind::ServiceLink, [0b0000_0000, 0b0000_0100]),
-            (PageKind::BlockLink, [0b0000_0000, 0b0000_0101]),
-            (PageKind::Private, [0b0000_0000, 0b0111_1111]),
+            (PageKind::Generic, [0b0000_0000]),
+            (PageKind::Peer, [0b0000_0001]),
+            (PageKind::Replica, [0b0000_0010]),
+            (PageKind::Name, [0b0000_0011]),
+            (PageKind::ServiceLink, [0b0000_0100]),
+            (PageKind::BlockLink, [0b0000_0101]),
         ];
 
         test_kind_coersions(&tests, |k| {
@@ -432,20 +477,33 @@ mod tests {
     }
 
     #[test]
+    fn test_data_kinds() {
+        let tests = vec![(DataKind::Generic, [0b0100_0000])];
+
+        test_kind_coersions(&tests, |k| {
+            assert_eq!(k.is_data(), true);
+            assert_eq!(k.is_page(), false);
+            assert_eq!(k.is_message(), false);
+            assert_eq!(k.is_request(), false);
+            assert_eq!(k.is_response(), false);
+        });
+    }
+
+    #[test]
     fn test_request_kinds() {
         let tests = vec![
-            (RequestKind::Hello, [0b0000_0010, 0b0000_0000]),
-            (RequestKind::Ping, [0b0000_0010, 0b0000_0001]),
-            (RequestKind::FindNodes, [0b0000_0010, 0b0000_0010]),
-            (RequestKind::FindValues, [0b0000_0010, 0b0000_0011]),
-            (RequestKind::Store, [0b0000_0010, 0b0000_0100]),
-            (RequestKind::Subscribe, [0b0000_0010, 0b0000_0101]),
-            (RequestKind::Query, [0b0000_0010, 0b0000_0110]),
-            (RequestKind::PushData, [0b0000_0010, 0b0000_0111]),
-            (RequestKind::Unsubscribe, [0b0000_0010, 0b0000_1000]),
-            (RequestKind::Register, [0b0000_0010, 0b0000_1001]),
-            (RequestKind::Unregister, [0b0000_0010, 0b0000_1010]),
-            (RequestKind::Discover, [0b0000_0010, 0b0000_1011]),
+            (RequestKind::Hello, [0b1000_0000]),
+            (RequestKind::Ping, [0b1000_0001]),
+            (RequestKind::FindNodes, [0b1000_0010]),
+            (RequestKind::FindValues, [0b1000_0011]),
+            (RequestKind::Store, [0b1000_0100]),
+            (RequestKind::Subscribe, [0b1000_0101]),
+            (RequestKind::Query, [0b1000_0110]),
+            (RequestKind::PushData, [0b1000_0111]),
+            (RequestKind::Unsubscribe, [0b1000_1000]),
+            (RequestKind::Register, [0b1000_1001]),
+            (RequestKind::Unregister, [0b1000_1010]),
+            (RequestKind::Discover, [0b1000_1011]),
         ];
 
         test_kind_coersions(&tests, |k| {
@@ -460,11 +518,11 @@ mod tests {
     #[test]
     fn test_response_kinds() {
         let tests = vec![
-            (ResponseKind::Status, [0b0000_0011, 0b0000_0000]),
-            (ResponseKind::NoResult, [0b0000_0011, 0b0000_0001]),
-            (ResponseKind::NodesFound, [0b0000_0011, 0b0000_0010]),
-            (ResponseKind::ValuesFound, [0b0000_0011, 0b0000_0011]),
-            (ResponseKind::PullData, [0b0000_0011, 0b0000_0100]),
+            (ResponseKind::Status, [0b1100_0000]),
+            (ResponseKind::NoResult, [0b1100_0001]),
+            (ResponseKind::NodesFound, [0b1100_0010]),
+            (ResponseKind::ValuesFound, [0b1100_0011]),
+            (ResponseKind::PullData, [0b1100_0100]),
         ];
 
         test_kind_coersions(&tests, |k| {
@@ -476,20 +534,7 @@ mod tests {
         });
     }
 
-    #[test]
-    fn test_data_kinds() {
-        let tests = vec![(DataKind::Generic, [0b0000_0001, 0b0000_0000])];
-
-        test_kind_coersions(&tests, |k| {
-            assert_eq!(k.is_data(), true);
-            assert_eq!(k.is_page(), false);
-            assert_eq!(k.is_message(), false);
-            assert_eq!(k.is_request(), false);
-            assert_eq!(k.is_response(), false);
-        });
-    }
-
-    fn test_kind_coersions<K>(tests: &[(K, [u8; 2])], check: impl Fn(&Kind))
+    fn test_kind_coersions<K>(tests: &[(K, [u8; 1])], check: impl Fn(&Kind))
     where
         K: Copy + TryFrom<Kind> + PartialEq + core::fmt::Debug,
         <K as TryFrom<Kind>>::Error: core::fmt::Debug,
@@ -505,7 +550,7 @@ mod tests {
             check(&v);
 
             // Test encoding
-            let mut buff = [0u8; 2];
+            let mut buff = [0u8; 1];
             v.encode(&mut buff).unwrap();
             assert_eq!(&buff, b, "encode {:?} mismatch", t);
 

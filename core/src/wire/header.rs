@@ -50,8 +50,7 @@ impl<T: ImmutableData> WireHeader<T> {
     }
 
     pub fn index(&self) -> u32 {
-        let b = &self.buff.as_ref()[offsets::INDEX..];
-        u32::from_le_bytes([b[0], b[1], b[2], 0])
+        LittleEndian::read_u32(&self.buff.as_ref()[offsets::INDEX..])
     }
 
     pub fn data_len(&self) -> usize {
@@ -157,17 +156,14 @@ impl<T: MutableData> WireHeader<T> {
 
     /// Set the object kind
     pub fn set_kind(&mut self, kind: Kind) {
-        LittleEndian::write_u16(&mut self.buff.as_mut()[offsets::OBJECT_KIND..], kind.into())
+        self.buff.as_mut()[offsets::OBJECT_KIND] = kind.into();
     }
 
     /// Set object index
     pub fn set_index(&mut self, index: u32) {
         let d = &mut self.buff.as_mut()[offsets::INDEX..];
 
-        d[0] = (index & 0xFF) as u8;
-        d[1] = (index >> 8) as u8;
-        d[2] = (index >> 16) as u8;
-        d[3] = 0;
+        LittleEndian::write_u32(&mut self.buff.as_mut()[offsets::INDEX..], index);
     }
 
     /// Set the body field length

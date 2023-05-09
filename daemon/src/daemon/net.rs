@@ -8,8 +8,10 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 use std::time::{Duration, SystemTime};
 
-use dsf_core::types::address::{IPV4_BROADCAST, IPV6_BROADCAST};
-use dsf_core::types::BaseKind;
+use dsf_core::types::{
+    address::{IPV4_BROADCAST, IPV6_BROADCAST},
+    kinds::Kind,
+};
 use dsf_rpc::{
     LocateOptions, QosPriority, RegisterOptions, ServiceIdentifier, ServiceState, SubscribeOptions,
 };
@@ -231,8 +233,8 @@ where
 
             match self.services().find(&id) {
                 Some(info) if info.state == ServiceState::Subscribed || info.subscribed => {
-                    match header.kind().base_kind {
-                        BaseKind::Page => {
+                    match header.kind() {
+                        Kind::Page { .. } => {
                             debug!(
                                 "Receive service page {:#} index {}",
                                 id,
@@ -242,7 +244,7 @@ where
                                 error!("Failed to update service: {:?}", e);
                             }
                         }
-                        BaseKind::Block => {
+                        Kind::Data { .. } => {
                             debug!(
                                 "Receive service data {:#} index {}",
                                 id,

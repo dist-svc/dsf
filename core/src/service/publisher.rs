@@ -164,7 +164,7 @@ impl DataBody for SecondaryData {}
 #[derive(Clone, Debug)]
 pub struct DataOptions<'a, Body: DataBody = &'a [u8]> {
     /// Data object kind
-    pub data_kind: u8,
+    pub data_kind: Kind,
 
     /// Data object body
     pub body: Option<Body>,
@@ -185,7 +185,7 @@ pub struct DataOptions<'a, Body: DataBody = &'a [u8]> {
 impl<'a, Body: DataBody> Default for DataOptions<'a, Body> {
     fn default() -> Self {
         Self {
-            data_kind: 0,
+            data_kind: Kind::data(false, DataKind::Generic as u8),
             body: None,
             issued: default_issued(),
             public_options: &[],
@@ -365,7 +365,7 @@ where
 
         let header = Header {
             application_id: self.application_id,
-            kind: Kind::data(options.data_kind),
+            kind: options.data_kind,
             flags,
             index,
             ..Default::default()

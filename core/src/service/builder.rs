@@ -75,15 +75,6 @@ impl<B: PageBody> ServiceBuilder<B> {
         }
     }
 
-    /// Setup a private service.
-    /// This is equivalent to .kind(Kind::Private)
-    pub fn private() -> Self {
-        Self {
-            kind: PageKind::Private,
-            ..Default::default()
-        }
-    }
-
     /// Setup a name service with the specified prefix
     pub fn ns(prefix: &str) -> Self {
         let mut s = Self {

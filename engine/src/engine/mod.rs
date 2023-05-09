@@ -1,7 +1,7 @@
 use crate::log::{debug, error, info, trace, warn, Debug};
 use crate::store::{ObjectFilter, SubscribeState};
 use dsf_core::api::Application;
-use dsf_core::types::{BaseKind, ImmutableData};
+use dsf_core::types::{ImmutableData, Kind};
 use dsf_core::wire::Container;
 
 use dsf_core::base::Decode;
@@ -120,7 +120,11 @@ where
         // TODO: fetch existing page if available?
 
         // Create service
-        let mut svc = sb.body(info).build().map_err(EngineError::Core)?;
+        let mut svc = sb
+            .kind(PageKind::Application)
+            .body(info)
+            .build()
+            .map_err(EngineError::Core)?;
 
         // Store created service keys
         store.set_ident(&svc.keys()).map_err(EngineError::Store)?;
@@ -234,9 +238,12 @@ where
     ) -> Result<Container<[u8; N]>, EngineError<<C as Comms>::Error, <S as Store>::Error>> {
         // Generate page
         let page_buff = [0u8; N];
+        let opts = PrimaryOptions {
+            ..Default::default()
+        };
         let (_n, p) = self
             .svc
-            .publish_primary(Default::default(), page_buff)
+            .publish_primary(opts, page_buff)
             .map_err(EngineError::Core)?;
 
         let sig = p.signature();
@@ -419,8 +426,8 @@ where
             && base.header().flags().contains(Flags::PUB_KEY_REQUEST);
 
         // Convert and handle messages
-        let (resp, evt) = match base.header().kind().base_kind {
-            BaseKind::Request | BaseKind::Response => {
+        let (resp, evt) = match base.header().kind() {
+            Kind::Request { .. } | Kind::Response { .. } => {
                 match NetMessage::parse(base.raw().to_vec(), &self.store)
                     .map_err(EngineError::Core)?
                 {
@@ -428,8 +435,8 @@ where
                     (NetMessage::Response(resp), _) => self.handle_resp(&from, resp)?,
                 }
             }
-            BaseKind::Page => self.handle_page(&from, base)?,
-            BaseKind::Block => self.handle_page(&from, base)?,
+            Kind::Page { .. } => self.handle_page(&from, base)?,
+            Kind::Data { .. } => self.handle_page(&from, base)?,
         };
 
         // Send responses

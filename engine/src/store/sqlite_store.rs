@@ -215,7 +215,7 @@ impl<Addr: Clone + Debug + 'static> Store for SqliteStore<Addr> {
 
         let v = objects
             .select((signature, object_index))
-            .filter(kind.eq(BaseKind::Block.to_string()))
+            .filter(kind.eq(BaseKind::Data.to_string()))
             .order_by(object_index.desc())
             .limit(1)
             .load::<(String, i32)>(&mut conn)
@@ -266,7 +266,7 @@ impl<Addr: Clone + Debug + 'static> Store for SqliteStore<Addr> {
 
         let values = (
             object_index.eq(p.header().index() as i32),
-            kind.eq(p.header().kind().base_kind.to_string()),
+            kind.eq(p.header().kind().base().to_string()),
             signature.eq(p.signature().to_string()),
             data.eq(p.raw()),
         );
