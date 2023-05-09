@@ -294,13 +294,14 @@ impl Client {
     }
 
     /// Fetch pages from a given service
-    pub async fn page(&mut self, options: page::FetchOptions) -> Result<Container, Error> {
-        let req = RequestKind::Page(PageCommands::Fetch(options));
+    pub async fn object(&mut self, options: data::FetchOptions) -> Result<DataInfo, Error> {
+        let req = RequestKind::Data(DataCommands::Get(options));
 
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Page(page) => Ok(page),
+            ResponseKind::Data(data) if data.len() == 1 => Ok(data[0].clone()),
+            ResponseKind::Data(_) => Err(Error::NoPageFound),
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }

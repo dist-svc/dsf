@@ -178,6 +178,8 @@ impl<B: PageBody> Service<B> {
         if header.application_id() != self.application_id {
             return Err(Error::UnexpectedApplicationId);
         }
+        // TODO: check page kinds match
+        #[cfg(nope)]
         if header.kind() != self.kind.into() {
             return Err(Error::InvalidPageKind);
         }

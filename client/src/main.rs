@@ -118,7 +118,6 @@ fn handle_response(resp: ResponseKind, no_trunc: bool) {
             println!("Status: {:?}", status);
         }
         ResponseKind::Service(info) => {
-            println!("Created / Located service");
             print_service(&info, no_trunc);
         }
         ResponseKind::Services(services) => {

@@ -187,6 +187,8 @@ impl<Addr: Clone + Debug + 'static> Store for SqliteStore<Addr> {
             .do_nothing()
             .execute(&mut self.pool.get().unwrap())?;
 
+        self.keys = keys.clone();
+
         Ok(())
     }
 

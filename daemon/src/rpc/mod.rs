@@ -181,6 +181,25 @@ where
                 Err(_e) => Some(ResponseKind::None),
             },
 
+            RequestKind::Data(DataCommands::Get(data::FetchOptions {
+                service,
+                page_sig
+            })) => match self.resolve_identifier(&service) {
+                Ok(id) => {
+                    // Fetch data
+                    let d = self.data().get_object(&id, &page_sig)?;
+
+                    // Lookup private key
+                    let _k = self.services().find(&id).map(|s| s.private_key).flatten();
+
+                    // Build info array
+                    let i = d.iter().map(|i| i.info.clone()).collect();
+
+                    Some(ResponseKind::Data(i))
+                }
+                Err(_e) => Some(ResponseKind::None),
+            },
+
             _ => None,
         };
 

@@ -226,19 +226,19 @@ impl core::fmt::Display for Kind {
         match self {
             Kind::Page { app, variant } => match PageKind::try_from(*variant) {
                 Ok(k) if !app => write!(f, "Page({k})")?,
-                _ => write!(f, "Page({variant:02x})")?,
+                _ => write!(f, "Page(app:0x{variant:02x})")?,
             },
             Kind::Data { app, variant } => match DataKind::try_from(*variant) {
                 Ok(k) if !app => write!(f, "Data({k})")?,
-                _ => write!(f, "Data({variant:02x})")?,
+                _ => write!(f, "Data(app:0x{variant:02x})")?,
             },
             Kind::Request { variant } => match RequestKind::try_from(*variant) {
                 Ok(k) => write!(f, "Request({k})")?,
-                _ => write!(f, "Request({variant:02x})")?,
+                _ => write!(f, "Request(0x{variant:02x})")?,
             },
             Kind::Response { variant } => match ResponseKind::try_from(*variant) {
                 Ok(k) => write!(f, "Response({k})")?,
-                _ => write!(f, "Response({variant:02x})")?,
+                _ => write!(f, "Response(0x{variant:02x})")?,
             },
         }
 

@@ -1,4 +1,5 @@
 use clap::Parser;
+use dsf_core::base::{Encode, Decode, DecodeOwned};
 use dsf_core::options::OptionsIter;
 use dsf_core::prelude::{DsfError, KeySource, Options};
 use serde::{Deserialize, Serialize};
@@ -9,12 +10,12 @@ use crate::helpers::data_from_str;
 use crate::{PageBounds, ServiceIdentifier, TimeBounds};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DataInfo {
+pub struct DataInfo<B: Encode = Vec<u8>> {
     pub service: Id,
     pub kind: Kind,
     pub index: u32,
 
-    pub body: Body,
+    pub body: MaybeEncrypted<B>,
     pub public_options: Vec<Options>,
     pub private_options: MaybeEncrypted<Vec<Options>>,
 
@@ -65,6 +66,35 @@ impl DataInfo {
             signature: c.signature(),
         })
     }
+
+    /// Convert [DataInfo] object using application page or data encoding
+    pub fn convert<B>(&self) -> Result<DataInfo<<B as DecodeOwned>::Output>, <B as DecodeOwned>::Error> 
+    where
+        B: Encode + DecodeOwned,
+        <B as DecodeOwned>::Output: Encode,
+    {
+        use MaybeEncrypted::*;
+
+        let body = match &self.body {
+            Cleartext(d) => {
+                let (b, _) = B::decode_owned(&d)?;
+                Cleartext(b)
+            },
+            Encrypted(e) => Encrypted(e.clone()),
+            None => None,
+        };
+
+        Ok(DataInfo {
+            service: self.service.clone(),
+            kind: self.kind,
+            index: self.index,
+            body,
+            public_options: self.public_options.clone(),
+            private_options: self.private_options.clone(),
+            previous: self.previous.clone(),
+            signature: self.signature.clone(),
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
@@ -88,6 +118,10 @@ pub enum DataCommands {
     #[clap(name = "sync")]
     /// Sync data for a known service
     Sync(SyncOptions),
+
+    #[clap(name = "get")]
+    /// Fetch a specific data object
+    Get(FetchOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
@@ -174,4 +208,15 @@ pub struct SyncInfo {
     pub total: usize,
     /// Number of synced objects
     pub synced: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Parser, Serialize, Deserialize)]
+pub struct FetchOptions {
+    /// Service identifier
+    #[clap(flatten)]
+    pub service: ServiceIdentifier,
+
+    /// Page signature
+    #[clap(long)]
+    pub page_sig: Signature,
 }

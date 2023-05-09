@@ -127,6 +127,11 @@ impl<T: Engine> SyncData for T {
             }
         }
 
+        if last_index == 0 {
+            warn!("Service reports index 0, retry");
+            return Err(DsfError::InvalidResponse);
+        }
+
         // TODO: reduce peers based on initial response
 
         for i in (0..last_index - 1).rev() {

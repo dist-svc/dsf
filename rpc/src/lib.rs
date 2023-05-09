@@ -28,9 +28,6 @@ pub use replica::*;
 pub mod subscriber;
 pub use subscriber::*;
 
-pub mod page;
-pub use page::*;
-
 pub mod name;
 pub use name::*;
 
@@ -150,11 +147,7 @@ pub enum RequestKind {
     #[clap(subcommand)]
     Ns(NsCommands),
 
-    /// Object requests
-    #[clap(subcommand)]
-    Page(PageCommands),
-
-    /// Subcommand for managing data
+    /// Subcommand for managing objects
     #[clap(subcommand)]
     Data(DataCommands),
 
