@@ -116,13 +116,13 @@ impl<T: Engine> NameService for T {
         };
 
         // Generate search query
-        let lookup = match (opts.name, opts.hash) {
-            (Some(n), _) => ns.resolve(&Options::name(&n))?,
-            (_, Some(_h)) => {
-                todo!("Hash based searching not yet implemented");
-            }
+        let lookup = match (&opts.name, &opts.options, &opts.hash) {
+            (Some(n), _, _) => ns.resolve(&Options::name(&n))?,
+            (_, Some(o), _) => ns.resolve(o)?,
+            (_, _, Some(h)) => ns.resolve(h)?,
             _ => {
-                todo!("Search requires hash or name argument");
+                error!("Search requires name, option, or hash argument");
+                return Err(DsfError::InvalidOption)
             }
         };
 
@@ -265,14 +265,30 @@ impl<T: Engine> NameService for T {
             prefix
         );
 
+        // Attach target options to NS object
+        let mut private_options = opts.options.clone();
+
         // Generate TIDs from provided options and hashes
         let mut tids = vec![];
-        if let Some(n) = &opts.name {
-            tids.push(ns.resolve(&Options::name(n))?);
+
+        // Name if provided
+        // TODO: check name is not duplicated
+        if let Some(n) = opts.name.as_ref().map(Options::name) {
+            private_options.push(n.clone());
+            tids.push(ns.resolve(n)?);
         }
+
+        // Generic TIDs using options
+        for o in &opts.options {
+            tids.push(ns.resolve(o)?);
+        }
+
+        // Application-specific TIDs via pre-hashed values
         for h in &opts.hashes {
             tids.push(ns.resolve(h)?);
         }
+
+        private_options.push(Options::peer_id(target.id()));
 
         // TODO: setup issued / expiry times to be consistent
         let issued = DateTime::now();
@@ -280,7 +296,6 @@ impl<T: Engine> NameService for T {
 
         // Generate name service data block
         let body = Some(TertiaryData { tids: tids.clone() });
-        let target_id = target.id();
         let res = self
             .svc_update(
                 ns.id(),
@@ -289,7 +304,7 @@ impl<T: Engine> NameService for T {
                     let (_, d) = s.publish_data_buff::<TertiaryData>(DataOptions {
                         data_kind: DataKind::Name.into(),
                         body: body.clone(),
-                        private_options: &[Options::peer_id(target_id.clone())],
+                        private_options: &private_options,
                         public_options: &[Options::expiry(expiry.clone())],
                         ..Default::default()
                     })?;
@@ -304,8 +319,7 @@ impl<T: Engine> NameService for T {
         };
 
         // Store data block
-
-        // TODO: remove info, doesn't provide any particular utility
+        debug!("Storing NS data: {:#}", data.signature());
         self.object_put(data.clone()).await?;
 
         // TODO: Lookup subscribers and distribute update
@@ -527,6 +541,7 @@ mod test {
                 target: target_id,
                 name: Some("something".to_string()),
                 hashes: vec![],
+                options: vec![],
             })
             .await
             .unwrap();

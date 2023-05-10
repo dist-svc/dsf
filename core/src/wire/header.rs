@@ -161,8 +161,6 @@ impl<T: MutableData> WireHeader<T> {
 
     /// Set object index
     pub fn set_index(&mut self, index: u32) {
-        let d = &mut self.buff.as_mut()[offsets::INDEX..];
-
         LittleEndian::write_u32(&mut self.buff.as_mut()[offsets::INDEX..], index);
     }
 

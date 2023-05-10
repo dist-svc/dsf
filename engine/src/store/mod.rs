@@ -1,8 +1,10 @@
-use core::convert::TryFrom;
+//! [Store] interface for [Engine] implementations
+//! 
+//! This provides persistent storage to the engine to maintain
+//! keys, history, and optionally peers and subscriptions.
+
 use core::fmt::Debug;
 use core::marker::PhantomData;
-
-use byteorder::{ByteOrder, LittleEndian};
 
 use dsf_core::{
     crypto::{Crypto, PubKey as _},

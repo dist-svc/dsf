@@ -1,10 +1,10 @@
 use clap::Parser;
-use dsf_core::base::{Encode, Decode, DecodeOwned};
+use dsf_core::base::{Encode, DecodeOwned};
 use dsf_core::options::OptionsIter;
 use dsf_core::prelude::{DsfError, KeySource, Options};
 use serde::{Deserialize, Serialize};
 
-use dsf_core::{base::Body, options::Filters, prelude::MaybeEncrypted, types::*, wire::Container};
+use dsf_core::{options::Filters, prelude::MaybeEncrypted, types::*, wire::Container};
 
 use crate::helpers::data_from_str;
 use crate::{PageBounds, ServiceIdentifier, TimeBounds};

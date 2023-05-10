@@ -38,11 +38,15 @@ pub struct NsSearchOptions {
     pub ns: ServiceIdentifier,
 
     #[clap(long, group = "filters")]
-    /// Service for search operation
+    /// Service name for search operation
     pub name: Option<String>,
 
     #[clap(long, group = "filters")]
-    /// Hashes for searching
+    /// Searchable options for generic application matching
+    pub options: Option<Options>,
+
+    #[clap(long, group = "filters")]
+    /// Searchable hashes for application-specific matching
     pub hash: Option<CryptoHash>,
 }
 
@@ -57,11 +61,15 @@ pub struct NsRegisterOptions {
     pub target: Id,
 
     #[clap(long)]
-    /// Service for registration
+    /// Service name for use in registry (equivalent to --options=name:)
     pub name: Option<String>,
 
     #[clap(long)]
-    /// Hashes to associate with this service (input to TID derivation)
+    /// Options for general TID generation
+    pub options: Vec<Options>,
+
+    #[clap(long)]
+    /// Hashes for application-specific TID derivation
     pub hashes: Vec<CryptoHash>,
 }
 

@@ -18,7 +18,6 @@ use tokio::{
 use tracing::{span, Level};
 
 use dsf_core::api::*;
-use dsf_core::wire::Container;
 use dsf_rpc::*;
 use dsf_rpc::{Request as RpcRequest, Response as RpcResponse};
 

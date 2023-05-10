@@ -107,9 +107,9 @@ where
                 let mut services = self.services().list();
                 services.sort_by_key(|s| s.index);
 
-                // Filter by application ID
-                if let Some(a) = opts.application_id {
-                    // TODO: implement filtering
+                // TODO: Filter by application ID
+                if let Some(_a) = opts.application_id {
+                    
                 }
 
                 // Filter by service kind

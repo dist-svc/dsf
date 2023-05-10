@@ -46,7 +46,6 @@ impl<T: Engine> SyncData for T {
         // Resolve service id / index to a service instance
         let svc = self.svc_resolve(options.service).await?;
         let info = self.svc_get(svc.id()).await?;
-        let keys = svc.keys();
 
         // Resolve replicas / peers for connection
         let mut peers = vec![];

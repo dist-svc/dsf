@@ -77,6 +77,7 @@ async fn test_ns() {
             target: s.id.clone(),
             name: Some(n.to_string()),
             hashes: vec![],
+            options: vec![],
         })
         .await
         .unwrap();
@@ -89,6 +90,7 @@ async fn test_ns() {
             ns: ServiceIdentifier::from(ns.id),
             name: Some(n.to_string()),
             hash: None,
+            options: None,
         })
         .await
         .unwrap();
