@@ -10,7 +10,7 @@ use tempdir::TempDir;
 
 use dsf_daemon::engine::{Engine, EngineOptions};
 
-use dsf_client::{Client, Options as ClientOptions};
+use dsf_client::{Client, Config as ClientConfig};
 
 use dsf_rpc::{self as rpc};
 
@@ -51,7 +51,7 @@ async fn end_to_end() {
         let handle = e.start().await.expect("Error launching engine");
 
         // Create client
-        let mut client = Client::new(&ClientOptions::new(Some(&addr), Duration::from_secs(1)))
+        let mut client = Client::new(&ClientConfig::new(Some(&addr), Duration::from_secs(1)))
             .await
             .expect("Error creating client");
 

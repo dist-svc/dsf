@@ -2,7 +2,7 @@
 //!
 
 pub mod client;
-pub use client::{Client, Options};
+pub use client::{Client, Config};
 
 //pub mod net;
 

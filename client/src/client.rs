@@ -29,7 +29,7 @@ type RequestMap = Arc<Mutex<HashMap<u64, mpsc::Sender<ResponseKind>>>>;
 
 /// Options for client instantiation
 #[derive(Clone, Debug, Parser)]
-pub struct Options {
+pub struct Config {
     #[clap(short, long, env = "DSF_SOCK")]
     /// Override default daemon socket
     /// (otherwise this will attempt to connect to user then
@@ -41,7 +41,7 @@ pub struct Options {
     pub timeout: HumanDuration,
 }
 
-impl Options {
+impl Config {
     pub fn new(address: Option<&str>, timeout: Duration) -> Self {
         Self {
             daemon_socket: address.map(|v| v.to_string()),
@@ -84,7 +84,7 @@ pub struct Client<D: Driver = UnixDriver> {
 
 impl Client {
     /// Create a new client
-    pub async fn new(options: &Options) -> Result<Self, Error> {
+    pub async fn new(options: &Config) -> Result<Self, Error> {
         let daemon_socket = options.daemon_socket();
 
         let span = span!(Level::DEBUG, "client", "{}", daemon_socket);
@@ -354,6 +354,18 @@ impl Client {
                 let handle = ServiceHandle { id: id.clone() };
                 Ok((handle, info[0].clone()))
             }
+            ResponseKind::Error(e) => Err(Error::Remote(e)),
+            _ => Err(Error::UnrecognizedResult),
+        }
+    }
+
+    pub async fn discover(&mut self, options: DiscoverOptions) -> Result<Vec<ServiceInfo>, Error> {
+        let req = RequestKind::Service(dsf_rpc::service::ServiceCommands::Discover(options));
+
+        let resp = self.request(req).await?;
+
+        match resp {
+            ResponseKind::Services(info) => Ok(info),
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }

@@ -6,7 +6,7 @@ use log::{debug, error, warn};
 use prettytable::{row, Table};
 use simplelog::{LevelFilter, TermLogger};
 
-use dsf_client::{Client, Options};
+use dsf_client::{Client, Config};
 use dsf_core::{helpers::print_bytes, prelude::MaybeEncrypted, types::Id};
 use dsf_rpc::{DataInfo, PeerInfo, RequestKind, ResponseKind, ServiceInfo};
 
@@ -15,12 +15,12 @@ use dsf_rpc::{DataInfo, PeerInfo, RequestKind, ResponseKind, ServiceInfo};
     name = "DSF Client",
     about = "Distributed Service Discovery (DSF) client, interacts with the DSF daemon to publish and locate services"
 )]
-struct Config {
+struct Args {
     #[clap(subcommand)]
     cmd: Commands,
 
     #[clap(flatten)]
-    options: Options,
+    config: Config,
 
     /// Disable field truncation during display
     #[clap(long)]
@@ -53,7 +53,7 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     // Fetch arguments
-    let opts = Config::parse();
+    let opts = Args::parse();
 
     // Setup logging
     let mut log_config = simplelog::ConfigBuilder::new();
@@ -84,14 +84,14 @@ async fn main() -> Result<(), anyhow::Error> {
     // Create client connector
     debug!(
         "Connecting to client socket: '{}'",
-        &opts.options.daemon_socket()
+        &opts.config.daemon_socket()
     );
-    let mut c = match Client::new(&opts.options).await {
+    let mut c = match Client::new(&opts.config).await {
         Ok(c) => c,
         Err(e) => {
             return Err(anyhow::anyhow!(
                 "Error connecting to daemon on '{}': {:?}",
-                &opts.options.daemon_socket(),
+                &opts.config.daemon_socket(),
                 e
             ));
         }

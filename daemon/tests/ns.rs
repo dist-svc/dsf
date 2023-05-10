@@ -8,7 +8,7 @@ use rpc::{CreateOptions, NsRegisterOptions, NsSearchOptions, ServiceIdentifier};
 use tempdir::TempDir;
 use tracing_subscriber::{filter::LevelFilter, FmtSubscriber};
 
-use dsf_client::{Client, Options as ClientOptions};
+use dsf_client::{Client, Config as ClientConfig};
 use dsf_daemon::engine::{Engine, EngineOptions};
 use dsf_rpc::{self as rpc};
 
@@ -38,7 +38,7 @@ async fn test_ns() {
     let _h = e.start().await.expect("Error launching engine");
 
     // Setup client connector
-    let mut client = Client::new(&ClientOptions::new(
+    let mut client = Client::new(&ClientConfig::new(
         Some(&daemon_socket),
         Duration::from_secs(5),
     ))

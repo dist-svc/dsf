@@ -1,6 +1,6 @@
 use core::fmt::Debug;
 
-use dsf_core::api::Application;
+use dsf_core::{api::Application, prelude::Options};
 
 use crate::{
     comms::Comms,
@@ -16,6 +16,7 @@ impl<A: Application, S: Store<Address = std::net::SocketAddr>, const N: usize>
     /// Create a new [std::net::UdpSocket] based engine
     pub fn udp<Addr: std::net::ToSocketAddrs + Debug>(
         info: A::Info,
+        opts: &[Options],
         addr: Addr,
         store: S,
     ) -> Result<Self, EngineError<std::io::Error, <S as Store>::Error>> {
@@ -29,7 +30,7 @@ impl<A: Application, S: Store<Address = std::net::SocketAddr>, const N: usize>
         comms.set_nonblocking(true).map_err(EngineError::Comms)?;
 
         // Create engine instance
-        Self::new(info, comms, store)
+        Self::new(info, opts, comms, store)
     }
 
     /// Tick function to update engine and poll on socket

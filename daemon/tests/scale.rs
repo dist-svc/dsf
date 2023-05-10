@@ -10,7 +10,7 @@ use tracing_subscriber::FmtSubscriber;
 use indicatif::ProgressBar;
 use tempdir::TempDir;
 
-use dsf_client::{Client, Options as ClientOptions};
+use dsf_client::{Client, Config as ClientConfig};
 use dsf_daemon::engine::{Engine, EngineOptions};
 use dsf_rpc::{self as rpc};
 
@@ -68,7 +68,7 @@ async fn scale(n: usize, level: LevelFilter) {
         let handle = e.start().await.unwrap();
 
         // Create client
-        let mut client = Client::new(&ClientOptions::new(Some(&addr), Duration::from_secs(3)))
+        let mut client = Client::new(&ClientConfig::new(Some(&addr), Duration::from_secs(3)))
             .await
             .expect("Error connecting to client");
 

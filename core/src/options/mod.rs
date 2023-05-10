@@ -177,6 +177,15 @@ impl Options {
     pub fn room(value: impl AsRef<str>) -> Options {
         Options::Room(value.as_ref().into())
     }
+
+    /// Indicates an option is filterable and should be considered
+    /// when filtering service responses
+    pub fn filterable(&self) -> bool {
+        match self {
+            Self::Name(..) | Self::Kind(..) | Self::Building(..) | Self::Room(..) | Self::Manufacturer(..) | Self::Serial(..) => true,
+            _ => false,
+        }
+    }
 }
 
 /// Parse parses a control option from the given scope

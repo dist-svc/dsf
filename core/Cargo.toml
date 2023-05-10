@@ -43,7 +43,7 @@ digest = { version = "0.10.3", default_features = false, features = [ "core-api"
 # libsodium replacements...
 ed25519 = { version = "1.4.0", default_features = false }
 ed25519-dalek = { version = "1.0.1", default_features = false, features = [ "rand" ] }
-encdec = "0.8.0"
+encdec = "0.9.0"
 getrandom = { version = "0.2.5", optional = true, default_features = false }
 heapless = { version = "0.7.10" }
 #derive_builder = "0.7.0"

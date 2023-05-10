@@ -24,6 +24,12 @@ impl DateTime {
     }
 }
 
+impl PartialOrd<DateTime> for DateTime {
+    fn partial_cmp(&self, other: &DateTime) -> Option<core::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
 impl Add<core::time::Duration> for DateTime {
     type Output = DateTime;
 

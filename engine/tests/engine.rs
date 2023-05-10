@@ -35,7 +35,7 @@ fn new_engine(addr: &str, info: Vec<u8>) -> anyhow::Result<E> {
     s.update(&p.id(), |k| *k = p.keys());
 
     // Setup engine with newly created service
-    let e = E::udp(info, addr, s)?;
+    let e = E::udp(info, &[], addr, s)?;
 
     Ok(e)
 }

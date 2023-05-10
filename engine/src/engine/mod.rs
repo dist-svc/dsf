@@ -1,7 +1,8 @@
 use crate::log::{debug, error, info, trace, warn, Debug};
 use crate::store::{ObjectFilter, SubscribeState};
 use dsf_core::api::Application;
-use dsf_core::types::{ImmutableData, Kind};
+use dsf_core::options::Filters;
+use dsf_core::types::{ImmutableData, Kind, DateTime};
 use dsf_core::wire::Container;
 
 use dsf_core::base::Decode;
@@ -24,6 +25,7 @@ pub struct Engine<A: Application, C: Comms, S: Store, const N: usize = 512> {
 
     pri: Signature,
     req_id: RequestId,
+    expiry: Option<DateTime>,
 
     comms: C,
     store: S,
@@ -92,6 +94,7 @@ where
 {
     pub fn new(
         info: A::Info,
+        opts: &[Options],
         comms: C,
         mut store: S,
     ) -> Result<Self, EngineError<<C as Comms>::Error, <S as Store>::Error>> {
@@ -123,6 +126,7 @@ where
         let mut svc = sb
             .kind(PageKind::Application)
             .body(info)
+            .public_options(opts.to_vec())
             .build()
             .map_err(EngineError::Core)?;
 
@@ -138,6 +142,7 @@ where
             .map_err(EngineError::Core)?;
 
         let sig = p.signature();
+        let expiry = p.public_options_iter().expiry();
 
         trace!("Generated new page: {:?} sig: {}", p, sig);
 
@@ -151,6 +156,7 @@ where
         Ok(Self {
             svc,
             pri: sig,
+            expiry,
             req_id: 0,
             comms,
             store,
@@ -254,6 +260,7 @@ where
         self.store.store_page(&p).map_err(EngineError::Store)?;
 
         self.pri = sig;
+        self.expiry = p.public_options_iter().expiry();
 
         Ok(p)
     }
@@ -345,7 +352,15 @@ where
             return self.handle(a, &mut buff[..n]);
         }
 
-        // TODO: regenerate primary page if required
+        // Regenerate primary page on expiry
+        // TODO: work out how to handle this in no_std case?
+        #[cfg(feature = "std")]
+        if let Some(exp) = &self.expiry {
+            if exp < &DateTime::now() {
+                debug!("Expiring primary page ({:?})", exp);
+                self.generate_primary()?;
+            }
+        }
 
         // TODO: walk subscribers and expire if required
 
@@ -517,7 +532,7 @@ where
                 let mut matches = match self.svc.body() {
                     // Skip for private services
                     _ if self.svc.encrypted() => false,
-                    // Otherwie check for matching info
+                    // Otherwise check for matching info
                     MaybeEncrypted::Cleartext(i) => A::matches(i, body),
                     // Respond to empty requests
                     _ => true,
@@ -525,9 +540,15 @@ where
 
                 // Iterate through matching options
                 for o in options {
-                    if self.svc.public_options().contains(o) {
-                        debug!("Filter match on option: {:?}", o);
-                        matches = true;
+                    // Skip non-filterable options
+                    if !o.filterable() {
+                        continue;
+                    }
+
+                    // Otherwise, check for matches
+                    if !self.svc.public_options().contains(o) {
+                        debug!("Filter mismatch on option: {:?}", o);
+                        matches = false;
                         break;
                     }
                 }
@@ -868,7 +889,7 @@ mod test {
         let body = vec![0xaa, 0xbb, 0xcc, 0xdd];
 
         // Setup engine with default service
-        let e = Engine::new(body, MockComms::default(), s).expect("Failed to create engine");
+        let e = Engine::new(body, &[], MockComms::default(), s).expect("Failed to create engine");
 
         (p, e)
     }
