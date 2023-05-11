@@ -12,7 +12,7 @@ use crate::Debug;
 
 pub type Body = MaybeEncrypted;
 
-pub use encdec::{Decode, DecodeOwned, Encode, EncDec};
+pub use encdec::{Decode, DecodeOwned, EncDec, Encode};
 
 pub trait Message<'a>: Decode<'a> + Encode {
     const KIND: u16;

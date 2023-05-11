@@ -249,8 +249,12 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
 
         if let Ok(PageInfo::ServiceLink(s)) = c.info() {
             match public_tertiaries.entry(s.target_id) {
-                Entry::Occupied(mut e) if e.get().header().index() < c.header().index() => { e.insert(c); },
-                Entry::Vacant(e) => { e.insert(c); },
+                Entry::Occupied(mut e) if e.get().header().index() < c.header().index() => {
+                    e.insert(c);
+                }
+                Entry::Vacant(e) => {
+                    e.insert(c);
+                }
                 _ => (),
             }
         }
@@ -259,14 +263,13 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
     println!("Public tertiaries: {:?}", public_tertiaries);
 
     // For private registries we just have to take the latest subset of pages
-    // TODO: any better approach to this? some form of deterministic one-way fn for 
+    // TODO: any better approach to this? some form of deterministic one-way fn for
     let private_tertiaries = ordered.iter().filter(|c| {
         let h = c.header();
         h.kind().is_page() && h.flags().contains(Flags::TERTIARY | Flags::ENCRYPTED) && !c.expired()
     });
 
     println!("Private tertiaries: {:?}", private_tertiaries);
-
 
     // TODO: should we reduce per-ns?
     // (it is _very improbable_ that hash collisions result in more than one NS attempting to use the same TID)
@@ -282,7 +285,7 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
 
     // And finally sort by index and limit to the latest N indicies
     let mut tertiaries: Vec<&Container> = tertiaries.iter().map(|(_k, v)| *v).collect();
-    tertiaries.sort_by_key(|c| c.header().index() );
+    tertiaries.sort_by_key(|c| c.header().index());
 
     let num_tertiaries = tertiaries.len().min(16);
     let tertiaries = tertiaries.drain(..num_tertiaries).map(|c| c.clone());

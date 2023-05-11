@@ -60,7 +60,6 @@ async fn end_to_end() {
 
         // Add the new daemon to the list
         daemons.push((id, c, client, handle));
-
     }
     info!("created {} daemons", daemons.len());
 
@@ -103,8 +102,6 @@ async fn end_to_end() {
             })
             .await
             .expect("search failed");
-
-        
     }
     info!("searching for services");
 

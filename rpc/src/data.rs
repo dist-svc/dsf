@@ -1,5 +1,5 @@
 use clap::Parser;
-use dsf_core::base::{Encode, DecodeOwned};
+use dsf_core::base::{DecodeOwned, Encode};
 use dsf_core::options::OptionsIter;
 use dsf_core::prelude::{DsfError, KeySource, Options};
 use serde::{Deserialize, Serialize};
@@ -68,7 +68,9 @@ impl DataInfo {
     }
 
     /// Convert [DataInfo] object using application page or data encoding
-    pub fn convert<B>(&self) -> Result<DataInfo<<B as DecodeOwned>::Output>, <B as DecodeOwned>::Error> 
+    pub fn convert<B>(
+        &self,
+    ) -> Result<DataInfo<<B as DecodeOwned>::Output>, <B as DecodeOwned>::Error>
     where
         B: Encode + DecodeOwned,
         <B as DecodeOwned>::Output: Encode,
@@ -79,7 +81,7 @@ impl DataInfo {
             Cleartext(d) => {
                 let (b, _) = B::decode_owned(&d)?;
                 Cleartext(b)
-            },
+            }
             Encrypted(e) => Encrypted(e.clone()),
             None => None,
         };

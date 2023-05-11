@@ -69,7 +69,11 @@ impl DataManager {
         Ok(results)
     }
 
-    pub fn get_object<'a, F: Into<ObjectIdentifier<'a>>>(&self, service_id: &Id, f: F) -> Result<Option<DataInst>, Error> {
+    pub fn get_object<'a, F: Into<ObjectIdentifier<'a>>>(
+        &self,
+        service_id: &Id,
+        f: F,
+    ) -> Result<Option<DataInst>, Error> {
         // Load service info
         let service = match self.store.find_service(service_id)? {
             Some(s) => s,

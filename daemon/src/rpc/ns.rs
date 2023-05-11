@@ -122,7 +122,7 @@ impl<T: Engine> NameService for T {
             (_, _, Some(h)) => ns.resolve(h)?,
             _ => {
                 error!("Search requires name, option, or hash argument");
-                return Err(DsfError::InvalidOption)
+                return Err(DsfError::InvalidOption);
             }
         };
 

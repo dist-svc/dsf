@@ -182,7 +182,12 @@ impl Options {
     /// when filtering service responses
     pub fn filterable(&self) -> bool {
         match self {
-            Self::Name(..) | Self::Kind(..) | Self::Building(..) | Self::Room(..) | Self::Manufacturer(..) | Self::Serial(..) => true,
+            Self::Name(..)
+            | Self::Kind(..)
+            | Self::Building(..)
+            | Self::Room(..)
+            | Self::Manufacturer(..)
+            | Self::Serial(..) => true,
             _ => false,
         }
     }

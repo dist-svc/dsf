@@ -37,6 +37,7 @@ use crate::error::Error as DaemonError;
 
 use crate::rpc::register::RegisterService;
 use crate::rpc::subscribe::PubSub;
+use crate::rpc::Engine;
 use crate::store::object::ObjectIdentifier;
 use crate::{
     core::{
@@ -236,6 +237,7 @@ where
 
             match self.services().find(&id) {
                 Some(info) if info.state == ServiceState::Subscribed || info.subscribed => {
+                    // Update local service
                     match header.kind() {
                         Kind::Page { .. } => {
                             debug!(
@@ -258,6 +260,32 @@ where
                             };
                         }
                         _ => (),
+                    }
+
+                    // TODO: forward to subscribers
+                    match self.subscribers().find_peers(&id) {
+                        Ok(peer_ids) => {
+                            let peer_subs: Vec<_> = peer_ids
+                                .iter()
+                                .filter_map(|peer_id| self.peers().find(peer_id))
+                                .collect();
+
+                            debug!("Forwarding data to: {:?}", peer_subs);
+
+                            let req =
+                                net::RequestBody::PushData(id.clone(), vec![container.to_owned()]);
+
+                            let exec = self.exec();
+                            tokio::task::spawn(async move {
+                                match exec.net_req(req, peer_subs).await {
+                                    Ok(_) => info!("Data push ok"),
+                                    Err(e) => warn!("Data push error: {:?}", e),
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch subscribers for service {:#}: {:?}", id, e)
+                        }
                     }
                 }
                 None => debug!("No matching service for ID: {:#}", id),
@@ -833,13 +861,7 @@ where
                 // TODO: check this is _new_ data, otherwise ignore (avoid)
 
                 // Generate data push message
-                let req_id = rand::random();
-                let req = net::Request::new(
-                    self.id(),
-                    req_id,
-                    net::RequestBody::PushData(id.clone(), data),
-                    Flags::default(),
-                );
+                let req = net::RequestBody::PushData(id.clone(), data);
 
                 // Generate peer list for data push
                 // TODO: we should be cleverer about this to avoid
@@ -850,17 +872,17 @@ where
                     .filter_map(|peer_id| self.peers().find(peer_id))
                     .collect();
 
-                info!(
-                    "Sending data push message id {} to: {:?}",
-                    req_id, peer_subs
-                );
+                info!("Sending data push message to: {:?}", peer_subs);
 
                 // Issue data push requests
                 // TODO: we should probably wire the return here to send a delayed PublishInfo to the requester?
-                // TODO: deadlock? yeees, deadlock is here or related to this call
-                let _ = self.net_op(peer_subs, req);
-
-                info!("Data push complete");
+                let exec = self.exec();
+                tokio::task::spawn(async move {
+                    match exec.net_req(req, peer_subs).await {
+                        Ok(_) => info!("Data push complete"),
+                        Err(e) => warn!("Data push error: {:?}", e),
+                    }
+                });
 
                 Ok(net::ResponseBody::Status(net::Status::Ok))
             }

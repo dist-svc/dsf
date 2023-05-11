@@ -123,7 +123,7 @@ impl Store {
                 .select((service_id, raw_data, previous, signature))
                 .load::<PageFields>(&mut self.pool.get().unwrap())?,
         };
-        
+
         if results.len() == 0 {
             return Ok(None);
         }
@@ -147,13 +147,13 @@ pub enum ObjectIdentifier<'a> {
     Latest,
 }
 
-impl <'a> From<&'a Signature> for ObjectIdentifier<'a> {
+impl<'a> From<&'a Signature> for ObjectIdentifier<'a> {
     fn from(value: &'a Signature) -> Self {
         Self::Sig(value)
     }
 }
 
-impl <'a> From<u32> for ObjectIdentifier<'a> {
+impl<'a> From<u32> for ObjectIdentifier<'a> {
     fn from(value: u32) -> Self {
         Self::Index(value)
     }

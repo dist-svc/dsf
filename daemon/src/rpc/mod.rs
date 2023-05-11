@@ -24,7 +24,7 @@ use crate::{
     rpc::{
         bootstrap::Bootstrap, connect::Connect, create::CreateService, discover::Discover,
         locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService, publish::PublishData,
-        register::RegisterService, subscribe::PubSub, sync::SyncData, replicate::ReplicateService,
+        register::RegisterService, replicate::ReplicateService, subscribe::PubSub, sync::SyncData,
     },
 };
 
@@ -77,7 +77,7 @@ where
                     .map(|(id, p)| (id, p.info()))
                     .collect();
 
-                peers.sort_by_key(|(_, p)| p.index );
+                peers.sort_by_key(|(_, p)| p.index);
 
                 Some(ResponseKind::Peers(peers))
             }
@@ -110,9 +110,7 @@ where
                 services.sort_by_key(|s| s.index);
 
                 // TODO: Filter by application ID
-                if let Some(_a) = opts.application_id {
-                    
-                }
+                if let Some(_a) = opts.application_id {}
 
                 // Filter by service kind
                 if let Some(k) = opts.kind {
@@ -183,24 +181,23 @@ where
                 Err(_e) => Some(ResponseKind::None),
             },
 
-            RequestKind::Data(DataCommands::Get(data::FetchOptions {
-                service,
-                page_sig
-            })) => match self.resolve_identifier(&service) {
-                Ok(id) => {
-                    // Fetch data
-                    let d = self.data().get_object(&id, &page_sig)?;
+            RequestKind::Data(DataCommands::Get(data::FetchOptions { service, page_sig })) => {
+                match self.resolve_identifier(&service) {
+                    Ok(id) => {
+                        // Fetch data
+                        let d = self.data().get_object(&id, &page_sig)?;
 
-                    // Lookup private key
-                    let _k = self.services().find(&id).map(|s| s.private_key).flatten();
+                        // Lookup private key
+                        let _k = self.services().find(&id).map(|s| s.private_key).flatten();
 
-                    // Build info array
-                    let i = d.iter().map(|i| i.info.clone()).collect();
+                        // Build info array
+                        let i = d.iter().map(|i| i.info.clone()).collect();
 
-                    Some(ResponseKind::Data(i))
+                        Some(ResponseKind::Data(i))
+                    }
+                    Err(_e) => Some(ResponseKind::None),
                 }
-                Err(_e) => Some(ResponseKind::None),
-            },
+            }
 
             _ => None,
         };

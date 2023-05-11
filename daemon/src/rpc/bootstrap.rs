@@ -24,7 +24,7 @@ use dsf_core::prelude::*;
 
 use dsf_rpc::{self as rpc}; //, BootstrapInfo, BootstrapOptions};
 
-use crate::core::peers::{Peer, PeerAddress};
+use crate::core::peers::{Peer, PeerAddress, PeerFlags};
 use crate::daemon::{net::NetIf, Dsf};
 use crate::error::Error;
 use crate::rpc::connect::Connect;
@@ -41,27 +41,34 @@ pub trait Bootstrap {
 impl<T: Engine> Bootstrap for T {
     async fn bootstrap(&self) -> Result<BootstrapInfo, DsfError> {
         info!("Bootstrap!");
+        let mut connected = 0;
 
         // Fetch peer list
-        let peers = self.peer_list().await?;
+        let mut peers = self.peer_list().await?;
+
+        // Filter for non-constrained / non-transient peers
+        let peers: Vec<_> = peers
+            .drain(..)
+            .filter(|p| {
+                p.flags.contains(PeerFlags::CONSTRAINED) || p.flags.contains(PeerFlags::TRANSIENT)
+            })
+            .collect();
+
         if peers.len() == 0 {
-            warn!("No peers found, skipping bootstrap");
-            return Err(DsfError::NoPeersFound);
-        }
+            warn!("No peers found, skipping peer bootstrap");
+        } else {
+            debug!("Bootstrap via {} peers", peers.len());
 
-        // TODO: filter by non-transient peers only
-        // (though these should never be written back to the db)
-        debug!("Bootstrap via {} peers", peers.len());
+            // Issue connect operations to available peers
+            // TODO: combine into a single DHT connect op instead of
+            // splitting over peers?
 
-        // Issue connect operations to available peers
-        // TODO: combine into a single DHT connect op instead of
-        // splitting over peers?
-        let mut connected = 0;
-        for p in &peers {
-            match self.dht_connect(p.address(), Some(p.id())).await {
-                Ok(_) => connected += 1,
-                Err(e) => {
-                    warn!("Failed to connect to peer {:?}: {:?}", p, e);
+            for p in &peers {
+                match self.dht_connect(p.address(), Some(p.id())).await {
+                    Ok(_) => connected += 1,
+                    Err(e) => {
+                        warn!("Failed to connect to peer {:?}: {:?}", p, e);
+                    }
                 }
             }
         }
@@ -70,7 +77,9 @@ impl<T: Engine> Bootstrap for T {
 
         // TODO: Update registrations for published services
 
-        // TODO: Update service subscriptions
+        // TODO: Update service subscriptions and replicas
+
+        // TODO: Re-publish tertiary pages for name services
 
         warn!("Bootstrap RPC not fully implemented");
 

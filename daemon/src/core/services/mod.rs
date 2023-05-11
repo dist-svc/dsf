@@ -21,9 +21,6 @@ use crate::store::Store;
 pub mod inst;
 pub use inst::ServiceInst;
 
-pub mod data;
-pub use data::Data;
-
 /// ServiceManager keeps track of local and remote services
 pub struct ServiceManager {
     pub(crate) services: HashMap<Id, ServiceInst>,

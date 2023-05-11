@@ -136,13 +136,16 @@ impl Message {
             Response::convert(base, key_source).map(Message::Response)
         } else {
             debug!("Error converting base object of kind {:?} to message", kind);
-            return Err(Error::InvalidMessageType)
+            return Err(Error::InvalidMessageType);
         };
 
         match r {
             Ok(r) => Ok(r),
             Err(e) => {
-                debug!("Error converting base object of kind {:?} to message: {:?}", kind, e);
+                debug!(
+                    "Error converting base object of kind {:?} to message: {:?}",
+                    kind, e
+                );
                 Err(e)
             }
         }

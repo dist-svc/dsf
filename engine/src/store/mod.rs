@@ -1,5 +1,5 @@
 //! [Store] interface for [Engine] implementations
-//! 
+//!
 //! This provides persistent storage to the engine to maintain
 //! keys, history, and optionally peers and subscriptions.
 
