@@ -24,7 +24,7 @@ use crate::{
     rpc::{
         bootstrap::Bootstrap, connect::Connect, create::CreateService, discover::Discover,
         locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService, publish::PublishData,
-        register::RegisterService, subscribe::PubSub, sync::SyncData,
+        register::RegisterService, subscribe::PubSub, sync::SyncData, replicate::ReplicateService,
     },
 };
 
@@ -70,12 +70,14 @@ where
                 Some(ResponseKind::Status(i))
             }
             RequestKind::Peer(PeerCommands::List(_options)) => {
-                let peers = self
+                let mut peers: Vec<_> = self
                     .peers()
                     .list()
                     .drain(..)
                     .map(|(id, p)| (id, p.info()))
                     .collect();
+
+                peers.sort_by_key(|(_, p)| p.index );
 
                 Some(ResponseKind::Peers(peers))
             }
@@ -277,6 +279,10 @@ where
                             .map(|v| ResponseKind::Located(vec![v])),
                         ServiceCommands::Register(opts) => exec
                             .service_register(opts)
+                            .await
+                            .map(|v| ResponseKind::Registered(v)),
+                        ServiceCommands::Replicate(opts) => exec
+                            .service_replicate(opts)
                             .await
                             .map(|v| ResponseKind::Registered(v)),
                         ServiceCommands::Subscribe(opts) => {

@@ -99,16 +99,31 @@ impl Store {
         Ok(())
     }
 
-    pub fn load_object<K: KeySource>(
+    pub fn load_object<'a, K: KeySource>(
         &self,
-        sig: &Signature,
+        id: &Id,
+        obj: impl Into<ObjectIdentifier<'a>>,
         key_source: &K,
     ) -> Result<Option<Container>, StoreError> {
-        let results = object
-            .filter(signature.eq(sig.to_string()))
-            .select((service_id, raw_data, previous, signature))
-            .load::<PageFields>(&mut self.pool.get().unwrap())?;
-
+        let results = match obj.into() {
+            ObjectIdentifier::Sig(sig) => object
+                .filter(service_id.eq(id.to_string()))
+                .filter(signature.eq(sig.to_string()))
+                .select((service_id, raw_data, previous, signature))
+                .load::<PageFields>(&mut self.pool.get().unwrap())?,
+            ObjectIdentifier::Index(idx) => object
+                .filter(service_id.eq(id.to_string()))
+                .filter(object_index.eq(idx as i32))
+                .select((service_id, raw_data, previous, signature))
+                .load::<PageFields>(&mut self.pool.get().unwrap())?,
+            ObjectIdentifier::Latest => object
+                .filter(service_id.eq(id.to_string()))
+                .order_by(object_index.desc())
+                .limit(1)
+                .select((service_id, raw_data, previous, signature))
+                .load::<PageFields>(&mut self.pool.get().unwrap())?,
+        };
+        
         if results.len() == 0 {
             return Ok(None);
         }
@@ -118,6 +133,29 @@ impl Store {
         let c = Container::parse(r_raw.to_vec(), key_source).map_err(|_e| StoreError::Decode)?;
 
         Ok(Some(c))
+    }
+}
+
+/// Object identifiers for loading objects
+#[derive(Clone, Debug, PartialEq)]
+pub enum ObjectIdentifier<'a> {
+    /// Load by globally unique signature
+    Sig(&'a Signature),
+    /// Load by service and service-specific index
+    Index(u32),
+    /// Load latest object for a service
+    Latest,
+}
+
+impl <'a> From<&'a Signature> for ObjectIdentifier<'a> {
+    fn from(value: &'a Signature) -> Self {
+        Self::Sig(value)
+    }
+}
+
+impl <'a> From<u32> for ObjectIdentifier<'a> {
+    fn from(value: u32) -> Self {
+        Self::Index(value)
     }
 }
 
@@ -152,13 +190,13 @@ mod test {
         let sig = page.signature();
 
         // Check no matching service exists
-        assert_eq!(None, store.load_object(&sig, &keys).unwrap());
+        assert_eq!(None, store.load_object(&s.id(), &sig, &keys).unwrap());
 
         // Store data
         store.save_object(&page).unwrap();
         assert_eq!(
             Some(&page.to_owned()),
-            store.load_object(&sig, &keys).unwrap().as_ref()
+            store.load_object(&s.id(), &sig, &keys).unwrap().as_ref()
         );
         assert_eq!(
             vec![page.to_owned()],
@@ -167,6 +205,6 @@ mod test {
 
         // Delete data
         store.delete_object(&sig).unwrap();
-        assert_eq!(None, store.load_object(&sig, &keys).unwrap());
+        assert_eq!(None, store.load_object(&s.id(), &sig, &keys).unwrap());
     }
 }

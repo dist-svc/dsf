@@ -108,10 +108,14 @@ pub(super) async fn fetch_primary<E: Engine>(
             Ok(v) if !v.expired() => {
                 debug!("Using existing primary page {:#}", sig);
                 return Ok(v);
-            }
-            Ok(_) => {
+            },
+            Ok(_) if info.private_key.is_some() => {
                 debug!("Existing primary page has expired");
-            }
+            },
+            Ok(_) => {
+                warn!("Cannot register foreign service with expired primary page");
+                return Err(DsfError::PageExpired);
+            },
             Err(e) => {
                 warn!(
                     "Failed to fetch primary page {:#} for service {:#}: {:?}",

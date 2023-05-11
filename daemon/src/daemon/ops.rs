@@ -110,6 +110,18 @@ where
                         error!("Failed to send operation response: {:?}", e);
                     }
                 }
+                // Handle update of peer service
+                // TODO: does this need to be a special case / could
+                // we put this in the normal service collection?
+                OpKind::ServiceUpdate(id, f) if id == self.id() => {
+                    let svc = self.service();
+                    let mut state = ServiceState::Created;
+                    let r = f(svc, &mut state);
+
+                    if let Err(e) = op.done.try_send(r) {
+                        error!("Failed to send operation response: {:?}", e);
+                    }
+                }
                 OpKind::ServiceUpdate(id, f) => {
                     let r = self
                         .services()

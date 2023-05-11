@@ -181,6 +181,25 @@ impl<T: Engine> SyncData for T {
             break;
         }
 
+        // Update service using received info
+        let mut last_page = None;
+        for (_, o) in objects.iter() {
+            let h = o.header();
+
+            if !h.kind().is_page() {
+                continue;
+            }
+
+            match last_page {
+                None => last_page = Some(o),
+                Some(l) if l.header().index() < h.index() => last_page = Some(o),
+                _ => (),
+            }
+        }
+        if let Some(p) = last_page {
+            self.svc_register(svc.id(), vec![p.to_owned()]).await?;
+        }
+
         Ok(SyncInfo {
             total: last_index as usize,
             synced: num_synced,

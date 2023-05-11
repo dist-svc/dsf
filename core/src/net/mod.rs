@@ -112,6 +112,8 @@ impl Message {
             }
         }
 
+        trace!("Converting {:?} to net message", c);
+
         // Convert into message object
         let m = Message::convert(c, key_source)?;
 
@@ -128,13 +130,21 @@ impl Message {
         let kind = header.kind();
 
         // Parse request and response types
-        if kind.is_request() {
-            Ok(Message::Request(Request::convert(base, key_source)?))
+        let r = if kind.is_request() {
+            Request::convert(base, key_source).map(Message::Request)
         } else if kind.is_response() {
-            Ok(Message::Response(Response::convert(base, key_source)?))
+            Response::convert(base, key_source).map(Message::Response)
         } else {
             debug!("Error converting base object of kind {:?} to message", kind);
-            Err(Error::InvalidMessageType)
+            return Err(Error::InvalidMessageType)
+        };
+
+        match r {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                debug!("Error converting base object of kind {:?} to message: {:?}", kind, e);
+                Err(e)
+            }
         }
     }
 }

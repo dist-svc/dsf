@@ -55,6 +55,7 @@ pub enum Error {
     BufferLength,
     InvalidUtf8,
     Encrypted,
+    PageExpired,
 }
 
 #[cfg(feature = "std")]

@@ -37,6 +37,7 @@ use crate::error::Error as DaemonError;
 
 use crate::rpc::register::RegisterService;
 use crate::rpc::subscribe::PubSub;
+use crate::store::object::ObjectIdentifier;
 use crate::{
     core::{
         data::DataInfo,
@@ -222,6 +223,8 @@ where
         let id: Id = container.id().into();
 
         let mut data = msg.data.to_vec();
+
+        trace!("RX: {:?}", container);
 
         // Handle unwrapped objects (eg. from constrained services)
         if !header.kind().is_message() {
@@ -734,7 +737,7 @@ where
             }
             net::RequestBody::Unsubscribe(service_id) => {
                 info!(
-                    "Unsubscribe request from: {} for service: {}",
+                    "Unsubscribe request from: {:#} for service: {:#}",
                     from, service_id
                 );
 
@@ -742,8 +745,9 @@ where
 
                 Ok(net::ResponseBody::Status(net::Status::Ok))
             }
-            net::RequestBody::Query(id, _index) => {
-                info!("Query request from: {} for service: {}", from, id);
+            net::RequestBody::Query(id, index) => {
+                info!("Query request from: {:#} for service: {:#}", from, id);
+                // TODO: Check we have a replica of this service
                 let _service = match self.services().find(&id) {
                     Some(s) => s,
                     None => {
@@ -753,20 +757,32 @@ where
                     }
                 };
 
-                // TODO: fetch and return data
+                // Fetch data for service
+                let q = match index {
+                    Some(n) => ObjectIdentifier::Index(n),
+                    None => ObjectIdentifier::Latest,
+                };
+                let r = match self.data().get_object(&id, q.clone()) {
+                    Ok(Some(i)) => Ok(net::ResponseBody::PullData(id, vec![i.page])),
+                    Ok(None) => Ok(net::ResponseBody::NoResult),
+                    Err(e) => {
+                        error!("Failed to fetch object {:?}: {:?}", q, e);
+                        Err(e.into())
+                    }
+                };
 
                 info!("Query request complete");
 
-                Err(DaemonError::Unimplemented)
+                r
             }
             net::RequestBody::Register(id, pages) => {
-                info!("Register request from: {} for service: {}", from, id);
+                info!("Register request from: {:#} for service: {:#}", from, id);
                 // TODO: determine whether we should allow this service to be registered
 
                 // Add to local service registry
                 self.service_register(&id, pages)?;
 
-                info!("Register request for service: {} complete", id);
+                info!("Register request for service: {:#} complete", id);
 
                 Ok(net::ResponseBody::Status(net::Status::Ok))
             }
@@ -777,7 +793,7 @@ where
                 todo!()
             }
             net::RequestBody::PushData(id, data) => {
-                info!("Data push from: {} for service: {}", from, id);
+                info!("Data push from: {:#} for service: {:#}", from, id);
 
                 // TODO: why find _then_ validate_pages, duplicated ops?!
                 let _service = match self.services().find(&id) {

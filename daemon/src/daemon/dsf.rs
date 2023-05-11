@@ -109,13 +109,16 @@ where
         // Create managers
         //let store = Arc::new(Mutex::new(Store::new(&config.database_file)?));
         let peers = PeerManager::new(store.clone());
-        let services = ServiceManager::new(store.clone());
+        let mut services = ServiceManager::new(store.clone());
         let data = DataManager::new(store.clone());
 
         let replicas = ReplicaManager::new();
         let subscribers = SubscriberManager::new();
 
         let id = service.id();
+
+        // Load services etc.
+        services.load(&id);
 
         // Instantiate DHT
         let (dht_sink, dht_source) = mpsc::channel(100);

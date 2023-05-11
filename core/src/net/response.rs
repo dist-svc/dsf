@@ -151,6 +151,8 @@ impl Response {
     ) -> Result<Response, Error> {
         let header = base.header();
 
+        trace!("Header: {:?}", header);
+
         if base.encrypted() {
             error!("Attempted to convert encrypted container to request");
             return Err(Error::CryptoError);
@@ -208,7 +210,13 @@ impl Response {
                 let mut id = Id::default();
                 id.copy_from_slice(&body[0..ID_LEN]);
 
-                let pages = Container::decode_pages(&body[ID_LEN..], key_source)?;
+                let pages = match Container::decode_pages(&body[ID_LEN..], key_source) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!("Failed to decode values: {:?}", e);
+                        return Err(e);
+                    }
+                };
 
                 ResponseBody::ValuesFound(id, pages)
             }
@@ -216,7 +224,13 @@ impl Response {
                 let mut id = Id::default();
                 id.copy_from_slice(&body[0..ID_LEN]);
 
-                let pages = Container::decode_pages(&body[ID_LEN..], key_source)?;
+                let pages = match Container::decode_pages(&body[ID_LEN..], key_source) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!("Failed to decode data: {:?}", e);
+                        return Err(e);
+                    }
+                };
 
                 ResponseBody::PullData(id, pages)
             }

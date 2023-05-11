@@ -1,3 +1,4 @@
+use crate::store::object::ObjectIdentifier;
 use crate::sync::{Arc, Mutex};
 use std::convert::TryFrom;
 
@@ -68,7 +69,7 @@ impl DataManager {
         Ok(results)
     }
 
-    pub fn get_object(&self, service_id: &Id, sig: &Signature) -> Result<Option<DataInst>, Error> {
+    pub fn get_object<'a, F: Into<ObjectIdentifier<'a>>>(&self, service_id: &Id, f: F) -> Result<Option<DataInst>, Error> {
         // Load service info
         let service = match self.store.find_service(service_id)? {
             Some(s) => s,
@@ -80,7 +81,7 @@ impl DataManager {
             ..Default::default()
         };
 
-        let object = match self.store.load_object(sig, &keys)? {
+        let object = match self.store.load_object(service_id, f, &keys)? {
             Some(v) => v,
             None => return Ok(None),
         };

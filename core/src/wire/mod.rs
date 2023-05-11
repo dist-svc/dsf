@@ -291,7 +291,7 @@ impl Container {
             i += c.len();
 
             // Cache key for next run
-            if let Some(key) = c.info()?.pub_key() {
+            if let Ok(Some(key)) = c.info().map(|v| v.pub_key()) {
                 last_key = Some((c.id().clone(), Keys::new(key)));
             }
 

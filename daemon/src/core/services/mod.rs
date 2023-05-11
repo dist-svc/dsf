@@ -35,9 +35,7 @@ impl ServiceManager {
     pub fn new(store: Store) -> Self {
         let services = HashMap::new();
 
-        let mut s = Self { services, store };
-
-        s.load();
+        let s = Self { services, store };
 
         s
     }
@@ -282,7 +280,7 @@ impl ServiceManager {
     }
 
     /// Load the service database from disk
-    pub fn load(&mut self) {
+    pub fn load(&mut self, our_id: &Id) {
         trace!("services load");
 
         #[cfg(feature = "store")]
@@ -299,7 +297,7 @@ impl ServiceManager {
                 Some(p) => {
                     debug!("Loading page {:#} for service {:#}", p, i.id);
 
-                    match self.store.load_object(&p, &keys) {
+                    match self.store.load_object(&i.id, &p, &keys) {
                         Ok(Some(p)) => p,
                         Ok(None) => {
                             warn!("Missing page {:#} for service {:#}", p, i.id);
@@ -322,7 +320,7 @@ impl ServiceManager {
 
             let replica_page = i
                 .replica_page
-                .map(|s| self.store.load_object(&s, &keys).unwrap())
+                .map(|s| self.store.load_object(our_id, &s, &keys).unwrap())
                 .flatten();
 
             let mut service = Service::load(&primary_page).unwrap();

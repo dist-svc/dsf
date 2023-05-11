@@ -98,8 +98,12 @@ pub enum ServiceCommands {
     Info(InfoOptions),
 
     #[clap()]
-    /// Register an existing / known service
+    /// Register an existing / known service in the database
     Register(RegisterOptions),
+
+    #[clap()]
+    /// Replicate an existing / known service
+    Replicate(RegisterOptions),
 
     #[clap()]
     /// Subscribe to a known service
@@ -109,6 +113,7 @@ pub enum ServiceCommands {
     /// Unsubscribe from a known service
     Unsubscribe(UnsubscribeOptions),
 
+    #[clap()]
     /// Discover local services
     Discover(DiscoverOptions),
 
