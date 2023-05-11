@@ -1,7 +1,9 @@
 use std::collections::hash_map::{Entry, RandomState};
 use std::collections::HashMap;
 use std::iter::FromIterator;
+use std::num;
 
+use dsf_core::options::Filters;
 use dsf_core::wire::Container;
 use kad::prelude::*;
 
@@ -215,8 +217,9 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
     }
 
     // Reduce secondary pages by peer_id and version (via a hashmap to get only the latest value)
+    // These must be public so `.info()` works here
     let secondaries = ordered.iter().filter_map(|c| match c.info() {
-        Ok(PageInfo::Secondary(s)) if &c.id() == id => Some((s.peer_id, c.clone())),
+        Ok(PageInfo::Secondary(s)) if &c.id() == id && !c.expired() => Some((s.peer_id, c.clone())),
         _ => None,
     });
     let mut map = HashMap::<Id, Container, _>::new();
@@ -234,22 +237,65 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
 
     filtered.extend(map.drain().map(|(_k, v)| v.clone()));
 
-    // Reduce tertiary pages by publisher (via a hashmap to leave only the latest value)
-    let tertiary = ordered.iter().filter_map(|c| match c.info() {
-        Ok(PageInfo::ServiceLink(s)) if &c.id() == id => Some((s.peer_id, c.clone())),
-        Ok(PageInfo::BlockLink(s)) if &c.id() == id => Some((s.peer_id, c.clone())),
+    // Reduce tertiary pages
+    // These may be public or private, so must be handled without knowledge of the internals
 
-        _ => None,
+    // For public registries we can reduce by linked service (only keep the latest tertiary page for a given linked service)
+    let mut public_tertiaries = HashMap::<Id, &Container>::new();
+    for c in ordered.iter() {
+        if c.expired() {
+            continue;
+        }
+
+        if let Ok(PageInfo::ServiceLink(s)) = c.info() {
+            match public_tertiaries.entry(s.target_id) {
+                Entry::Occupied(mut e) if e.get().header().index() < c.header().index() => { e.insert(c); },
+                Entry::Vacant(e) => { e.insert(c); },
+                _ => (),
+            }
+        }
+    }
+
+    println!("Public tertiaries: {:?}", public_tertiaries);
+
+    // For private registries we just have to take the latest subset of pages
+    // TODO: any better approach to this? some form of deterministic one-way fn for 
+    let private_tertiaries = ordered.iter().filter(|c| {
+        let h = c.header();
+        h.kind().is_page() && h.flags().contains(Flags::TERTIARY | Flags::ENCRYPTED) && !c.expired()
     });
-    let mut map = HashMap::<_, _, RandomState>::from_iter(tertiary);
-    filtered.extend(map.drain().map(|(_k, v)| v.clone()));
+
+    println!("Private tertiaries: {:?}", private_tertiaries);
+
+
+    // TODO: should we reduce per-ns?
+    // (it is _very improbable_ that hash collisions result in more than one NS attempting to use the same TID)
+
+    // Then we need to deduplicate by index
+    let mut tertiaries = HashMap::<u32, &Container>::new();
+    for (_k, c) in public_tertiaries {
+        tertiaries.insert(c.header().index(), c);
+    }
+    for c in private_tertiaries {
+        tertiaries.insert(c.header().index(), c);
+    }
+
+    // And finally sort by index and limit to the latest N indicies
+    let mut tertiaries: Vec<&Container> = tertiaries.iter().map(|(_k, v)| *v).collect();
+    tertiaries.sort_by_key(|c| c.header().index() );
+
+    let num_tertiaries = tertiaries.len().min(16);
+    let tertiaries = tertiaries.drain(..num_tertiaries).map(|c| c.clone());
+
+    filtered.extend(tertiaries);
 
     // TODO: should we be checking page sigs here or can we depend on these being validated earlier?
     // pretty sure it should be earlier...
 
-    // TODO: we could also check publish / expiry times are valid and reasonable here
+    // TODO: expire pages
     // Secondary and tertiary pages _must_ contain issued / expiry times
-    // Primary pages... are somewhat more difficult, eviction will need to be tracked based on when they are stored
+    // Primary pages are somewhat more difficult as constrained devices may not have times...
+    // eviction will need to be tracked based on when they are stored
 
     filtered
 }
@@ -357,11 +403,12 @@ mod test {
     }
 
     #[test]
-    fn test_reduce_tertiary() {
-        let ns1 = setup();
+    fn test_reduce_tertiary_public() {
+        let ns1: Service<Vec<u8>> = ServiceBuilder::ns("test-ns").build().unwrap();
         let _ns2 = setup();
 
-        let target_id = Id::from(rand::random::<[u8; 32]>());
+        let target1 = Id::from(rand::random::<[u8; 32]>());
+        let target2 = Id::from(rand::random::<[u8; 32]>());
 
         let name = Options::name("test-name");
         let tid = ns1.resolve(&name).unwrap();
@@ -373,30 +420,87 @@ mod test {
         };
 
         // Generate two pages
-        let (_, t1a) = ns1
+        let (_, t1) = ns1
             .publish_tertiary_buff::<256>(
-                target_id.clone().into(),
+                target1.clone().into(),
+                tertiary_opts.clone(),
+                tid.clone(),
+            )
+            .unwrap();
+
+        tertiary_opts.index += 1;
+        let (_, t2) = ns1
+            .publish_tertiary_buff::<256>(
+                target2.clone().into(),
+                tertiary_opts.clone(),
+                tid.clone(),
+            )
+            .unwrap();
+
+        tertiary_opts.index += 1;
+        let (_, t2a) = ns1
+            .publish_tertiary_buff::<256>(
+                target2.clone().into(),
+                tertiary_opts.clone(),
+                tid.clone(),
+            )
+            .unwrap();
+
+        let pages = vec![t1.to_owned(), t2.to_owned(), t2a.to_owned()];
+
+        // Reduce should leave only the _later_ tertiary page for a given target
+        let mut r = dht_reducer(&tid, &pages);
+
+        let mut e = vec![t1.to_owned(), t2a.to_owned()];
+
+        r.sort_by_key(|p| p.signature());
+        e.sort_by_key(|p| p.signature());
+
+        assert_eq!(r, e);
+    }
+
+    #[test]
+    fn test_reduce_tertiary_private() {
+        let ns1: Service<Vec<u8>> = ServiceBuilder::ns("test-ns").encrypt().build().unwrap();
+        let _ns2 = setup();
+
+        let target1 = Id::from(rand::random::<[u8; 32]>());
+        let target2 = Id::from(rand::random::<[u8; 32]>());
+
+        let name = Options::name("test-name");
+        let tid = ns1.resolve(&name).unwrap();
+
+        let mut tertiary_opts = TertiaryOptions {
+            index: 0,
+            issued: DateTime::now(),
+            expiry: DateTime::now().add(Duration::from_secs(60 * 60)),
+        };
+
+        // Generate two pages
+        let (_, t1) = ns1
+            .publish_tertiary_buff::<256>(
+                target1.clone().into(),
                 tertiary_opts.clone(),
                 tid.clone(),
             )
             .unwrap();
 
         tertiary_opts.index = 1;
-        let (_, t1b) = ns1
+        let (_, t2) = ns1
             .publish_tertiary_buff::<256>(
-                target_id.clone().into(),
+                target2.clone().into(),
                 tertiary_opts.clone(),
                 tid.clone(),
             )
             .unwrap();
 
-        let pages = vec![t1a.to_owned(), t1b.to_owned()];
+        let pages = vec![t1.to_owned(), t2.to_owned()];
 
         // Reduce should leave only the _later_ tertiary page
         // TODO: could sort by time equally as well as index?
         let mut r = dht_reducer(&tid, &pages);
 
-        let mut e = vec![t1b.to_owned()];
+        let mut e = vec![t1.to_owned(), t2.to_owned()];
 
         r.sort_by_key(|p| p.signature());
         e.sort_by_key(|p| p.signature());

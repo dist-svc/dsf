@@ -120,7 +120,7 @@ impl<B: PageBody> Registry for Service<B> {
         // Setup header
         let header = Header {
             kind: kind.into(),
-            index: 0,
+            index: opts.index,
             flags,
             ..Default::default()
         };

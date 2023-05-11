@@ -622,6 +622,7 @@ mod test {
                 ns: ServiceIdentifier::id(ns_id),
                 name: Some(name.to_string()),
                 hash: None,
+                options: None,
             })
             .await
             .unwrap();
