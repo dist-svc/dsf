@@ -119,7 +119,7 @@ impl Store {
         let mut conn = self.pool.get().unwrap();
 
         sql_query(
-            "CREATE TABLE services (
+            "CREATE TABLE IF NOT EXISTS services (
             service_id TEXT NOT NULL UNIQUE PRIMARY KEY, 
             service_index INTEGER NOT NULL,
             kind TEXT NOT NULL, 
@@ -142,7 +142,7 @@ impl Store {
         .execute(&mut conn)?;
 
         sql_query(
-            "CREATE TABLE peers (
+            "CREATE TABLE IF NOT EXISTS peers (
             peer_id TEXT NOT NULL UNIQUE PRIMARY KEY, 
             peer_index INTEGER, 
             state TEXT NOT NULL, 
@@ -160,7 +160,7 @@ impl Store {
         .execute(&mut conn)?;
 
         sql_query(
-            "CREATE TABLE object (
+            "CREATE TABLE IF NOT EXISTS object (
             service_id TEXT NOT NULL,
             object_index INTEGER NOT NULL,
 
@@ -173,7 +173,7 @@ impl Store {
         .execute(&mut conn)?;
 
         sql_query(
-            "CREATE TABLE identity (
+            "CREATE TABLE IF NOT EXISTS identity (
             service_id TEXT NOT NULL PRIMARY KEY,
 
             public_key TEXT NOT NULL,

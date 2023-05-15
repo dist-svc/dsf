@@ -38,8 +38,9 @@ jobs:
       with:
         key: core
         path: |
-          ~/.cargo
-          target/
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
 
     - name: Track target/ cache files for cleanup
       uses: actions-rs/cargo@v1
@@ -70,8 +71,9 @@ jobs:
       with:
         key: core-${{ github.run_id }}
         path: |
-          ~/.cargo
-          target/
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
 
   # Pre-build test assets
   build-tests:
@@ -97,8 +99,9 @@ jobs:
       with:
         key: test
         path: |
-          ~/.cargo
-          ./target
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
 
     - name: Track target/ cache files for cleanup
       uses: actions-rs/cargo@v1
@@ -124,8 +127,9 @@ jobs:
       with:
         key: test-${{ github.run_id }}
         path: |
-          ~/.cargo
-          ./target
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
 
   # Run per-package tests
   test:
@@ -152,8 +156,9 @@ jobs:
       with:
         key: test
         path: |
-          ~/.cargo
-          ./target
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
 
     - name: Run cargo test
       uses: actions-rs/cargo@v1
@@ -166,6 +171,8 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     needs: [ "check", "test" ]
+    permissions:
+      packages: write
 
     strategy:
       fail-fast: false
@@ -226,13 +233,14 @@ jobs:
         key: core
         path: |
           ~/.cargo/registry
+          ~/.cargo/git
 
     - name: Restore target cache
       uses: actions/cache/restore@v3
       with:
         key: build-${{ matrix.target }}
         path: |
-          ./target
+          target
     
     - name: Track target/ cache files for cleanup
       uses: actions-rs/cargo@v1
@@ -264,7 +272,7 @@ jobs:
       with:
         key: build-${{ matrix.target }}-${{ github.run_id }}
         path: |
-          ./target
+          target
     
     - name: Create .tgz archive
       run: |
