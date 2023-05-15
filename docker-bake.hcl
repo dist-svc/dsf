@@ -45,14 +45,6 @@ target "armv7" {
         "ghcr.io/dist-svc/dsf:armv7"
     ]
     args = {
-        TARGET = "aarch64-unknown-linux-gnu"
+        TARGET = "armv7-unknown-linux-gnueabihf"
     }
-}
-
-function "resolve_target" {
-    params = [arch]
-    result = lookup({
-            "linux/amd64": "x86_64-unknown-linux-gnu",
-        },
-        arch, "fail")
 }
