@@ -182,23 +182,14 @@ jobs:
           os: ubuntu-latest
           use_cross: true
           docker: amd64
-        - target: x86_64-unknown-linux-musl
-          os: ubuntu-latest
-          use_cross: true
         - target: armv7-unknown-linux-gnueabihf 
           os: ubuntu-latest
           use_cross: true
           docker: armv7
-        - target: armv7-unknown-linux-musleabihf
-          os: ubuntu-latest
-          use_cross: true
         - target: aarch64-unknown-linux-gnu
           os: ubuntu-latest
           use_cross: true
           docker: arm64
-        - target: aarch64-unknown-linux-musl
-          os: ubuntu-latest
-          use_cross: true
         - target: x86_64-apple-darwin
           os: macos-latest
 
