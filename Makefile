@@ -36,10 +36,16 @@ docker-push:
 	docker push ghcr.io/dist-svc/dsf:arm64
 	docker push ghcr.io/dist-svc/dsf:armv7
 
+# Pull latest images from registry
+docker-pull:
+	docker pull ghcr.io/dist-svc/dsf:amd64
+	docker pull ghcr.io/dist-svc/dsf:arm64
+	docker pull ghcr.io/dist-svc/dsf:armv7
+
 # Generate manifest for updates images 
 # (requires that images are already pushed to registry)
 docker-publish:
-	docker manifest rm ghcr.io/dist-svc/dsf:latest
+	-docker manifest rm ghcr.io/dist-svc/dsf:latest
 	docker manifest create ghcr.io/dist-svc/dsf:latest \
 		ghcr.io/dist-svc/dsf:amd64 \
 		ghcr.io/dist-svc/dsf:arm64 \

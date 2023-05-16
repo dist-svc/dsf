@@ -297,3 +297,18 @@ jobs:
           target/*.tgz
           target/debian/*.deb
 
+  # Update package manifests
+  publish:
+    runs-on: ubuntu-latest
+    needs: [ "build" ]
+    permissions:
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: FranzDiebold/github-env-vars-action@v2
+      - name: Update docker manifest
+        run: |
+          make docker-pull
+          make docker-publish
+          make docker-inspect
