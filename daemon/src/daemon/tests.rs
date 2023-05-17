@@ -26,7 +26,7 @@ use dsf_core::service::{Publisher, ServiceBuilder};
 use dsf_core::types::Flags;
 use dsf_rpc::{self as rpc};
 
-use super::{Dsf, Options};
+use super::{Dsf, DsfOptions};
 use crate::core::peers::PeerState;
 use crate::io::mock::{MockConnector, MockTransaction};
 use crate::store::Store;
@@ -40,7 +40,7 @@ async fn test_manager() {
 
     let d = TempDir::new("/tmp/").unwrap();
 
-    let config = Options::default();
+    let config = DsfOptions::default();
     let db_file = format!("{}/dsf-test.db", d.path().to_str().unwrap());
     let store = Store::new(&db_file).unwrap();
 

@@ -16,14 +16,14 @@ mod tests;
 
 /// DSF Instance Configuration Options
 #[derive(Clone, Debug, PartialEq, Parser)]
-pub struct Options {
+pub struct DsfOptions {
     #[clap(flatten)]
     pub dht: DhtConfig,
 }
 
-impl Default for Options {
+impl Default for DsfOptions {
     fn default() -> Self {
-        Options {
+        DsfOptions {
             dht: DhtConfig::default(),
         }
     }

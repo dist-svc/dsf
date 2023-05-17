@@ -25,7 +25,7 @@ use crate::io::*;
 use crate::rpc::bootstrap::Bootstrap;
 use crate::store::*;
 
-use crate::daemon::Options as DaemonOptions;
+use crate::daemon::DsfOptions as DaemonOptions;
 
 pub const DEFAULT_UNIX_SOCKET: &str = "/tmp/dsf.sock";
 pub const DEFAULT_DATABASE_FILE: &str = "/tmp/dsf.db";

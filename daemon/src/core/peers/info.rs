@@ -1,9 +1,12 @@
 use std::time::SystemTime;
 
+use serde::{Serialize, Deserialize};
+
 use dsf_core::prelude::*;
 pub use dsf_rpc::peer::{PeerAddress, PeerInfo, PeerState};
 
 bitflags::bitflags!(
+    #[derive(Serialize, Deserialize)]
     pub struct PeerFlags: u16 {
         const SYMMETRIC_AVAILABLE = (1 << 0);
         const SYMMETRIC_ENABLED = (1 << 1);

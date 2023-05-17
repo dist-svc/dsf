@@ -53,7 +53,7 @@ where
             match op.kind {
                 OpKind::Primary => {
                     let r = self
-                        .primary()
+                        .primary(false)
                         .map(|p| Res::Pages(vec![p]))
                         .map_err(|_| CoreError::Unknown);
 

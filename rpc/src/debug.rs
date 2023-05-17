@@ -1,8 +1,12 @@
+use std::net::SocketAddr;
+
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
 use crate::ServiceIdentifier;
-use dsf_core::types::Id;
+use dsf_core::types::{Id};
+
+use crate::helpers::try_parse_sock_addr;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Subcommand)]
 pub enum DebugCommands {
@@ -23,7 +27,13 @@ pub enum DebugCommands {
     Bootstrap,
 
     /// Fetch current NodeTable
-    NodeTable,
+    DhtNodes,
+
+    /// Set service address
+    SetAddress{
+        #[clap(value_parser = try_parse_sock_addr)]
+        addr: SocketAddr,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]

@@ -162,6 +162,13 @@ impl Options {
         Options::IPv4(address.into())
     }
 
+    pub fn is_address_v4(&self) -> bool {
+        match self {
+            Self::IPv4(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn address_v6<T: Into<AddressV6>>(address: T) -> Options {
         Options::IPv6(address.into())
     }

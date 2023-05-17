@@ -35,7 +35,7 @@ use crate::error::Error;
 use crate::store::Store;
 
 use super::dht::{dht_reducer, DsfDhtMessage};
-use super::Options;
+use super::DsfOptions;
 
 /// Re-export of Dht type used for DSF
 pub type DsfDht = Dht<Id, Peer, Data, RequestId>;
@@ -67,6 +67,7 @@ pub struct Dsf<Net = NetSink> {
 
     dht_source: mpsc::Receiver<(RequestId, DhtEntry<Id, Peer>, DhtRequest<Id, Container>)>,
 
+    /// Local (database) storage
     store: Store,
 
     /// RPC request channel
@@ -87,6 +88,9 @@ pub struct Dsf<Net = NetSink> {
     pub(crate) net_resp_tx: mpsc::UnboundedSender<(Address, Option<Id>, NetMessage)>,
     pub(crate) net_resp_rx: mpsc::UnboundedReceiver<(Address, Option<Id>, NetMessage)>,
 
+    /// Addresses for peer advertisement
+    pub(crate) addresses: Vec<Address>,
+
     //pub(crate) net_source: Arc<Mutex<mpsc::Receiver<(Address, NetMessage)>>>,
     pub(crate) waker: Option<Waker>,
 
@@ -99,7 +103,7 @@ where
 {
     /// Create a new daemon
     pub fn new(
-        config: Options,
+        config: DsfOptions,
         service: Service,
         store: Store,
         net_sink: Net,
@@ -154,6 +158,7 @@ where
             net_ops: HashMap::new(),
             net_resp_rx,
             net_resp_tx,
+            addresses: Vec::new(),
 
             waker: None,
             key_cache: HashMap::new(),
@@ -206,10 +211,10 @@ where
         }
     }
 
-    pub(crate) fn primary(&mut self) -> Result<Container, Error> {
+    pub(crate) fn primary(&mut self, refresh: bool) -> Result<Container, Error> {
         // Check whether we have a cached primary page
         match self.last_primary.as_ref() {
-            Some(c) if !c.expired() => return Ok(c.clone()),
+            Some(c) if !c.expired() && !refresh => return Ok(c.clone()),
             _ => (),
         }
 

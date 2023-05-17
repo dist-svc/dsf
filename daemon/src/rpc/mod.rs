@@ -197,6 +197,31 @@ where
                     }
                     Err(_e) => Some(ResponseKind::None),
                 }
+            },
+
+            RequestKind::Debug(DebugCommands::SetAddress { addr }) => {
+                self.addresses = vec![addr.into()];
+
+                // Update service address
+                self.service().update(|_b, o, _p| {
+                    let mut opts: Vec<_> = o.drain(..).filter(|o| !o.is_address_v4() ).collect();
+                    opts.push(Options::address(addr));
+                    *o = opts;
+                })?;
+
+                // Re-generate primary page
+                let c = self.primary(true)?;
+
+                // Return the primary page
+                Some(ResponseKind::Page(c))
+            }
+
+            RequestKind::Debug(DebugCommands::DhtNodes) => {
+                use kad::table::NodeTable;
+
+                let peers: Vec<_> = self.dht_mut().nodetable().entries().map(|e| (e.id().clone(), e.info().info.clone() ) ).collect();
+
+                Some(ResponseKind::Peers(peers))
             }
 
             _ => None,
