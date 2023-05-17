@@ -29,13 +29,12 @@ use crate::rpc::push::push_data;
 
 use super::ops::*;
 
-#[async_trait::async_trait]
+
 pub trait PublishData {
-    /// Publish data using a known service
+    /// Publish data using a known / local service
     async fn publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> PublishData for T {
     async fn publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError> {
         info!("Publish: {:?}", &options);

@@ -29,13 +29,12 @@ pub enum LookupState {
     Error,
 }
 
-#[async_trait::async_trait]
+
 pub trait PeerRegistry {
-    /// Lookup a peer
+    /// Lookup a peer using the DHT
     async fn peer_lookup(&mut self, options: LookupOptions) -> Result<PeerInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> PeerRegistry for T {
     async fn peer_lookup(&mut self, options: LookupOptions) -> Result<PeerInfo, DsfError> {
         debug!("Performing peer lookup by ID: {}", options.id);

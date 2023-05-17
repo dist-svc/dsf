@@ -5,20 +5,22 @@
 use std::convert::TryFrom;
 use std::time::Duration;
 
-use dsf_core::base::Empty;
-use dsf_core::wire::Container;
+
 use futures::{future, Future, FutureExt};
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, span, Level, instrument};
 use serde::{Deserialize, Serialize};
 
-use dsf_core::error::Error as CoreError;
-use dsf_core::options::{self, Filters};
-use dsf_core::prelude::{DsfError, Options, PageInfo};
-use dsf_core::service::{
-    DataOptions, Publisher, Registry, ServiceBuilder, TertiaryData, TertiaryLink, TertiaryOptions,
+use dsf_core::{
+    base::Empty,
+    wire::Container,
+    error::Error as CoreError,
+    options::{self, Filters},
+    prelude::{DsfError, Options, PageInfo},
+    service::{
+        DataOptions, Publisher, Registry, ServiceBuilder, TertiaryData, TertiaryLink, TertiaryOptions,
+    },
+    types::{CryptoHash, DataKind, DateTime, Flags, Id, PageKind},
 };
-use dsf_core::types::{CryptoHash, DataKind, DateTime, Flags, Id, PageKind};
-
 use dsf_rpc::{
     DataInfo, LocateInfo, LocateOptions, NsCreateOptions, NsRegisterInfo, NsRegisterOptions,
     NsSearchOptions, Response, ServiceIdentifier, ServiceInfo,
@@ -31,7 +33,7 @@ use crate::rpc::ops::Res;
 
 use super::ops::{Engine, OpKind};
 
-#[async_trait::async_trait]
+/// [NameService] trait provides NS operations over an [Engine] implementation
 pub trait NameService {
     /// Create a new name service
     async fn ns_create(&self, opts: NsCreateOptions) -> Result<ServiceInfo, DsfError>;
@@ -43,9 +45,9 @@ pub trait NameService {
     async fn ns_register(&self, opts: NsRegisterOptions) -> Result<NsRegisterInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> NameService for T {
     /// Create a new name service
+    #[instrument(skip(self))]
     async fn ns_create(&self, opts: NsCreateOptions) -> Result<ServiceInfo, DsfError> {
         debug!("Creating new nameservice (opts: {:?})", opts);
 
@@ -98,6 +100,7 @@ impl<T: Engine> NameService for T {
     }
 
     /// Search for a matching service using the provided (or relevant) nameserver
+    #[instrument(skip(self))]
     async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<LocateInfo>, DsfError> {
         debug!("Locating nameservice for search: {:?}", opts);
 
@@ -210,6 +213,8 @@ impl<T: Engine> NameService for T {
         Ok(resolved)
     }
 
+    /// Register a service with the provided name service
+    #[instrument(skip(self))]
     async fn ns_register(&self, opts: NsRegisterOptions) -> Result<NsRegisterInfo, DsfError> {
         debug!("Locating nameservice for register: {:?}", opts);
 
@@ -383,6 +388,13 @@ mod test {
 
     struct MockEngine {
         inner: Arc<Mutex<Inner>>,
+        id: Id,
+    }
+
+    impl core::fmt::Debug for MockEngine {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("MockEngine").finish()
+        }
     }
 
     struct Inner {
@@ -414,6 +426,7 @@ mod test {
             };
 
             let e = MockEngine {
+                id: ns.id(),
                 inner: Arc::new(Mutex::new(inner)),
             };
 
@@ -440,7 +453,7 @@ mod test {
     #[async_trait::async_trait]
     impl Engine for MockEngine {
         fn id(&self) -> Id {
-            unimplemented!()
+            self.id.clone()
         }
 
         async fn exec(&self, op: OpKind) -> Result<Res, CoreError> {

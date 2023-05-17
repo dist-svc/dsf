@@ -31,13 +31,12 @@ pub enum RegisterState {
     Error,
 }
 
-#[async_trait::async_trait]
+
 pub trait ReplicateService {
-    /// Replicate a known service
+    /// Replicate a known service, providing a replica for other subscribers
     async fn service_replicate(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> ReplicateService for T {
     async fn service_replicate(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError> {
         info!("Replicate: {:?}", &options);

@@ -264,7 +264,7 @@ where
 
                     // TODO: forward to subscribers
                     match self.subscribers().find_peers(&id) {
-                        Ok(peer_ids) => {
+                        Ok(peer_ids) if peer_ids.len() > 0 => {
                             let peer_subs: Vec<_> = peer_ids
                                 .iter()
                                 .filter_map(|peer_id| self.peers().find(peer_id))
@@ -282,7 +282,8 @@ where
                                     Err(e) => warn!("Data push error: {:?}", e),
                                 }
                             });
-                        }
+                        },
+                        Ok(_) => (),
                         Err(e) => {
                             error!("Failed to fetch subscribers for service {:#}: {:?}", id, e)
                         }
@@ -412,6 +413,9 @@ where
 
             // Add as target for sending
             targets.push((p.address(), Some(p.id())));
+
+            // Update send counter
+            self.peers().update(&p.id(), |p| p.info.sent += 1);
         }
 
         // Create net operation
@@ -703,12 +707,17 @@ where
         };
 
         // Update address if specified (and different from existing)
+        // TODO: support multiple addresses
         if let Some(a) = c.remote_address {
             if a != peer.address() {
                 info!("Setting explicit address {:?} for peer: {:?}", a, id);
                 self.peers()
                     .update(&id, |p| p.info.address = PeerAddress::Explicit(a));
             }
+        } else if address != &peer.address() {
+            info!("Updating peer {:#} address {:?} -> {:?}", peer.id(), peer.address(), address);
+            self.peers()
+                    .update(&id, |p| p.info.address = PeerAddress::Implicit(address.clone()));
         }
 
         Some(peer)

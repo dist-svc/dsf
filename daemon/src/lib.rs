@@ -1,6 +1,7 @@
 #![recursion_limit = "512"]
 #![allow(unused_imports)]
 #![allow(dead_code)]
+#![feature(async_fn_in_trait)]
 
 extern crate std;
 

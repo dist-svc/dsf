@@ -9,8 +9,7 @@ use std::time::SystemTime;
 use futures::channel::mpsc;
 use futures::prelude::*;
 
-use log::{debug, error, info, warn};
-use tracing::{span, Level};
+use tracing::{debug, error, info, warn, span, Level, instrument};
 
 use dsf_core::options::Options;
 use dsf_core::prelude::*;
@@ -34,14 +33,14 @@ pub enum CreateState {
     Error,
 }
 
-#[async_trait::async_trait]
+
 pub trait CreateService {
     /// Create a new service
     async fn service_create(&self, options: CreateOptions) -> Result<ServiceInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> CreateService for T {
+    #[instrument(skip(self))]
     async fn service_create(&self, options: CreateOptions) -> Result<ServiceInfo, DsfError> {
         info!("Creating service: {:?}", options);
         let mut sb = ServiceBuilder::generic();

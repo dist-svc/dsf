@@ -6,9 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tracing::{span, Level};
-
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, span, Level, instrument};
 
 use futures::channel::mpsc;
 use futures::prelude::*;
@@ -28,14 +26,15 @@ use crate::error::Error;
 use crate::rpc::ops::{OpKind, Res};
 use crate::rpc::register::fetch_primary;
 
-#[async_trait::async_trait]
+
 pub trait Connect {
-    /// Publish data using a known service
+    /// Connect to a peer via IP or URL
     async fn connect(&self, options: ConnectOptions) -> Result<ConnectInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
+
 impl<T: Engine> Connect for T {
+    #[instrument(skip(self))]
     async fn connect(&self, options: ConnectOptions) -> Result<ConnectInfo, DsfError> {
         info!("Connect: {:?}", options);
 
@@ -49,9 +48,11 @@ impl<T: Engine> Connect for T {
             _ => unimplemented!(),
         };
 
+        // TODO: issue a Hello to the new peer to check the connection / retrieve keys and flags for DHT support
+
         debug!("Starting DHT connect");
 
-        // Issue connect request to provided address
+        // Issue DHT connect request to provided address
         let peers = match self.dht_connect(options.address.into(), None).await {
             Ok(v) => v,
             Err(e) => {
@@ -62,10 +63,9 @@ impl<T: Engine> Connect for T {
                 return Err(DsfError::NotFound);
             }
         };
-
-        // Query DHT for nearest peers
         debug!("Located {} peers", peers.len());
 
+        // Establish comms with located peers
         let req = NetRequestBody::Hello;
         let resps = match self.net_req(req, peers).await {
             Ok(v) => v,

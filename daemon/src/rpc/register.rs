@@ -32,13 +32,12 @@ pub enum RegisterState {
     Error,
 }
 
-#[async_trait::async_trait]
+
 pub trait RegisterService {
-    /// Create a new service
+    /// Register service information using the DHT
     async fn service_register(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> RegisterService for T {
     async fn service_register(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError> {
         info!("Register: {:?}", &options);

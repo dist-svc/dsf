@@ -38,7 +38,7 @@ pub enum SubscribeState {
     Done,
 }
 
-#[async_trait::async_trait]
+
 pub trait PubSub {
     /// Subscribe to a known service
     async fn subscribe(&self, options: SubscribeOptions)
@@ -48,7 +48,6 @@ pub trait PubSub {
     async fn unsubscribe(&self, options: SubscribeOptions) -> Result<(), DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> PubSub for T {
     async fn subscribe(
         &self,

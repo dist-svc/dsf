@@ -21,6 +21,9 @@ pub enum DebugCommands {
 
     /// Invoke bootstrapping
     Bootstrap,
+
+    /// Fetch current NodeTable
+    NodeTable,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]

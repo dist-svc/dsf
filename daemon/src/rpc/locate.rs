@@ -30,13 +30,11 @@ pub enum LocateState {
     Error,
 }
 
-#[async_trait::async_trait]
 pub trait ServiceRegistry {
-    /// Lookup a service
+    /// Locate service information using the DHT
     async fn service_locate(&self, options: LocateOptions) -> Result<LocateInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> ServiceRegistry for T {
     async fn service_locate(&self, opts: LocateOptions) -> Result<LocateInfo, DsfError> {
         info!("Locating service: {:?}", opts);

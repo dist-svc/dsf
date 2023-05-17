@@ -32,13 +32,11 @@ use crate::rpc::subscribe::find_replicas;
 
 use super::ops::*;
 
-#[async_trait::async_trait]
 pub trait SyncData {
     /// Sync data for a subscribed service
     async fn sync(&self, options: SyncOptions) -> Result<SyncInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> SyncData for T {
     async fn sync(&self, options: SyncOptions) -> Result<SyncInfo, DsfError> {
         info!("Sync: {:?}", &options);

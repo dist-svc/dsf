@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use rpc::{BootstrapInfo, ConnectInfo};
-use tracing::{span, Level};
+use tracing::{span, Level, instrument};
 
 use log::{debug, error, info, warn};
 
@@ -31,14 +31,14 @@ use crate::rpc::connect::Connect;
 
 use super::ops::Engine;
 
-#[async_trait::async_trait]
+/// [Bootstrap] trait implements startup bootstrapping to connect to the network
 pub trait Bootstrap {
     /// Publish data using a known service
     async fn bootstrap(&self) -> Result<BootstrapInfo, DsfError>;
 }
 
-#[async_trait::async_trait]
 impl<T: Engine> Bootstrap for T {
+    #[instrument(skip(self))]
     async fn bootstrap(&self) -> Result<BootstrapInfo, DsfError> {
         info!("Bootstrap!");
         let mut connected = 0;
@@ -50,25 +50,44 @@ impl<T: Engine> Bootstrap for T {
         let peers: Vec<_> = peers
             .drain(..)
             .filter(|p| {
-                p.flags.contains(PeerFlags::CONSTRAINED) || p.flags.contains(PeerFlags::TRANSIENT)
+                !p.flags.contains(PeerFlags::CONSTRAINED) && !p.flags.contains(PeerFlags::TRANSIENT)
             })
             .collect();
 
         if peers.len() == 0 {
-            warn!("No peers found, skipping peer bootstrap");
-        } else {
-            debug!("Bootstrap via {} peers", peers.len());
+            warn!("No peers available, skipping peer bootstrap");
 
-            // Issue connect operations to available peers
-            // TODO: combine into a single DHT connect op instead of
-            // splitting over peers?
+            return Ok(BootstrapInfo {
+                connected: 0,
+                registrations: 0,
+                subscriptions: 0,
+            })
+        }
 
-            for p in &peers {
-                match self.dht_connect(p.address(), Some(p.id())).await {
-                    Ok(_) => connected += 1,
-                    Err(e) => {
-                        warn!("Failed to connect to peer {:?}: {:?}", p, e);
-                    }
+        debug!("Bootstrap via {} peers", peers.len());
+
+        // Issue hello messages to known peers, used to populate DHT peer listing
+        let req = NetRequestBody::Hello;
+        let resps = match self.net_req(req, peers.clone()).await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Failed to issue hello to peers: {:?}", e);
+                return Err(DsfError::Unknown);
+            }
+        };
+
+        debug!("Received {} responses", resps.len());
+
+        // Issue connect operations to available peers
+        // (DHT requests required to fill KNodeTable for further DHT ops)
+        // TODO: combine into a single DHT connect op instead of
+        // splitting over peers?
+
+        for p in &peers {
+            match self.dht_connect(p.address(), Some(p.id())).await {
+                Ok(_) => connected += 1,
+                Err(e) => {
+                    warn!("Failed to connect to peer {:?}: {:?}", p, e);
                 }
             }
         }

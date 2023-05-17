@@ -409,6 +409,7 @@ where
 }
 
 /// Handle for executing basic operations via daemon
+#[derive(Debug)]
 pub struct ExecHandle {
     peer_id: Id,
     req_id: u64,
