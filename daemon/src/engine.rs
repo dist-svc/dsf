@@ -382,7 +382,7 @@ impl Engine {
     where
         Dsf<Net>: NetIf<Interface = Net>,
     {
-        debug!("incoming RPC: {:?}", unix_req);
+        trace!("incoming RPC: {:?}", unix_req);
 
         // Parse out message
         let req: RpcRequest = match serde_json::from_slice(&unix_req.data) {

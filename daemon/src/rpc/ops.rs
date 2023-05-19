@@ -8,12 +8,12 @@ use futures::channel::mpsc;
 use futures::Future;
 
 use dsf_core::net::{Request as NetRequest, Response as NetResponse};
-use dsf_core::prelude::{DsfError as CoreError, Id, NetRequestBody, PageInfo, Service};
-use dsf_core::types::{Address, CryptoHash, Signature};
+use dsf_core::prelude::{DsfError as CoreError, Id, Keys, NetRequestBody, PageInfo, Service};
+use dsf_core::types::{Address, CryptoHash, PublicKey, Signature};
 
 use dsf_rpc::*;
 
-use crate::core::peers::Peer;
+use crate::core::peers::{Peer, PeerFlags};
 use crate::core::replicas::ReplicaInst;
 use crate::error::Error;
 
@@ -44,6 +44,8 @@ pub enum OpKind {
     /// Fetch subscribers for a known service
     SubscribersGet(Id),
 
+    /// Create or update peer information
+    PeerCreateUpdate(Id, PeerAddress, Option<PublicKey>, PeerFlags),
     /// Fetch peer information by peer ID
     PeerGet(Id),
     /// List known peers
@@ -88,6 +90,14 @@ impl core::fmt::Debug for OpKind {
             Self::ServiceUpdate(id, _f) => f.debug_tuple("ServiceUpdate").field(id).finish(),
 
             Self::Publish(id, info) => f.debug_tuple("Publish").field(id).field(info).finish(),
+
+            Self::PeerCreateUpdate(id, addr, pub_key, flags) => f
+                .debug_tuple("PeerCreateUpdate")
+                .field(id)
+                .field(addr)
+                .field(pub_key)
+                .field(flags)
+                .finish(),
 
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
             Self::PeerList => f.debug_tuple("PeerList").finish(),
@@ -171,6 +181,23 @@ pub trait Engine: Sync + Send {
     async fn dht_put(&self, id: Id, pages: Vec<Container>) -> Result<Vec<Peer>, CoreError> {
         match self.exec(OpKind::DhtPut(id, pages)).await? {
             Res::Peers(p) => Ok(p),
+            _ => Err(CoreError::Unknown),
+        }
+    }
+
+    /// Create or update a peer
+    async fn peer_create_update(
+        &self,
+        id: Id,
+        addr: PeerAddress,
+        pub_key: Option<PublicKey>,
+        flags: PeerFlags,
+    ) -> Result<Peer, CoreError> {
+        match self
+            .exec(OpKind::PeerCreateUpdate(id, addr, pub_key, flags))
+            .await?
+        {
+            Res::Peers(p) if p.len() == 1 => Ok(p[0].clone()),
             _ => Err(CoreError::Unknown),
         }
     }

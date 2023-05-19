@@ -10,7 +10,7 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 
 use log::{debug, error, info, warn};
-use tracing::{span, Level};
+use tracing::{instrument, span, Level};
 
 use dsf_core::prelude::*;
 use dsf_rpc::{self as rpc, LocateInfo, LocateOptions};
@@ -36,6 +36,7 @@ pub trait ServiceRegistry {
 }
 
 impl<T: Engine> ServiceRegistry for T {
+    #[instrument(skip_all)]
     async fn service_locate(&self, opts: LocateOptions) -> Result<LocateInfo, DsfError> {
         info!("Locating service: {:?}", opts);
 

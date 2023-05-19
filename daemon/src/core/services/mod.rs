@@ -157,8 +157,6 @@ impl ServiceManager {
         svc.changed = true;
         let info = svc.info();
 
-        drop(svc);
-
         let _ = self.sync();
 
         Some(info)

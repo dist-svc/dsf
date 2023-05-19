@@ -18,6 +18,7 @@ use super::{net::NetIf, Dsf};
 
 use crate::core::peers::{Peer, PeerAddress, PeerFlags};
 use crate::error::Error;
+use crate::rpc::Engine;
 
 /// Adaptor to convert between DSF and DHT requests/responses
 #[derive(Clone)]
@@ -40,7 +41,6 @@ where
         &mut self,
         from: Id,
         peer: Peer,
-        req_id: RequestId,
         req: DhtRequest<Id, Data>,
     ) -> Result<DhtResponse<Id, Peer, Data>, Error> {
         // Map peer to existing DHT entry
@@ -49,34 +49,13 @@ where
         let entry = DhtEntry::new(from.into(), peer);
 
         // Pass to DHT
-        let resp = self.dht_mut().handle_req(req_id, &entry, &req).unwrap();
-
-        Ok(resp)
-    }
-
-    // Handle a DHT request message
-    pub(crate) fn handle_dht_resp(
-        &mut self,
-        from: Id,
-        peer: Peer,
-        req_id: RequestId,
-        resp: DhtResponse<Id, Peer, Data>,
-    ) -> Result<bool, Error> {
-        // Map peer to existing DHT entry
-        // TODO: resolve this rather than creating a new instance
-        // (or, use only the index and rely on external storage etc.?)
-        let entry = DhtEntry::new(from.into(), peer);
-
-        // Pass to DHT
-        let handled = match self.dht_mut().handle_resp(req_id, &entry, &resp) {
-            Ok(v) => v,
+        match self.dht_mut().handle_req(&entry, &req) {
+            Ok(resp) => Ok(resp),
             Err(e) => {
-                error!("DHT handle_resp error: {:?}", e);
-                return Ok(false);
+                error!("Error handling DHT request {:?}: {:?}", req, e);
+                Err(Error::Unknown)
             }
-        };
-
-        Ok(handled)
+        }
     }
 
     pub(crate) fn is_dht_req(msg: &NetRequest) -> bool {
@@ -98,7 +77,7 @@ where
         }
     }
 
-    pub(crate) fn dht_to_net_request(&mut self, req: DhtRequest<Id, Data>) -> NetRequestBody {
+    pub(crate) fn dht_to_net_request(req: DhtRequest<Id, Data>) -> NetRequestBody {
         match req {
             DhtRequest::Ping => RequestBody::Ping,
             DhtRequest::FindNode(id) => RequestBody::FindNode(Id::from(id.clone())),
@@ -109,10 +88,7 @@ where
         }
     }
 
-    pub(crate) fn dht_to_net_response(
-        &mut self,
-        resp: DhtResponse<Id, Peer, Data>,
-    ) -> NetResponseBody {
+    pub(crate) fn dht_to_net_response(resp: DhtResponse<Id, Peer, Data>) -> NetResponseBody {
         match resp {
             DhtResponse::NodesFound(id, nodes) => {
                 let nodes = nodes
@@ -141,10 +117,7 @@ where
         }
     }
 
-    pub(crate) fn net_to_dht_request(
-        &mut self,
-        req: &NetRequestBody,
-    ) -> Option<DhtRequest<Id, Data>> {
+    pub(crate) fn net_to_dht_request(req: &NetRequestBody) -> Option<DhtRequest<Id, Data>> {
         match req {
             RequestBody::Ping => Some(DhtRequest::Ping),
             RequestBody::FindNode(id) => Some(DhtRequest::FindNode(Id::into(id.clone()))),
@@ -156,8 +129,8 @@ where
         }
     }
 
-    pub(crate) fn net_to_dht_response(
-        &mut self,
+    pub(crate) async fn net_to_dht_response<E: Engine>(
+        e: &E,
         resp: &NetResponseBody,
     ) -> Option<DhtResponse<Id, Peer, Data>> {
         // TODO: fix peers:new here peers:new
@@ -167,12 +140,15 @@ where
 
                 for (id, addr, key) in nodes {
                     // Add peer to local tracking
-                    let node = self.peers().find_or_create(
-                        id.clone(),
-                        PeerAddress::Implicit(addr.clone()),
-                        Some(key.clone()),
-                        PeerFlags::empty(),
-                    );
+                    let node = e
+                        .peer_create_update(
+                            id.clone(),
+                            PeerAddress::Implicit(addr.clone()),
+                            Some(key.clone()),
+                            PeerFlags::empty(),
+                        )
+                        .await
+                        .unwrap();
 
                     dht_nodes.push((id.clone(), node).into());
                 }
@@ -206,7 +182,7 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
         let h = c.header();
         match c.info() {
             Ok(PageInfo::Primary(_)) if &c.id() == id && h.index() >= index => {
-                primary = Some(c.clone())
+                primary = Some(c.to_owned())
             }
             _ => (),
         }
@@ -219,7 +195,9 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
     // Reduce secondary pages by peer_id and version (via a hashmap to get only the latest value)
     // These must be public so `.info()` works here
     let secondaries = ordered.iter().filter_map(|c| match c.info() {
-        Ok(PageInfo::Secondary(s)) if &c.id() == id && !c.expired() => Some((s.peer_id, c.clone())),
+        Ok(PageInfo::Secondary(s)) if &c.id() == id && !c.expired() => {
+            Some((s.peer_id, c.to_owned()))
+        }
         _ => None,
     });
     let mut map = HashMap::<Id, Container, _>::new();

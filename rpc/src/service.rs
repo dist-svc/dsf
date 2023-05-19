@@ -83,7 +83,7 @@ pub enum ServiceState {
 pub enum ServiceCommands {
     #[clap()]
     /// List known services
-    List(ListOptions),
+    List(ServiceListOptions),
 
     #[clap()]
     /// Create a new service
@@ -131,7 +131,7 @@ pub enum ServiceCommands {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
-pub struct ListOptions {
+pub struct ServiceListOptions {
     #[clap(long)]
     /// Application ID for filtering
     pub application_id: Option<u16>,

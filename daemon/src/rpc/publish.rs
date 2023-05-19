@@ -29,7 +29,6 @@ use crate::rpc::push::push_data;
 
 use super::ops::*;
 
-
 pub trait PublishData {
     /// Publish data using a known / local service
     async fn publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError>;

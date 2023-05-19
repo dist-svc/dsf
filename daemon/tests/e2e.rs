@@ -5,7 +5,6 @@ use log::info;
 
 use tracing_subscriber::{filter::LevelFilter, FmtSubscriber};
 
-use indicatif::ProgressBar;
 use tempdir::TempDir;
 
 use dsf_daemon::engine::{Engine, EngineOptions};

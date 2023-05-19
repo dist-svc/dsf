@@ -38,7 +38,7 @@ use super::dht::{dht_reducer, DsfDhtMessage};
 use super::DsfOptions;
 
 /// Re-export of Dht type used for DSF
-pub type DsfDht = Dht<Id, Peer, Data, RequestId>;
+pub type DsfDht = Dht<Id, Peer, Data>;
 
 pub struct Dsf<Net = NetSink> {
     /// Inernal storage for daemon service
@@ -63,9 +63,10 @@ pub struct Dsf<Net = NetSink> {
     data: DataManager,
 
     /// Distributed Database
-    dht: Dht<Id, Peer, Data, RequestId>,
+    dht: Dht<Id, Peer, Data>,
 
-    dht_source: mpsc::Receiver<(RequestId, DhtEntry<Id, Peer>, DhtRequest<Id, Container>)>,
+    /// Source for outgoing DHT requests
+    dht_source: kad::dht::RequestReceiver<Id, Peer, Container>,
 
     /// Local (database) storage
     store: Store,
@@ -74,15 +75,13 @@ pub struct Dsf<Net = NetSink> {
     pub(crate) op_rx: mpsc::UnboundedReceiver<Op>,
     pub(crate) op_tx: mpsc::UnboundedSender<Op>,
 
-    /// Tracking for RPC operations
-    pub(crate) ops: HashMap<u64, Op>,
-
     /// Tracking for network operations (collections of requests with retries etc.)
     pub(crate) net_ops: HashMap<RequestId, NetOp>,
 
-    /// Tracking for individual outgoing network requests
+    /// Tracking for individual network requests
     pub(crate) net_requests: HashMap<(Address, RequestId), mpsc::Sender<NetResponse>>,
 
+    /// Sink for sending messages via the network
     pub(crate) net_sink: Net,
 
     pub(crate) net_resp_tx: mpsc::UnboundedSender<(Address, Option<Id>, NetMessage)>,
@@ -126,7 +125,7 @@ where
 
         // Instantiate DHT
         let (dht_sink, dht_source) = mpsc::channel(100);
-        let dht = Dht::<Id, Peer, Data, RequestId>::standard(id, config.dht, dht_sink);
+        let dht = Dht::<Id, Peer, Data>::standard(id, config.dht, dht_sink);
 
         let (op_tx, op_rx) = mpsc::unbounded();
 
@@ -139,7 +138,6 @@ where
 
             peers,
             services,
-
             subscribers,
             replicas,
             data,
@@ -151,7 +149,6 @@ where
 
             op_tx,
             op_rx,
-            ops: HashMap::new(),
 
             net_sink,
             net_requests: HashMap::new(),
@@ -231,6 +228,7 @@ where
     }
 
     /// Store pages in the database at the provided ID
+    #[cfg(tmp)]
     pub fn store(
         &mut self,
         id: &Id,
@@ -263,6 +261,7 @@ where
     }
 
     /// Search for pages in the database at the provided ID
+    #[cfg(tmp)]
     pub async fn search(&mut self, id: &Id) -> Result<Vec<Container>, Error> {
         let span = span!(Level::DEBUG, "search", "{}", self.id());
         let _enter = span.enter();
@@ -545,45 +544,49 @@ where
 {
     fn poll_base(&mut self, ctx: &mut Context<'_>) -> Poll<Result<(), DsfError>> {
         // Poll for outgoing DHT messages
-        if let Poll::Ready(Some((req_id, target, body))) = self.dht_source.poll_next_unpin(ctx) {
-            let addr = target.info().address();
-            let id = target.info().id();
-            let body = self.dht_to_net_request(body);
-            let mut flags = Flags::default();
+        if let Poll::Ready(Some((peers, body, mut tx))) = self.dht_source.poll_next_unpin(ctx) {
+            let req_id = rand::random();
 
-            // Attach public key if required
-            if target.info().pub_key().is_none() {
-                flags |= Flags::PUB_KEY_REQUEST;
-            }
-
-            let mut req = NetRequest::new(self.id(), req_id, body, flags);
-            // Attach public key to DHT requests
+            // Convert from DHT to network request
+            let body = Self::dht_to_net_request(body);
+            let mut req = NetRequest::new(self.id(), req_id, body, Flags::PUB_KEY_REQUEST);
             req.common.public_key = Some(self.pub_key());
 
+            let peers: Vec<_> = peers.iter().map(|p| p.info().clone()).collect();
+
+            let disp: Vec<_> = peers.iter().map(|p| (p.id(), p.address())).collect();
+
             debug!(
-                "Issuing DHT {} request ({}) to {}",
-                req.data,
-                req_id,
-                target.id()
+                "Issuing DHT {} request ({}) to {:?}",
+                req.data, req_id, disp,
             );
 
-            // Add message to internal tracking
-            // We drop the RX channel here because this gets intercepted
-            // by net::handle_dht, not sure this is a _great_
-            // approach but eh
-            let (tx, _rx) = mpsc::channel(1);
-            {
-                self.net_requests.insert((addr.clone().into(), req_id), tx)
-            };
+            let exec = self.exec();
+            let net = self.net_op(peers, req);
 
-            // Encode and enqueue them
-            if let Err(e) = self.net_send(&[(addr, Some(id))], NetMessage::Request(req)) {
-                error!("Error sending outgoing DHT message: {:?}", e);
-                return Poll::Ready(Err(DsfError::Unknown));
-            }
+            // Spawn task to handle net response
+            tokio::task::spawn(async move {
+                // Await net response collection
+                let resps = net.await;
+
+                // TODO: Convert these to DHT messages
+                let mut converted = HashMap::new();
+                for (id, resp) in resps.iter() {
+                    if let Some(r) = Self::net_to_dht_response(&exec, &resp.data).await {
+                        converted.insert(id.clone(), r);
+                    } else {
+                        warn!("Unexpected response to DHT request: {:?}", resp);
+                    }
+                }
+
+                // Forward to DHT
+                if let Err(e) = tx.send(Ok(converted)).await {
+                    error!("Failed to forward responses to DHT: {:?}", e);
+                }
+            });
         }
 
-        // Poll on pending outgoing responses
+        // Poll on pending outgoing responses to be forwarded
         // (we need a channel or _something_ to make async responses viable, but, this is a bit grim)
         if let Poll::Ready(Some((addr, id, msg))) = self.net_resp_rx.poll_next_unpin(ctx) {
             if let Err(e) = self.net_send(&[(addr, id)], msg) {
@@ -598,15 +601,7 @@ where
         let _ = self.poll_exec(ctx);
 
         // Poll on internal DHT
-        // TODO: handle errors?
-        match self.dht_mut().update() {
-            // TODO: DHT appears to always be triggering a wake?!
-            Ok(true) => ctx.waker().clone().wake(),
-            Err(e) => {
-                error!("DHT error: {:?}", e);
-            }
-            _ => (),
-        }
+        let _ = self.dht_mut().poll_unpin(ctx);
 
         // TODO: poll on internal state / messages
 

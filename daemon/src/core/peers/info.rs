@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use dsf_core::prelude::*;
 pub use dsf_rpc::peer::{PeerAddress, PeerInfo, PeerState};

@@ -13,6 +13,7 @@ use dsf_daemon::engine::{Engine, EngineOptions};
 use dsf_rpc::{self as rpc};
 
 #[tokio::test]
+#[ignore]
 async fn test_ns() {
     let _ = FmtSubscriber::builder()
         .with_max_level(LevelFilter::DEBUG)

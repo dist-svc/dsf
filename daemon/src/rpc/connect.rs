@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tracing::{debug, error, info, warn, span, Level, instrument};
+use tracing::{debug, error, info, instrument, span, warn, Level};
 
 use futures::channel::mpsc;
 use futures::prelude::*;
@@ -26,12 +26,10 @@ use crate::error::Error;
 use crate::rpc::ops::{OpKind, Res};
 use crate::rpc::register::fetch_primary;
 
-
 pub trait Connect {
     /// Connect to a peer via IP or URL
     async fn connect(&self, options: ConnectOptions) -> Result<ConnectInfo, DsfError>;
 }
-
 
 impl<T: Engine> Connect for T {
     #[instrument(skip(self))]

@@ -38,7 +38,6 @@ pub enum SubscribeState {
     Done,
 }
 
-
 pub trait PubSub {
     /// Subscribe to a known service
     async fn subscribe(&self, options: SubscribeOptions)

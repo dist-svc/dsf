@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
 use crate::ServiceIdentifier;
-use dsf_core::types::{Id};
+use dsf_core::types::Id;
 
 use crate::helpers::try_parse_sock_addr;
 
@@ -30,7 +30,7 @@ pub enum DebugCommands {
     DhtNodes,
 
     /// Set service address
-    SetAddress{
+    SetAddress {
         #[clap(value_parser = try_parse_sock_addr)]
         addr: SocketAddr,
     },

@@ -282,7 +282,7 @@ where
                                     Err(e) => warn!("Data push error: {:?}", e),
                                 }
                             });
-                        },
+                        }
                         Ok(_) => (),
                         Err(e) => {
                             error!("Failed to fetch subscribers for service {:#}: {:?}", id, e)
@@ -498,22 +498,12 @@ where
         debug!("response: {:?}", resp);
 
         // Generic net message processing here
-        let peer =
+        // TODO: we could forward peer object with the incoming request...
+        let _peer =
             match self.handle_base(&from, &addr.into(), &resp.common, Some(SystemTime::now())) {
                 Some(p) => p,
                 None => return Ok(()),
             };
-
-        // Parse out and handle DHT responses
-        if let Some(dht_resp) = self.net_to_dht_response(&resp.data) {
-            match self.handle_dht_resp(from.clone(), peer, req_id, dht_resp) {
-                Ok(true) => return Ok(()),
-                Ok(false) => (),
-                Err(e) => {
-                    warn!("DHT error: {:?}", e);
-                }
-            }
-        }
 
         // Look for matching point-to-point requests
         if let Some(mut a) = self.net_requests.remove(&(addr.into(), req_id)) {
@@ -542,7 +532,8 @@ where
 
         error!("Received response id {} with no pending request", req_id);
 
-        // TODO: handle responses for three-way-ack support?
+        // TODO: what is required here for three-way-ack support?
+        // (useful when establishing symmetric peer encryption)
 
         Ok(())
     }
@@ -579,10 +570,9 @@ where
         };
 
         // Handle specific DHT messages
-        let resp = if let Some(dht_req) = self.net_to_dht_request(&req.data) {
-            let dht_resp = self.handle_dht_req(from.clone(), peer, req.id, dht_req)?;
-
-            let net_resp = self.dht_to_net_response(dht_resp);
+        let resp = if let Some(dht_req) = Self::net_to_dht_request(&req.data) {
+            let dht_resp = self.handle_dht_req(from.clone(), peer, dht_req)?;
+            let net_resp = Self::dht_to_net_response(dht_resp);
 
             Some(net::Response::new(
                 own_id,
@@ -715,9 +705,15 @@ where
                     .update(&id, |p| p.info.address = PeerAddress::Explicit(a));
             }
         } else if address != &peer.address() {
-            info!("Updating peer {:#} address {:?} -> {:?}", peer.id(), peer.address(), address);
-            self.peers()
-                    .update(&id, |p| p.info.address = PeerAddress::Implicit(address.clone()));
+            info!(
+                "Updating peer {:#} address {:?} -> {:?}",
+                peer.id(),
+                peer.address(),
+                address
+            );
+            self.peers().update(&id, |p| {
+                p.info.address = PeerAddress::Implicit(address.clone())
+            });
         }
 
         Some(peer)

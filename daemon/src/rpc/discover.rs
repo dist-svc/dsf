@@ -8,7 +8,7 @@ use std::time::SystemTime;
 
 use futures::channel::mpsc;
 use futures::prelude::*;
-use tracing::{debug, error, info, trace, warn, span, Level, instrument};
+use tracing::{debug, error, info, instrument, span, trace, warn, Level};
 
 use dsf_core::options::Options;
 use dsf_core::prelude::*;
@@ -23,14 +23,13 @@ use crate::{
     error::Error,
 };
 
-
 pub trait Discover {
     /// Discover a service using local broadcast discovery
     async fn discover(&self, options: DiscoverOptions) -> Result<Vec<ServiceInfo>, DsfError>;
 }
 
 impl<T: Engine> Discover for T {
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     async fn discover(&self, options: DiscoverOptions) -> Result<Vec<ServiceInfo>, DsfError> {
         info!("Discover: {:?}", options);
 

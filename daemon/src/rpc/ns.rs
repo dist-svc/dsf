@@ -5,21 +5,21 @@
 use std::convert::TryFrom;
 use std::time::Duration;
 
-
 use futures::{future, Future, FutureExt};
-use tracing::{debug, error, info, warn, span, Level, instrument};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info, instrument, span, warn, Level};
 
 use dsf_core::{
     base::Empty,
-    wire::Container,
     error::Error as CoreError,
     options::{self, Filters},
     prelude::{DsfError, Options, PageInfo},
     service::{
-        DataOptions, Publisher, Registry, ServiceBuilder, TertiaryData, TertiaryLink, TertiaryOptions,
+        DataOptions, Publisher, Registry, ServiceBuilder, TertiaryData, TertiaryLink,
+        TertiaryOptions,
     },
     types::{CryptoHash, DataKind, DateTime, Flags, Id, PageKind},
+    wire::Container,
 };
 use dsf_rpc::{
     DataInfo, LocateInfo, LocateOptions, NsCreateOptions, NsRegisterInfo, NsRegisterOptions,

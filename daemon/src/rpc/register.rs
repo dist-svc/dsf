@@ -32,7 +32,6 @@ pub enum RegisterState {
     Error,
 }
 
-
 pub trait RegisterService {
     /// Register service information using the DHT
     async fn service_register(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError>;

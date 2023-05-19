@@ -265,7 +265,7 @@ impl Client {
     /// List known services
     pub async fn list(
         &mut self,
-        options: service::ListOptions,
+        options: service::ServiceListOptions,
     ) -> Result<Vec<service::ServiceInfo>, Error> {
         let req = RequestKind::Service(service::ServiceCommands::List(options));
         let resp = self.request(req).await?;
@@ -400,7 +400,7 @@ impl Client {
     }
 
     /// Fetch data from a given service
-    pub async fn data(&mut self, options: data::ListOptions) -> Result<Vec<DataInfo>, Error> {
+    pub async fn data(&mut self, options: data::DataListOptions) -> Result<Vec<DataInfo>, Error> {
         let req = RequestKind::Data(DataCommands::List(options));
 
         let resp = self.request(req).await?;

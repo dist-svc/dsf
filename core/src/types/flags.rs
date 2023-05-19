@@ -23,7 +23,7 @@ bitflags! {
 
         /// Signal symmetric encryption is enabled (messages only)
         const SYMMETRIC_MODE = (1 << 5);
-        
+
         /// Set direction flag for symmetric encryption (messages only)
         const SYMMETRIC_DIR  = (1 << 6);
 

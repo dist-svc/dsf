@@ -6,12 +6,15 @@ use std::{
 use dsf_rpc::{ServiceIdentifier, ServiceState};
 use futures::channel::mpsc;
 use futures::prelude::*;
-use kad::prelude::DhtError;
+use kad::{
+    dht::{Connect, Lookup, Search, Store},
+    prelude::{DhtEntry, DhtError},
+};
 use log::{debug, error, info, warn};
 
 use dsf_core::{
     error::Error as CoreError,
-    prelude::NetRequest,
+    prelude::{NetMessage, NetRequest, NetRequestBody},
     service::Service,
     types::{Flags, Id},
     wire::Container,
@@ -45,19 +48,23 @@ where
     /// These are used to compose higher-level RPC functions
     pub fn poll_exec(&mut self, ctx: &mut Context) -> Result<(), Error> {
         // Check for incoming / new operations
-        if let Poll::Ready(Some(mut op)) = self.op_rx.poll_next_unpin(ctx) {
+        if let Poll::Ready(Some(op)) = self.op_rx.poll_next_unpin(ctx) {
             debug!("New op request: {:?}", op);
 
-            let op_id = op.req_id;
+            let Op {
+                req_id: _,
+                kind,
+                mut done,
+            } = op;
 
-            match op.kind {
+            match kind {
                 OpKind::Primary => {
                     let r = self
                         .primary(false)
                         .map(|p| Res::Pages(vec![p]))
                         .map_err(|_| CoreError::Unknown);
 
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
@@ -67,7 +74,7 @@ where
                         .map(|s| Ok(Res::Service(s)))
                         .unwrap_or(Err(CoreError::NotFound));
 
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
@@ -78,7 +85,7 @@ where
                         .map(|s| Ok(Res::ServiceInfo(s)))
                         .unwrap_or(Err(CoreError::NotFound));
 
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
@@ -95,7 +102,7 @@ where
                         // TODO: fix this error type
                         .unwrap_or(Err(CoreError::Unknown));
 
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     }
                 }
@@ -106,7 +113,7 @@ where
                         // TODO: fix this error type
                         .unwrap_or(Err(CoreError::Unknown));
 
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     }
                 }
@@ -118,7 +125,7 @@ where
                     let mut state = ServiceState::Created;
                     let r = f(svc, &mut state);
 
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     }
                 }
@@ -128,107 +135,173 @@ where
                         .with(&id, |inst| f(&mut inst.service, &mut inst.state))
                         .unwrap_or(Err(CoreError::NotFound));
 
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     }
                 }
-                OpKind::SubscribersGet(ref id) => {
+                OpKind::SubscribersGet(id) => {
                     let r = self
                         .subscribers()
-                        .find_peers(id)
+                        .find_peers(&id)
                         .map(Res::Ids)
                         .map_err(|_e| CoreError::Unknown);
 
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     }
                 }
-                OpKind::Publish(ref _id, _info) => {
+                OpKind::Publish(_id, _info) => {
                     todo!()
                 }
-                OpKind::DhtConnect(ref addr, ref id) => {
-                    let id = id.clone();
-                    // TODO: refactor this ungainly mess
-                    match self.dht_mut().connect_start() {
-                        Ok((s, req_id, dht_req)) => {
-                            let addr = addr.clone();
-                            op.state = OpState::DhtConnect(s);
-                            self.ops.insert(op_id, op);
+                // TODO: improve OpKind so this logic can move to connect RPC
+                OpKind::DhtConnect(addr, id) => {
+                    let dht = self.dht_mut().get_handle();
+                    let exec = self.exec();
 
-                            let net_req_body = self.dht_to_net_request(dht_req);
-                            let mut net_req = NetRequest::new(
-                                self.id(),
-                                req_id,
-                                net_req_body,
-                                Flags::ADDRESS_REQUEST | Flags::PUB_KEY_REQUEST,
-                            );
-                            net_req.common.public_key = Some(self.service().public_key());
+                    debug!("Start connect to: {addr:?}");
 
-                            if let Err(e) =
-                                self.net_send(&[(addr.clone(), id.clone())], net_req.into())
-                            {
-                                error!("Failed to send connect message: {:?}", e);
+                    // Issue connect message to peer
+                    let req_id = rand::random();
+                    let mut req = NetRequest::new(
+                        self.id(),
+                        req_id,
+                        NetRequestBody::Hello,
+                        Flags::ADDRESS_REQUEST | Flags::PUB_KEY_REQUEST,
+                    );
+                    req.common.public_key = Some(self.service().public_key());
+
+                    let (tx, mut rx) = mpsc::channel(1);
+                    self.net_requests.insert((addr.clone(), req_id), tx);
+
+                    if let Err(e) = self.net_send(&[(addr.clone(), id.clone())], req.into()) {
+                        error!("Failed to send connect message: {:?}", e);
+                        // TODO: remove net request / bail out?
+                    }
+
+                    tokio::task::spawn(async move {
+                        // Wait for net response
+                        let resp = match rx.next().await {
+                            Some(v) => v,
+                            None => {
+                                error!("No response from peer: {:?}", addr);
+                                return;
                             }
+                        };
+
+                        debug!("Received response {:?}", resp);
+
+                        // Fetch peer information (created on message RX)
+                        let from = resp.common.from;
+                        let peer = match exec.peer_get(from.clone()).await {
+                            Ok(v) => v,
+                            Err(_e) => {
+                                error!("Missing peer instance for id: {from:#?}");
+                                return;
+                            }
+                        };
+
+                        let r = match dht
+                            .connect(vec![DhtEntry::new(from.clone(), peer)], Default::default())
+                            .await
+                        {
+                            Ok(p) => Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect())),
+                            Err(e) => {
+                                error!("DHT connect error: {e:?}");
+                                Err(CoreError::Unknown)
+                            }
+                        };
+
+                        if let Err(e) = done.send(r).await {
+                            error!("Failed to forward DHT lookup result: {:?}", e);
                         }
-                        Err(e) => {
-                            error!("Failed to create connect operation: {:?}", e);
-                        }
-                    }
+                    });
                 }
-                OpKind::DhtLocate(ref id) => match self.dht_mut().locate(id.clone()) {
-                    Ok((s, _id)) => {
-                        op.state = OpState::DhtLocate(s);
-                        self.ops.insert(op_id, op);
-                    }
-                    Err(e) => {
-                        error!("Failed to create locate operation: {:?}", e);
-                    }
-                },
-                OpKind::DhtSearch(ref id) => match self.dht_mut().search(id.clone()) {
-                    Ok((s, _id)) => {
-                        op.state = OpState::DhtSearch(s);
-                        self.ops.insert(op_id, op);
-                    }
-                    Err(e) => {
-                        error!("Failed to create search operation: {:?}", e);
-                    }
-                },
-                OpKind::DhtPut(ref id, ref pages) => {
-                    match self.dht_mut().store(id.clone(), pages.clone()) {
-                        Ok((p, _id)) => {
-                            op.state = OpState::DhtPut(p);
-                            self.ops.insert(op_id, op);
+                OpKind::DhtLocate(id) => {
+                    let dht = self.dht_mut().get_handle();
+
+                    tokio::task::spawn(async move {
+                        let r = match dht.lookup(id.clone(), Default::default()).await {
+                            Ok(p) => Ok(Res::Peers(vec![p.info().clone()])),
+                            Err(e) => {
+                                error!("DHT lookup error: {e:?}");
+                                Err(dht_to_core_error(e))
+                            }
+                        };
+
+                        if let Err(e) = done.send(r).await {
+                            error!("Failed to forward DHT lookup result: {:?}", e);
                         }
-                        Err(e) => {
-                            error!("Failed to create search operation: {:?}", e);
-                        }
-                    }
+                    });
                 }
-                OpKind::PeerGet(ref id) => {
+                OpKind::DhtSearch(id) => {
+                    let dht = self.dht_mut().get_handle();
+
+                    tokio::task::spawn(async move {
+                        let r = match dht.search(id.clone(), Default::default()).await {
+                            Ok(p) => Ok(Res::Pages(p)),
+                            Err(e) => {
+                                error!("DHT search error: {e:?}");
+                                Err(dht_to_core_error(e))
+                            }
+                        };
+
+                        if let Err(e) = done.send(r).await {
+                            error!("Failed to forward DHT search result: {:?}", e);
+                        }
+                    });
+                }
+                OpKind::DhtPut(id, pages) => {
+                    let dht = self.dht_mut().get_handle();
+
+                    tokio::task::spawn(async move {
+                        let r = match dht
+                            .store(id.clone(), pages.clone(), Default::default())
+                            .await
+                        {
+                            Ok(p) => Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect())),
+                            Err(e) => {
+                                error!("DHT store error: {e:?}");
+                                Err(dht_to_core_error(e))
+                            }
+                        };
+
+                        if let Err(e) = done.send(r).await {
+                            error!("Failed to forward DHT store result: {:?}", e);
+                        }
+                    });
+                }
+                OpKind::PeerCreateUpdate(id, address, pub_key, flags) => {
+                    let p = self.peers().find_or_create(id, address, pub_key, flags);
+
+                    if let Err(e) = done.try_send(Ok(Res::Peers(vec![p]))) {
+                        error!("Failed to send operation response: {:?}", e);
+                    };
+                }
+                OpKind::PeerGet(id) => {
                     let r = self
                         .peers()
-                        .find(id)
+                        .find(&id)
                         .map(|p| Ok(Res::Peers(vec![p])))
                         .unwrap_or(Err(CoreError::NotFound));
 
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
                 OpKind::PeerList => {
                     let r = self.peers().list().drain(..).map(|(_id, p)| p).collect();
 
-                    if let Err(e) = op.done.try_send(Ok(Res::Peers(r))) {
+                    if let Err(e) = done.try_send(Ok(Res::Peers(r))) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
-                OpKind::ObjectGet(ref id, sig) => {
+                OpKind::ObjectGet(id, sig) => {
                     let mut page = None;
 
                     // Attempt to fetch from services in memory
                     match self
                         .services()
-                        .with(id, |s| s.primary_page.clone())
+                        .with(&id, |s| s.primary_page.clone())
                         .flatten()
                     {
                         Some(p) if p.signature() == sig => page = Some(p),
@@ -236,7 +309,7 @@ where
                     }
                     match self
                         .services()
-                        .with(id, |s| s.replica_page.clone())
+                        .with(&id, |s| s.replica_page.clone())
                         .flatten()
                     {
                         Some(p) if p.signature() == sig => page = Some(p),
@@ -245,7 +318,7 @@ where
 
                     // Otherwise fallback to db
                     if page.is_none() {
-                        if let Some(d) = self.data().get_object(id, &sig)? {
+                        if let Some(d) = self.data().get_object(&id, &sig)? {
                             page = Some(d.page);
                         }
                     }
@@ -255,7 +328,7 @@ where
                         Some(p) => Ok(Res::Pages(vec![p])),
                         _ => Err(CoreError::NotFound),
                     };
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
@@ -270,7 +343,7 @@ where
                             Err(CoreError::Unknown)
                         }
                     };
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
@@ -282,7 +355,7 @@ where
                             Err(e)
                         }
                     };
-                    if let Err(e) = op.done.try_send(r) {
+                    if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
@@ -300,17 +373,22 @@ where
                             }
                         }
                     }
-                    if let Err(e) = op.done.try_send(resp) {
+                    if let Err(e) = done.try_send(resp) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
                 OpKind::Net(ref body, ref peers) => {
                     let req =
                         NetRequest::new(self.id(), rand::random(), body.clone(), Flags::default());
-
                     let s = self.net_op(peers.clone(), req);
-                    op.state = OpState::Net(s);
-                    self.ops.insert(op_id, op);
+
+                    tokio::task::spawn(async move {
+                        let r = s.await;
+
+                        if let Err(e) = done.send(Ok(Res::Responses(r))).await {
+                            error!("Failed to forward net response: {:?}", e);
+                        }
+                    });
                 }
                 OpKind::NetBcast(ref body) => {
                     let mut req = NetRequest::new(
@@ -322,29 +400,18 @@ where
                     req.set_public_key(self.service().public_key());
 
                     let s = self.net_broadcast(req);
-                    op.state = OpState::Net(s);
-                    self.ops.insert(op_id, op);
+
+                    tokio::task::spawn(async move {
+                        let r = s.await;
+
+                        if let Err(e) = done.send(Ok(Res::Responses(r))).await {
+                            error!("Failed to forward net response: {:?}", e);
+                        }
+                    });
                 }
             }
-        }
 
-        // Poll on currently executing operations
-        let mut ops_done = vec![];
-        for (op_id, Op { state, done, .. }) in self.ops.iter_mut() {
-            if let Poll::Ready(r) = state.poll_unpin(ctx) {
-                debug!("Op: {} complete with result: {:?}", op_id, r);
-
-                if let Err(_e) = done.try_send(r) {
-                    error!("Error sending result to op: {}", op_id);
-                }
-
-                ops_done.push(*op_id);
-            }
-        }
-
-        // Remove complete operations
-        for op_id in &ops_done {
-            let _ = self.ops.remove(op_id);
+            ctx.waker().clone().wake();
         }
 
         Ok(())
@@ -431,7 +498,6 @@ impl Engine for ExecHandle {
             req_id: self.req_id,
             kind,
             done: done_tx,
-            state: OpState::None,
         };
 
         // Add message to operation queue
@@ -464,7 +530,6 @@ pub struct Op {
     req_id: u64,
     kind: OpKind,
     done: mpsc::Sender<Result<Res, CoreError>>,
-    state: OpState,
 }
 
 impl core::fmt::Debug for Op {
@@ -472,59 +537,7 @@ impl core::fmt::Debug for Op {
         f.debug_struct("Op")
             .field("req_id", &self.req_id)
             .field("kind", &self.kind)
-            .field("state", &self.state)
             .finish()
-    }
-}
-
-/// Operation state storage for async interactions
-enum OpState {
-    None,
-    DhtConnect(kad::dht::ConnectFuture<Id, Peer>),
-    DhtLocate(kad::dht::LocateFuture<Id, Peer>),
-    DhtSearch(kad::dht::SearchFuture<Container>),
-    DhtPut(kad::dht::StoreFuture<Id, Peer>),
-    Net(NetFuture),
-}
-
-impl Future for OpState {
-    type Output = Result<Res, CoreError>;
-
-    fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        let r = match self.get_mut() {
-            OpState::None => unreachable!(),
-            OpState::DhtConnect(connect) => match connect.poll_unpin(ctx) {
-                Poll::Ready(Ok(peers)) => {
-                    Ok(Res::Peers(peers.iter().map(|v| v.info().clone()).collect()))
-                }
-                Poll::Ready(Err(e)) => Err(dht_to_core_error(e)),
-                _ => return Poll::Pending,
-            },
-            OpState::DhtLocate(locate) => match locate.poll_unpin(ctx) {
-                Poll::Ready(Ok(peer)) => Ok(Res::Peers(vec![peer.info().clone()])),
-                Poll::Ready(Err(e)) => Err(dht_to_core_error(e)),
-                _ => return Poll::Pending,
-            },
-            OpState::DhtSearch(get) => match get.poll_unpin(ctx) {
-                Poll::Ready(Ok(pages)) => Ok(Res::Pages(pages)),
-                Poll::Ready(Err(e)) => Err(dht_to_core_error(e)),
-                _ => return Poll::Pending,
-            },
-            OpState::DhtPut(put) => match put.poll_unpin(ctx) {
-                Poll::Ready(Ok(peers)) => {
-                    let peers = peers.iter().map(|e| e.info().clone()).collect();
-                    Ok(Res::Peers(peers))
-                }
-                Poll::Ready(Err(e)) => Err(dht_to_core_error(e)),
-                _ => return Poll::Pending,
-            },
-            OpState::Net(send) => match send.poll_unpin(ctx) {
-                Poll::Ready(r) => Ok(Res::Responses(r)),
-                _ => return Poll::Pending,
-            },
-        };
-
-        Poll::Ready(r)
     }
 }
 
@@ -539,19 +552,5 @@ fn dht_to_core_error(e: DhtError) -> CoreError {
         DhtError::NotFound => CoreError::NotFound,
         DhtError::Io(_) => CoreError::IO,
         _ => CoreError::Unknown,
-    }
-}
-
-/// [Debug] impl for [OpState]
-impl core::fmt::Debug for OpState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::None => write!(f, "None"),
-            Self::DhtConnect(_) => f.debug_tuple("DhtConnect").finish(),
-            Self::DhtLocate(_) => f.debug_tuple("DhtLocate").finish(),
-            Self::DhtSearch(_) => f.debug_tuple("DhtSearch").finish(),
-            Self::DhtPut(_) => f.debug_tuple("DhtPut").finish(),
-            Self::Net(_) => f.debug_tuple("Net").finish(),
-        }
     }
 }

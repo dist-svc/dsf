@@ -3,12 +3,11 @@ use std::time::Duration;
 
 use log::info;
 use rand::random;
-
-use tracing_subscriber::filter::{EnvFilter, LevelFilter};
-use tracing_subscriber::FmtSubscriber;
-
-use indicatif::ProgressBar;
 use tempdir::TempDir;
+use tracing_subscriber::{
+    filter::{EnvFilter, LevelFilter},
+    FmtSubscriber,
+};
 
 use dsf_client::{Client, Config as ClientConfig};
 use dsf_daemon::engine::{Engine, EngineOptions};
@@ -51,8 +50,7 @@ async fn scale(n: usize, level: LevelFilter) {
     )];
 
     // Create instances
-    println!("Creating {} virtual daemon instances", n);
-    let bar = ProgressBar::new(n as u64).with_message("Creating daemons");
+    println!("******** Creating {} virtual daemon instances ********", n);
     for i in 0..n {
         let c = config.with_suffix(i);
         let c1 = c.clone();
@@ -79,16 +77,12 @@ async fn scale(n: usize, level: LevelFilter) {
         // Add the new daemon to the list
         ids.push(id.clone());
         daemons.push((id, net_addr, client, handle));
-
-        bar.inc(1);
     }
-    bar.finish();
     info!("created daemons, establishing connections");
 
     let base_addr = daemons[0].1;
 
-    println!("Connecting daemons via {}", d);
-    let bar = ProgressBar::new((daemons.len() - 1) as u64).with_prefix("Connecting peers");
+    println!("******** Connecting daemons via {} ********", d);
     for (_id, _addr, client, _handle) in &mut daemons[1usize..] {
         client
             .connect(rpc::ConnectOptions {
@@ -98,13 +92,10 @@ async fn scale(n: usize, level: LevelFilter) {
             })
             .await
             .expect("connecting failed");
-        bar.inc(1);
     }
-    bar.finish();
-    info!("Daemons connected");
+    info!("******** Daemons connected ********");
 
     println!("Attempting peer searches");
-    let bar = ProgressBar::new((daemons.len()) as u64);
     for i in 0..daemons.len() {
         let mut j = random::<usize>() % daemons.len();
         while i == j {
@@ -120,8 +111,6 @@ async fn scale(n: usize, level: LevelFilter) {
             .find(rpc::peer::SearchOptions { id, timeout: None })
             .await
             .expect("search failed");
-        bar.inc(1);
     }
-    bar.finish();
     info!("Completed searches");
 }

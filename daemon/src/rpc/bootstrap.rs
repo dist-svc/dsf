@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use rpc::{BootstrapInfo, ConnectInfo};
-use tracing::{span, Level, instrument};
+use tracing::{instrument, span, Level};
 
 use log::{debug, error, info, warn};
 
@@ -61,7 +61,7 @@ impl<T: Engine> Bootstrap for T {
                 connected: 0,
                 registrations: 0,
                 subscriptions: 0,
-            })
+            });
         }
 
         debug!("Bootstrap via {} peers", peers.len());

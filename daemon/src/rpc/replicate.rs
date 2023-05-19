@@ -31,7 +31,6 @@ pub enum RegisterState {
     Error,
 }
 
-
 pub trait ReplicateService {
     /// Replicate a known service, providing a replica for other subscribers
     async fn service_replicate(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError>;

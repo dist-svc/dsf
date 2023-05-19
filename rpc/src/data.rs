@@ -103,7 +103,7 @@ impl DataInfo {
 pub enum DataCommands {
     #[clap(name = "list")]
     /// List service data
-    List(ListOptions),
+    List(DataListOptions),
 
     #[clap(name = "query")]
     /// Fetch data from a service
@@ -127,7 +127,7 @@ pub enum DataCommands {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
-pub struct ListOptions {
+pub struct DataListOptions {
     #[clap(flatten)]
     pub service: ServiceIdentifier,
 
