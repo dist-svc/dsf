@@ -7,7 +7,7 @@ use dsf_rpc::{ServiceIdentifier, ServiceState};
 use futures::channel::mpsc;
 use futures::prelude::*;
 use kad::{
-    dht::{Connect, Lookup, Search, Store, Base},
+    dht::{Base, Connect, Lookup, Search, Store},
     prelude::{DhtEntry, DhtError},
 };
 use log::{debug, error, info, warn};
@@ -275,10 +275,7 @@ where
                     tokio::task::spawn(async move {
                         debug!("Start DHT update");
 
-                        let r = match dht
-                            .update(true)
-                            .await
-                        {
+                        let r = match dht.update(true).await {
                             Ok(_p) => Ok(Res::Ok),
                             Err(e) => {
                                 error!("DHT update error: {e:?}");

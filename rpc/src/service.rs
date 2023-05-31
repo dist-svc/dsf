@@ -17,6 +17,8 @@ use crate::ServiceIdentifier;
 //#[cfg_attr(feature = "diesel", table_name="services")]
 pub struct ServiceInfo {
     pub id: Id,
+    pub short_id: ShortId,
+
     pub index: usize,
 
     pub kind: ServiceKind,
@@ -35,8 +37,18 @@ pub struct ServiceInfo {
 
     pub subscribers: usize,
     pub replicas: usize,
-    pub origin: bool,
-    pub subscribed: bool,
+
+    pub flags: ServiceFlags,
+}
+
+bitflags::bitflags! {
+    #[derive(Serialize, Deserialize, Default)]
+    pub struct ServiceFlags: u16 {
+        const ORIGIN = (1 << 0);
+        const ENCRYPTED = (1 << 1);
+        const SUBSCRIBED = (1 << 2);
+        const REPLICATED = (1 << 3);
+    }
 }
 
 impl From<&Service> for ServiceInfo {
@@ -49,8 +61,17 @@ impl From<&Service> for ServiceInfo {
             _ => ServiceKind::Generic,
         };
 
+        let mut flags = ServiceFlags::empty();
+        if svc.is_origin() {
+            flags |= ServiceFlags::ORIGIN;
+        }
+        if svc.encrypted() {
+            flags |= ServiceFlags::ENCRYPTED;
+        }
+
         Self {
             id: svc.id(),
+            short_id: svc.id().into(),
             index: svc.version() as usize,
             state: ServiceState::Created,
             kind,
@@ -64,8 +85,7 @@ impl From<&Service> for ServiceInfo {
 
             subscribers: 0,
             replicas: 0,
-            origin: svc.is_origin(),
-            subscribed: false,
+            flags,
         }
     }
 }
@@ -253,7 +273,7 @@ pub struct DiscoverOptions {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct LocateInfo {
     pub id: Id,
-    pub origin: bool,
+    pub flags: ServiceFlags,
     pub updated: bool,
     pub page_version: u16,
     #[serde(skip)]

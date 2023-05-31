@@ -94,7 +94,7 @@ impl<B: PageBody> Registry for Service<B> {
     fn resolve(&self, q: impl Queryable) -> Result<Id, Error> {
         let mut keys = self.keys();
         if self.encrypted && keys.sec_key.is_none() {
-            return Err(Error::MissingSecretKey)
+            return Err(Error::MissingSecretKey);
         }
         if !self.encrypted {
             keys.sec_key = None;

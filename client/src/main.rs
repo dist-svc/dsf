@@ -200,13 +200,7 @@ fn print_service(service: &ServiceInfo, _no_trunc: bool) {
         println!("  replica page: {}", s);
     }
 
-    println!(
-        "  is_origin: {}",
-        match service.origin {
-            true => true,
-            false => false,
-        }
-    );
+    println!("  flags: {:?}", service.flags);
 
     println!(
         "  has_private_key: {}",
@@ -239,7 +233,7 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
     table.set_format(*prettytable::format::consts::FORMAT_CLEAN);
 
     // Add a row per time
-    table.add_row(row![b => "Service ID", "Index", "Kind", "State", "Updated", "PublicKey", "PrivateKey", "SecretKey", "Subscribers", "Replicas", "Primary Page"]);
+    table.add_row(row![b => "Short ID", "Service ID", "Index", "Kind", "State", "Updated", "PublicKey", "Subscribers", "Replicas", "Primary Page", "Flags"]);
 
     for s in services {
         let id = match no_trunc {
@@ -261,6 +255,7 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
         };
 
         table.add_row(row![
+            s.short_id.to_string(),
             id,
             s.index.to_string(),
             s.kind.to_string(),
@@ -269,17 +264,10 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
                 .map(systemtime_to_humantime)
                 .unwrap_or("Never".to_string()),
             pk,
-            s.private_key
-                .as_ref()
-                .map(|_| "True".to_string())
-                .unwrap_or("False".to_string()),
-            s.secret_key
-                .as_ref()
-                .map(|_| "True".to_string())
-                .unwrap_or("False".to_string()),
             format!("{}", s.subscribers),
             format!("{}", s.replicas),
             primary_page,
+            format!("{:?}", s.flags),
         ]);
     }
 

@@ -1,19 +1,18 @@
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::time::Duration;
 
-use dsf_client::{Client, Config};
-use dsf_rpc::ConnectOptions;
-use futures::prelude::*;
-use futures::{executor::block_on, future::try_join_all};
-
 use async_signals::Signals;
 use clap::Parser;
+use futures::future::try_join_all;
+use futures::prelude::*;
 use log::error;
 use tracing_futures::Instrument;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::FmtSubscriber;
 
+use dsf_client::{Client, Config};
 use dsf_daemon::engine::{Engine, EngineOptions};
+use dsf_rpc::ConnectOptions;
 
 #[derive(Debug, Parser)]
 #[clap(name = "DSF Daemon Multi-runner")]
@@ -77,18 +76,22 @@ async fn main() -> Result<(), anyhow::Error> {
     // Establish peer connections
     let root = opts.daemon_opts.with_suffix(1);
     let mut c = Client::new(&Config::new(
-        Some(&root.daemon_socket), 
+        Some(&root.daemon_socket),
         Duration::from_secs(10),
-    )).await.unwrap();
+    ))
+    .await
+    .unwrap();
 
     for i in 1..opts.count {
         let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), ports[i]));
 
-        let _ = c.connect(ConnectOptions{
-            address,
-            id: None,
-            timeout: None,
-        }).await;
+        let _ = c
+            .connect(ConnectOptions {
+                address,
+                id: None,
+                timeout: None,
+            })
+            .await;
     }
 
     // Await exit signal
@@ -108,8 +111,6 @@ async fn main() -> Result<(), anyhow::Error> {
         error!("Daemon runtime error: {:?}", e);
         return Err(e.into());
     }
-
-
 
     Ok(())
 }

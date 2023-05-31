@@ -2,6 +2,7 @@
 //!
 //!
 
+use crate::store::object::ObjectIdentifier;
 use crate::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::ops::Add;
@@ -320,8 +321,18 @@ impl ServiceManager {
 
             let mut service = Service::load(&primary_page).unwrap();
 
+            // Attach keys to service
             service.set_private_key(i.private_key);
             service.set_secret_key(i.secret_key);
+
+            // Sync up to last published object
+            if let Some(o) = self
+                .store
+                .load_object(&i.id, ObjectIdentifier::Latest, &keys)
+                .unwrap()
+            {
+                service.set_last(o.header().index() + 1, o.signature());
+            }
 
             // URGENT TODO: rehydrate other components here
             // TODO: maybe replicas and subscribers should not be stored against the service inst but in separate core modules?

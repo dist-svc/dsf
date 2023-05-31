@@ -10,6 +10,7 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 
 use log::{debug, error, info, warn};
+use rpc::ServiceFlags;
 use tracing::{instrument, span, Level};
 
 use dsf_core::prelude::*;
@@ -51,7 +52,7 @@ impl<T: Engine> ServiceRegistry for T {
 
                 Some(LocateInfo {
                     id: opts.id.clone(),
-                    origin: i.origin,
+                    flags: i.flags,
                     updated: false,
                     page_version: i.index as u16,
                     page,
@@ -62,7 +63,7 @@ impl<T: Engine> ServiceRegistry for T {
 
         // Short-circuit for owned services
         match &local {
-            Some(i) if i.origin => return Ok(i.clone()),
+            Some(i) if i.flags.contains(ServiceFlags::ORIGIN) => return Ok(i.clone()),
             _ => (),
         }
 
@@ -106,7 +107,7 @@ impl<T: Engine> ServiceRegistry for T {
         // Return info
         let info = LocateInfo {
             id: opts.id,
-            origin: i.origin,
+            flags: i.flags,
             updated: true,
             page_version: i.index as u16,
             // TODO: fetch related page

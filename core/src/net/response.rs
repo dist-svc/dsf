@@ -5,7 +5,7 @@ use core::ops::Deref;
 use alloc::vec::Vec;
 
 use byteorder::{ByteOrder, LittleEndian};
-use encdec::{DecodeExt};
+use encdec::DecodeExt;
 use slice_ext::SplitBefore;
 
 use crate::error::Error;

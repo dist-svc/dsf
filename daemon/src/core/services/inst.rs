@@ -2,7 +2,9 @@ use std::convert::TryFrom;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
+use dsf_core::types::ShortId;
 use dsf_core::wire::Container;
+use dsf_rpc::ServiceFlags;
 use log::{debug, error, warn};
 
 use diesel::Queryable;
@@ -47,8 +49,21 @@ impl ServiceInst {
     pub(crate) fn info(&self) -> ServiceInfo {
         let service = &self.service;
 
+        let id = service.id();
+        let short_id = ShortId::from(&id);
+
+        let mut flags = ServiceFlags::empty();
+
+        if service.is_origin() {
+            flags |= ServiceFlags::ORIGIN;
+        }
+        if service.encrypted() {
+            flags |= ServiceFlags::ENCRYPTED;
+        }
+
         ServiceInfo {
-            id: service.id(),
+            id,
+            short_id,
             index: self.index,
             kind: service.kind().into(),
             state: self.state,
@@ -61,8 +76,7 @@ impl ServiceInst {
             // TODO: fix replica / subscriber info (split objects?)
             replicas: 0,
             subscribers: 0,
-            origin: service.is_origin(),
-            subscribed: false,
+            flags,
         }
     }
 

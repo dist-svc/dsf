@@ -4,6 +4,8 @@ use diesel::*;
 table! {
     services (service_id) {
         service_id -> Text,
+        short_id -> Text,
+
         service_index -> Integer,
 
         kind -> Text,
@@ -20,8 +22,7 @@ table! {
 
         subscribers -> Integer,
         replicas -> Integer,
-        original -> Bool,
-        subscribed -> Bool,
+        flags -> Integer,
     }
 }
 

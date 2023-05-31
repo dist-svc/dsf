@@ -271,6 +271,10 @@ impl<B: PageBody> Service<B> {
         self.version
     }
 
+    pub fn index(&self) -> u32 {
+        self.index
+    }
+
     pub fn kind(&self) -> PageKind {
         self.kind
     }
@@ -305,6 +309,11 @@ impl<B: PageBody> Service<B> {
 
     pub fn set_secret_key(&mut self, key: Option<SecretKey>) {
         self.secret_key = key;
+    }
+
+    pub fn set_last(&mut self, index: u32, sig: Signature) {
+        self.index = index;
+        self.last_sig = Some(sig);
     }
 
     pub fn keys(&self) -> Keys {

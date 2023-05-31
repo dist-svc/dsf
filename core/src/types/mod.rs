@@ -81,6 +81,34 @@ impl Queryable for CryptoHash {
     }
 }
 
+pub const SHORT_ID_LEN: usize = 4;
+
+/// Short ID type
+pub type ShortId = Array<ShortIdTy, SHORT_ID_LEN>;
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ShortIdTy {}
+
+impl From<Id> for ShortId {
+    fn from(value: Id) -> Self {
+        ShortId::from(&value)
+    }
+}
+
+impl From<&Id> for ShortId {
+    fn from(value: &Id) -> Self {
+        use blake2::{digest::consts::U4, Digest};
+
+        let mut hasher = blake2::Blake2b::<U4>::new();
+        hasher.update(value.as_bytes());
+
+        let h = hasher.finalize();
+
+        Self(h.into(), PhantomData)
+    }
+}
+
 pub const REQUEST_ID_LEN: usize = 2;
 /// Request ID type
 pub type RequestId = u16;

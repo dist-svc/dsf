@@ -380,7 +380,7 @@ mod test {
 
     use dsf_core::options::{Filters, Options};
     use dsf_core::page::ServiceLink;
-    use dsf_rpc::{ServiceInfo, ServiceState};
+    use dsf_rpc::{ServiceFlags, ServiceInfo, ServiceState};
     use futures::future;
 
     use super::*;
@@ -645,7 +645,7 @@ mod test {
             &r,
             &[LocateInfo {
                 id: target_id,
-                origin: true,
+                flags: ServiceFlags::ORIGIN,
                 updated: true,
                 page_version: 0,
                 page: Some(p)

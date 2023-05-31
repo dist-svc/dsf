@@ -13,7 +13,8 @@ use dsf_core::types::{
     kinds::Kind,
 };
 use dsf_rpc::{
-    LocateOptions, QosPriority, RegisterOptions, ServiceIdentifier, ServiceState, SubscribeOptions,
+    LocateOptions, QosPriority, RegisterOptions, ServiceFlags, ServiceIdentifier, ServiceState,
+    SubscribeOptions,
 };
 use kad::common::message;
 use log::{debug, error, info, trace, warn};
@@ -236,7 +237,10 @@ where
             );
 
             match self.services().find(&id) {
-                Some(info) if info.state == ServiceState::Subscribed || info.subscribed => {
+                Some(info)
+                    if info.state == ServiceState::Subscribed
+                        || info.flags.contains(ServiceFlags::SUBSCRIBED) =>
+                {
                     // Update local service
                     match header.kind() {
                         Kind::Page { .. } => {

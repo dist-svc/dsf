@@ -6,12 +6,16 @@ use diesel::prelude::*;
 
 use chrono::NaiveDateTime;
 
-use dsf_core::{prelude::*, types::ServiceKind};
-use dsf_rpc::{ServiceInfo, ServiceState};
+use dsf_core::{
+    prelude::*,
+    types::{ServiceKind, ShortId},
+};
+use dsf_rpc::{ServiceFlags, ServiceInfo, ServiceState};
 
 use super::{from_dt, to_dt, Store, StoreError};
 
 type ServiceFields = (
+    String,
     String,
     i32,
     String,
@@ -24,8 +28,7 @@ type ServiceFields = (
     Option<NaiveDateTime>,
     i32,
     i32,
-    bool,
-    bool,
+    i32,
 );
 
 impl Store {
@@ -56,6 +59,7 @@ impl Store {
 
         let values = (
             service_id.eq(info.id.to_string()),
+            short_id.eq(info.short_id.to_string()),
             service_index.eq(info.index as i32),
             kind.eq(info.kind.to_string()),
             state.eq(info.state.to_string()),
@@ -67,8 +71,7 @@ impl Store {
             up,
             subscribers.eq(info.subscribers as i32),
             replicas.eq(info.replicas as i32),
-            original.eq(info.origin),
-            subscribed.eq(info.subscribed),
+            flags.eq(info.flags.bits() as i32),
         );
 
         let r = services
@@ -98,6 +101,7 @@ impl Store {
             .filter(service_id.eq(id.to_string()))
             .select((
                 service_id,
+                short_id,
                 service_index,
                 kind,
                 state,
@@ -109,8 +113,7 @@ impl Store {
                 last_updated,
                 subscribers,
                 replicas,
-                original,
-                subscribed,
+                flags,
             ))
             .load::<ServiceFields>(&mut self.pool.get().unwrap())?;
 
@@ -129,6 +132,7 @@ impl Store {
         let results = services
             .select((
                 service_id,
+                short_id,
                 service_index,
                 kind,
                 state,
@@ -140,8 +144,7 @@ impl Store {
                 last_updated,
                 subscribers,
                 replicas,
-                original,
-                subscribed,
+                flags,
             ))
             .load::<ServiceFields>(&mut self.pool.get().unwrap())?;
 
@@ -166,6 +169,7 @@ impl Store {
     fn parse_service(v: &ServiceFields) -> Result<ServiceInfo, StoreError> {
         let (
             r_id,
+            r_short_id,
             r_index,
             r_kind,
             r_state,
@@ -177,12 +181,12 @@ impl Store {
             r_upd,
             r_subs,
             r_reps,
-            r_original,
-            r_subscribed,
+            r_flags,
         ) = v;
 
         let s = ServiceInfo {
             id: Id::from_str(r_id)?,
+            short_id: ShortId::from_str(r_short_id)?,
             index: *r_index as usize,
             state: ServiceState::from_str(r_state)?,
             kind: ServiceKind::from_str(r_kind)?,
@@ -199,8 +203,7 @@ impl Store {
 
             subscribers: *r_subs as usize,
             replicas: *r_reps as usize,
-            origin: *r_original,
-            subscribed: *r_subscribed,
+            flags: ServiceFlags::from_bits_truncate(*r_flags as u16),
         };
 
         Ok(s)
@@ -212,14 +215,14 @@ mod test {
     use std::time::SystemTime;
 
     extern crate tracing_subscriber;
-    use dsf_core::types::ServiceKind;
+    use dsf_core::types::{ServiceKind, ShortId};
     use tracing_subscriber::{filter::LevelFilter, FmtSubscriber};
 
     use super::Store;
 
     use dsf_core::crypto::{Crypto, Hash, PubKey, SecKey};
     use dsf_core::{base::Body, types::Id};
-    use dsf_rpc::{ServiceInfo, ServiceState};
+    use dsf_rpc::{ServiceFlags, ServiceInfo, ServiceState};
 
     #[test]
     fn store_service_info() {
@@ -239,7 +242,8 @@ mod test {
         let sig = Crypto::pk_sign(&private_key, &id).unwrap();
 
         let mut s = ServiceInfo {
-            id,
+            id: id.clone(),
+            short_id: ShortId::from(&id),
             index: 10,
             state: ServiceState::Registered,
             kind: ServiceKind::Peer,
@@ -251,8 +255,7 @@ mod test {
             last_updated: Some(SystemTime::now()),
             subscribers: 14,
             replicas: 12,
-            origin: true,
-            subscribed: false,
+            flags: ServiceFlags::ORIGIN,
         };
 
         // Check no matching service exists
