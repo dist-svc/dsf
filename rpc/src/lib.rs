@@ -105,6 +105,12 @@ impl From<Id> for ServiceIdentifier {
     }
 }
 
+impl From<&Id> for ServiceIdentifier {
+    fn from(id: &Id) -> Self {
+        Self::id(id.clone())
+    }
+}
+
 /// Paginator object supports paginating responses from the daemon
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser, Default)]
 pub struct PageBounds {

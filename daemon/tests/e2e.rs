@@ -98,6 +98,7 @@ async fn end_to_end() {
             .locate(rpc::LocateOptions {
                 id: service_handle.id.clone(),
                 local_only: false,
+                no_persist: false,
             })
             .await
             .expect("search failed");

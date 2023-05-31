@@ -145,6 +145,7 @@ impl<B: PageBody> Registry for Service<B> {
 
         let b = b.public_options(&[
             Options::peer_id(self.id()),
+            Options::pub_key(self.public_key()),
             Options::issued(opts.issued),
             Options::expiry(opts.expiry),
         ])?;

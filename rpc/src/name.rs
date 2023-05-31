@@ -48,6 +48,10 @@ pub struct NsSearchOptions {
     #[clap(long, group = "filters")]
     /// Searchable hashes for application-specific matching
     pub hash: Option<CryptoHash>,
+
+    #[clap(long)]
+    /// Do not persist located service(s)
+    pub no_persist: bool,
 }
 
 /// Options used for name registration

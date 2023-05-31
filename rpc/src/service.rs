@@ -92,6 +92,7 @@ impl From<&Service> for ServiceInfo {
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize, Display)]
 #[cfg_attr(feature = "std", derive(EnumString))]
+#[strum(serialize_all = "snake_case")]
 pub enum ServiceState {
     Created,
     Registered,
@@ -250,9 +251,13 @@ pub struct LocateOptions {
     /// ID of the service to locate
     pub id: Id,
 
-    #[clap(long = "local-only")]
+    #[clap(long)]
     /// Search only in the local datastore
     pub local_only: bool,
+
+    #[clap(long)]
+    /// Do not persist located service
+    pub no_persist: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
@@ -275,7 +280,7 @@ pub struct LocateInfo {
     pub id: Id,
     pub flags: ServiceFlags,
     pub updated: bool,
-    pub page_version: u16,
+    pub page_version: u32,
     #[serde(skip)]
     pub page: Option<Container>,
 }

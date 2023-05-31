@@ -92,6 +92,7 @@ async fn test_ns() {
             name: Some(n.to_string()),
             hash: None,
             options: None,
+            no_persist: false,
         })
         .await
         .unwrap();

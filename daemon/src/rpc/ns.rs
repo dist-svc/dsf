@@ -177,6 +177,7 @@ impl<T: Engine> NameService for T {
                         .service_locate(LocateOptions {
                             id: s.target_id.clone(),
                             local_only: false,
+                            no_persist: opts.no_persist,
                         })
                         .await
                     {
@@ -333,7 +334,7 @@ impl<T: Engine> NameService for T {
         // Generate tertiary pages
         let mut pages = vec![];
         for t in tids {
-            let r = ns.publish_tertiary_buff::<256>(
+            let r = ns.publish_tertiary_buff::<512>(
                 TertiaryLink::Service(target.id()),
                 TertiaryOptions {
                     index: data.header().index(),
@@ -636,6 +637,7 @@ mod test {
                 name: Some(name.to_string()),
                 hash: None,
                 options: None,
+                no_persist: false,
             })
             .await
             .unwrap();

@@ -37,7 +37,7 @@ pub trait ServiceRegistry {
 }
 
 impl<T: Engine> ServiceRegistry for T {
-    #[instrument(skip_all)]
+    #[instrument(skip(self))]
     async fn service_locate(&self, opts: LocateOptions) -> Result<LocateInfo, DsfError> {
         info!("Locating service: {:?}", opts);
 
@@ -54,7 +54,7 @@ impl<T: Engine> ServiceRegistry for T {
                     id: opts.id.clone(),
                     flags: i.flags,
                     updated: false,
-                    page_version: i.index as u16,
+                    page_version: i.index as u32,
                     page,
                 })
             }
@@ -69,7 +69,7 @@ impl<T: Engine> ServiceRegistry for T {
 
         // Otherwise, lookup via DHT
         let pages = self.dht_search(opts.id.clone()).await;
-        let pages = match (pages, &local) {
+        let mut pages = match (pages, &local) {
             (Ok(p), _) => p,
             (_, Some(i)) => {
                 warn!("DHT search failed, using local service info");
@@ -81,37 +81,49 @@ impl<T: Engine> ServiceRegistry for T {
             }
         };
 
+        pages.sort_by_key(|p| p.header().index());
+        pages.reverse();
+
         debug!("Found pages: {:?}", pages);
 
-        debug!("Adding service {} to store", opts.id);
+        // Resolve primary page
+        let primary_page = match pages.iter().find(|o| {
+            let kind = o.header().kind();
+            let flags = o.header().flags();
 
-        // Add located service to local tracking
-        let i = self.svc_register(opts.id.clone(), pages.clone()).await?;
-
-        debug!("Stored service: {:?}", i);
-
-        // Map primary page using returned pages or datastore
-        let primary_page = match i.primary_page {
-            Some(sig) => {
-                if let Some(p) = pages.iter().find(|p| sig == p.signature()) {
-                    Some(p.clone())
-                } else {
-                    Some(self.object_get(opts.id.clone(), sig).await?)
-                }
+            kind.is_page() && !flags.contains(Flags::SECONDARY) && !flags.contains(Flags::TERTIARY)
+        }) {
+            Some(v) => v.clone(),
+            None => {
+                warn!("no primary page found");
+                return Err(DsfError::NotFound);
             }
-            None => None,
         };
 
-        debug!("Found page: {:?}", primary_page);
+        debug!("Found primary page: {:?}", primary_page);
+
+        // Add located service to local tracking
+        if !opts.no_persist {
+            debug!("Adding service {} to store", opts.id);
+
+            let i = self.svc_register(opts.id.clone(), pages.clone()).await?;
+
+            debug!("Stored service: {:?}", i);
+        }
+
+        let page_version = primary_page.header().index();
+        let mut flags = ServiceFlags::empty();
+        if primary_page.header().flags().contains(Flags::ENCRYPTED) {
+            flags |= ServiceFlags::ENCRYPTED;
+        }
 
         // Return info
         let info = LocateInfo {
             id: opts.id,
-            flags: i.flags,
+            flags,
             updated: true,
-            page_version: i.index as u16,
-            // TODO: fetch related page
-            page: primary_page,
+            page_version,
+            page: Some(primary_page),
         };
 
         Ok(info)

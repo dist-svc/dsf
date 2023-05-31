@@ -923,6 +923,7 @@ where
                 let opts = LocateOptions {
                     id: service_id.clone(),
                     local_only: false,
+                    no_persist: false,
                 };
                 let service_id = service_id.clone();
                 let exec = self.exec();
