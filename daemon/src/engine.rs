@@ -55,11 +55,7 @@ pub struct EngineOptions {
     /// Unix socket for communication with the daemon
     pub daemon_socket: String,
 
-    #[clap(
-        short = 's',
-        long = "daemon-http",
-        env = "DSF_HTTP"
-    )]
+    #[clap(short = 'w', long = "daemon-http", env = "DSF_HTTP")]
     /// Unix socket for communication with the daemon
     pub daemon_http: Option<SocketAddr>,
 
@@ -135,6 +131,7 @@ pub struct Engine {
     net: Net,
 
     net_source: mpsc::Receiver<(Address, Vec<u8>)>,
+    rpc_source: mpsc::Receiver<(RpcRequest, mpsc::Sender<RpcResponse>)>,
 
     options: EngineOptions,
 }
@@ -195,6 +192,9 @@ impl Engine {
             }
         }
 
+        // Setup RPC channels
+        let (rpc_tx, rpc_rx) = mpsc::channel(0);
+
         // Create new unix socket connector
         info!("Creating unix socket: {}", options.daemon_socket);
         // Ensure directory exists
@@ -203,7 +203,7 @@ impl Engine {
                 let _ = std::fs::create_dir(p);
             }
         }
-        let unix = match Unix::new(&options.daemon_socket).await {
+        let unix = match Unix::new(&options.daemon_socket, rpc_tx.clone()).await {
             Ok(u) => u,
             Err(e) => {
                 error!("Error binding unix socket: {}", options.daemon_socket);
@@ -215,14 +215,14 @@ impl Engine {
             Some(s) => {
                 info!("Creating HTTP socket: {}", s);
 
-                match Http::new(s.clone()).await {
+                match Http::new(s.clone(), rpc_tx.clone()).await {
                     Ok(v) => Some(v),
                     Err(e) => {
                         error!("Failed to create HTTP connector: {:?}", e);
                         return Err(e.into());
                     }
                 }
-            },
+            }
             None => None,
         };
 
@@ -238,6 +238,7 @@ impl Engine {
             dsf: dsf,
             net: net,
             net_source: net_source,
+            rpc_source: rpc_rx,
             unix,
             http,
             options,
@@ -255,8 +256,9 @@ impl Engine {
             mut dsf,
             mut net,
             mut net_source,
-            mut unix,
-            mut http,
+            mut rpc_source,
+            unix: _,
+            http: _,
             options,
         } = self;
 
@@ -274,13 +276,15 @@ impl Engine {
             });
         }
 
-        // Create periodic timer
+        // Create periodic timers
         let mut update_timer = interval(Duration::from_secs(30));
         let mut tick_timer = interval(Duration::from_millis(200));
 
-        let (mut net_in_tx, mut net_in_rx) = mpsc::channel(1000);
-        let (mut net_out_tx, mut net_out_rx) = mpsc::channel(1000);
+        // Setup network channels
+        let (mut net_in_tx, mut net_in_rx) = mpsc::channel(0);
+        let (mut net_out_tx, mut net_out_rx) = mpsc::channel(0);
 
+        // Setup exit channels
         let (exit_tx, mut exit_rx) = mpsc::channel(1);
         let (mut dsf_exit_tx, mut dsf_exit_rx) = mpsc::channel(1);
         let (mut net_exit_tx, mut net_exit_rx) = mpsc::channel(1);
@@ -364,11 +368,13 @@ impl Engine {
                         }
                     },
                     // Incoming RPC messages
-                    rpc_rx = unix.next().fuse() => {
+                    rpc_rx = rpc_source.next().fuse() => {
                         trace!("engine::unix_rx");
 
-                        if let Some(m) = rpc_rx {
-                            Self::handle_unix_rpc(&mut dsf, m).await.unwrap();
+                        if let Some((req, tx)) = rpc_rx {
+                            if let Err(e) = dsf.start_rpc(req, tx) {
+                                error!("Failed to start rpc: {e:?}");
+                            }
                         }
                     },
                     // TODO: periodic update
@@ -404,46 +410,6 @@ impl Engine {
             net_handle,
             exit_tx,
         })
-    }
-
-    async fn handle_unix_rpc<Net>(dsf: &mut Dsf<Net>, unix_req: UnixMessage) -> Result<(), Error>
-    where
-        Dsf<Net>: NetIf<Interface = Net>,
-    {
-        trace!("incoming RPC: {:?}", unix_req);
-
-        // Parse out message
-        let req: RpcRequest = match serde_json::from_slice(&unix_req.data) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("Failed to decode RPC request: {:?}", e);
-                return Ok(());
-            }
-        };
-
-        debug!("engine, RPC req: {:?}", req);
-
-        // Start RPC request
-        let (tx, mut rx) = mpsc::channel(1);
-        dsf.start_rpc(req, tx)?;
-
-        // Spawn task to poll to RPC completion and forward result
-        task::spawn(async move {
-            let resp = rx.next().await;
-
-            // Encode response
-            let enc = serde_json::to_vec(&resp).unwrap();
-
-            // Generate response with required socket info
-            let unix_resp = unix_req.response(Bytes::from(enc));
-
-            // Send response
-            if let Err(e) = unix_resp.send().await {
-                error!("Error sending RPC response: {:?}", e);
-            }
-        });
-
-        Ok(())
     }
 }
 

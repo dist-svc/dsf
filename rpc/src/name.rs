@@ -69,10 +69,12 @@ pub struct NsRegisterOptions {
     pub name: Option<String>,
 
     #[clap(long)]
+    #[serde(default)]
     /// Options for general TID generation
     pub options: Vec<Options>,
 
     #[clap(long)]
+    #[serde(default)]
     /// Hashes for application-specific TID derivation
     pub hashes: Vec<CryptoHash>,
 }

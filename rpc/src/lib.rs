@@ -117,7 +117,6 @@ impl From<usize> for ServiceIdentifier {
     }
 }
 
-
 /// Paginator object supports paginating responses from the daemon
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser, Default)]
 pub struct PageBounds {

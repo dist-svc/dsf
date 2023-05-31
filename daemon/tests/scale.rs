@@ -21,7 +21,7 @@ async fn smol_scale() {
 #[tokio::test]
 //#[ignore]
 async fn med_scale() {
-    scale(20, LevelFilter::INFO).await;
+    scale(20, LevelFilter::DEBUG).await;
 }
 
 #[tokio::test]
@@ -48,9 +48,10 @@ async fn scale(n: usize, level: LevelFilter) {
         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
         11200,
     )];
+    config.no_bootstrap = true;
 
     // Create instances
-    println!("******** Creating {} virtual daemon instances ********", n);
+    info!("******** Creating {} virtual daemon instances ********", n);
     for i in 0..n {
         let c = config.with_suffix(i);
         let c1 = c.clone();
@@ -66,7 +67,7 @@ async fn scale(n: usize, level: LevelFilter) {
         let handle = e.start().await.unwrap();
 
         // Create client
-        let mut client = Client::new(&ClientConfig::new(Some(&addr), Duration::from_secs(3)))
+        let mut client = Client::new(&ClientConfig::new(Some(&addr), Duration::from_secs(10)))
             .await
             .expect("Error connecting to client");
 
@@ -82,7 +83,7 @@ async fn scale(n: usize, level: LevelFilter) {
 
     let base_addr = daemons[0].1;
 
-    println!("******** Connecting daemons via {} ********", d);
+    info!("******** Connecting daemons via {} ********", d);
     for (_id, _addr, client, _handle) in &mut daemons[1usize..] {
         client
             .connect(rpc::ConnectOptions {
