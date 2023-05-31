@@ -1,23 +1,38 @@
 pub use dsf_core::error::Error as CoreError;
 
+use thiserror::Error;
+
 pub use crate::io::{NetError, UnixError};
 pub use crate::store::StoreError;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Error)]
 pub enum Error {
+    #[error("network error")]
     Net(NetError),
+    #[error("unix socket error")]
     Unix(UnixError),
+    #[error("datastore error")]
     Store(StoreError),
+    #[error("channel error")]
     Channel(futures::channel::mpsc::SendError),
+    #[error("DSF core error")]
     Core(CoreError),
 
+    #[error("timeout")]
     Timeout,
+    #[error("unknown")]
     Unknown,
+    #[error("unimplemented")]
     Unimplemented,
+    #[error("not found")]
     NotFound,
+    #[error("unknown service")]
     UnknownService,
+    #[error("noreplicas found")]
     NoReplicasFound,
+    #[error("no private key")]
     NoPrivateKey,
+    #[error("closed")]
     Closed,
 }
 

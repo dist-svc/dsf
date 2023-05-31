@@ -7,7 +7,7 @@ use dsf_rpc::{ServiceIdentifier, ServiceState};
 use futures::channel::mpsc;
 use futures::prelude::*;
 use kad::{
-    dht::{Connect, Lookup, Search, Store},
+    dht::{Connect, Lookup, Search, Store, Base},
     prelude::{DhtEntry, DhtError},
 };
 use log::{debug, error, info, warn};
@@ -267,6 +267,27 @@ where
 
                         if let Err(e) = done.send(r).await {
                             error!("Failed to forward DHT store result: {:?}", e);
+                        }
+                    });
+                }
+                OpKind::DhtUpdate => {
+                    let dht = self.dht_mut().get_handle();
+                    tokio::task::spawn(async move {
+                        debug!("Start DHT update");
+
+                        let r = match dht
+                            .update(true)
+                            .await
+                        {
+                            Ok(_p) => Ok(Res::Ok),
+                            Err(e) => {
+                                error!("DHT update error: {e:?}");
+                                Err(dht_to_core_error(e))
+                            }
+                        };
+
+                        if let Err(e) = done.send(r).await {
+                            error!("Failed to forward DHT update result: {:?}", e);
                         }
                     });
                 }

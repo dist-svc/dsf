@@ -35,17 +35,6 @@ pub enum ResponseBody {
     PullData(Id, Vec<Container>),
 }
 
-#[derive(Clone, Debug, Encode, Decode)]
-pub struct Status2 {}
-#[derive(Clone, Debug, Encode, Decode)]
-pub struct NodesFound {}
-#[derive(Clone, Debug, Encode, Decode)]
-pub struct ValuesFound {}
-#[derive(Clone, Debug, Encode, Decode)]
-pub struct NoResult {}
-#[derive(Clone, Debug, Encode, Decode)]
-pub struct PullData {}
-
 /// Convert response kind object to protocol message enumeration
 impl From<&ResponseBody> for ResponseKind {
     fn from(r: &ResponseBody) -> Self {

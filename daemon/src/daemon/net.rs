@@ -358,7 +358,7 @@ where
         mut msg: net::Message,
     ) -> Result<Bytes, DaemonError> {
         // Encode response
-        let buff = vec![0u8; 4096];
+        let buff = vec![0u8; 10 * 1024];
 
         // Fetch cached keys if available, otherwise use service keys
         let (enc_key, sym) =

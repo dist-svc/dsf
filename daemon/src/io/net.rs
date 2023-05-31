@@ -21,7 +21,7 @@ use tracing_futures::Instrument;
 
 use bytes::Bytes;
 
-pub const UDP_BUFF_SIZE: usize = 4096;
+pub const UDP_BUFF_SIZE: usize = 16 * 1024;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum NetKind {

@@ -31,6 +31,8 @@ pub enum OpKind {
     DhtLocate(Id),
     /// Store pages at an address in the DHT
     DhtPut(Id, Vec<Container>),
+    /// Update the DHT
+    DhtUpdate,
 
     /// Resolve a service identifier to a service instance
     ServiceResolve(ServiceIdentifier),
@@ -80,6 +82,8 @@ impl core::fmt::Debug for OpKind {
             Self::DhtLocate(id) => f.debug_tuple("DhtLocate").field(id).finish(),
             Self::DhtSearch(id) => f.debug_tuple("DhtSearch").field(id).finish(),
             Self::DhtPut(id, pages) => f.debug_tuple("DhtPut").field(id).field(pages).finish(),
+            Self::DhtUpdate => f.debug_tuple("DhtUpdate").finish(),
+
 
             Self::ServiceResolve(arg0) => f.debug_tuple("ServiceResolve").field(arg0).finish(),
             Self::ServiceGet(id) => f.debug_tuple("ServiceGet").field(id).finish(),
@@ -181,6 +185,14 @@ pub trait Engine: Sync + Send {
     async fn dht_put(&self, id: Id, pages: Vec<Container>) -> Result<Vec<Peer>, CoreError> {
         match self.exec(OpKind::DhtPut(id, pages)).await? {
             Res::Peers(p) => Ok(p),
+            _ => Err(CoreError::Unknown),
+        }
+    }
+
+    /// Force refresh of the DHT
+    async fn dht_update(&self) -> Result<(), CoreError> {
+        match self.exec(OpKind::DhtUpdate).await? {
+            Res::Ok => Ok(()),
             _ => Err(CoreError::Unknown),
         }
     }

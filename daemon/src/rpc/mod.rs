@@ -373,6 +373,10 @@ where
                             Ok(i) => ResponseKind::Bootstrap(i),
                             Err(e) => ResponseKind::Error(e),
                         },
+                        DebugCommands::Update => match exec.dht_update().await {
+                            Ok(_i) => ResponseKind::None,
+                            Err(e) => ResponseKind::Error(e),
+                        }
                         _ => ResponseKind::Error(DsfError::Unimplemented),
                     };
 

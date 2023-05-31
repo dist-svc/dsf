@@ -1,3 +1,8 @@
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::time::Duration;
+
+use dsf_client::{Client, Config};
+use dsf_rpc::ConnectOptions;
 use futures::prelude::*;
 use futures::{executor::block_on, future::try_join_all};
 
@@ -30,7 +35,8 @@ struct Args {
     level: LevelFilter,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
     // Fetch arguments
     let opts = Args::parse();
 
@@ -42,53 +48,68 @@ fn main() {
     // Bind exit handler
     let mut exit_rx = Signals::new(vec![libc::SIGINT]).expect("Error setting Ctrl-C handler");
 
-    // Create async task
-    let res = block_on(async move {
-        let mut handles = vec![];
+    let mut handles = vec![];
+    let mut ports = vec![];
 
-        for i in opts.offset..opts.count + opts.offset {
-            let o = opts.daemon_opts.with_suffix(i + 1);
+    for i in opts.offset..opts.count + opts.offset {
+        let o = opts.daemon_opts.with_suffix(i + 1);
+        ports.push(o.bind_addresses[0].port());
 
-            // Initialise daemon
-            let d = match Engine::new(o).await {
-                Ok(d) => d,
-                Err(e) => {
-                    error!("Error running daemon: {:?}", e);
-                    return Err(e);
-                }
-            };
+        // Initialise daemon
+        let d = match Engine::new(o).await {
+            Ok(d) => d,
+            Err(e) => {
+                error!("Error running daemon: {:?}", e);
+                return Err(e.into());
+            }
+        };
 
-            let handle = d
-                .start()
-                .instrument(tracing::debug_span!("engine", i))
-                .await?;
+        let handle = d
+            .start()
+            .instrument(tracing::debug_span!("engine", i))
+            .await?;
 
-            handles.push(handle);
-        }
-
-        // Await exit signal
-        // Again, this means no exiting on failure :-/
-        let _ = exit_rx.next().await;
-
-        let exits: Vec<_> = handles
-            .drain(..)
-            .map(|v| async move {
-                // Send exit signal
-                v.exit_tx().send(()).await.unwrap();
-                // Await engine completion
-                v.join().await
-            })
-            .collect();
-        if let Err(e) = try_join_all(exits).await {
-            error!("Daemon runtime error: {:?}", e);
-            return Err(e);
-        }
-
-        Ok(())
-    });
-
-    // Return error on failure
-    if let Err(_e) = res {
-        std::process::exit(-1);
+        handles.push(handle);
     }
+
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // Establish peer connections
+    let root = opts.daemon_opts.with_suffix(1);
+    let mut c = Client::new(&Config::new(
+        Some(&root.daemon_socket), 
+        Duration::from_secs(10),
+    )).await.unwrap();
+
+    for i in 1..opts.count {
+        let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), ports[i]));
+
+        let _ = c.connect(ConnectOptions{
+            address,
+            id: None,
+            timeout: None,
+        }).await;
+    }
+
+    // Await exit signal
+    // Again, this means no exiting on failure :-/
+    let _ = exit_rx.next().await;
+
+    let exits: Vec<_> = handles
+        .drain(..)
+        .map(|v| async move {
+            // Send exit signal
+            v.exit_tx().send(()).await.unwrap();
+            // Await engine completion
+            v.join().await
+        })
+        .collect();
+    if let Err(e) = try_join_all(exits).await {
+        error!("Daemon runtime error: {:?}", e);
+        return Err(e.into());
+    }
+
+
+
+    Ok(())
 }
