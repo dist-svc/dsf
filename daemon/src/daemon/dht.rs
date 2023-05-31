@@ -402,7 +402,7 @@ mod test {
 
         // Generate two pages
         let (_, t1) = ns1
-            .publish_tertiary_buff::<256>(
+            .publish_tertiary_buff::<512>(
                 target1.clone().into(),
                 tertiary_opts.clone(),
                 tid.clone(),
@@ -411,7 +411,7 @@ mod test {
 
         tertiary_opts.index += 1;
         let (_, t2) = ns1
-            .publish_tertiary_buff::<256>(
+            .publish_tertiary_buff::<512>(
                 target2.clone().into(),
                 tertiary_opts.clone(),
                 tid.clone(),
@@ -420,7 +420,7 @@ mod test {
 
         tertiary_opts.index += 1;
         let (_, t2a) = ns1
-            .publish_tertiary_buff::<256>(
+            .publish_tertiary_buff::<512>(
                 target2.clone().into(),
                 tertiary_opts.clone(),
                 tid.clone(),
@@ -459,7 +459,7 @@ mod test {
 
         // Generate two pages
         let (_, t1) = ns1
-            .publish_tertiary_buff::<256>(
+            .publish_tertiary_buff::<512>(
                 target1.clone().into(),
                 tertiary_opts.clone(),
                 tid.clone(),
@@ -468,7 +468,7 @@ mod test {
 
         tertiary_opts.index = 1;
         let (_, t2) = ns1
-            .publish_tertiary_buff::<256>(
+            .publish_tertiary_buff::<512>(
                 target2.clone().into(),
                 tertiary_opts.clone(),
                 tid.clone(),

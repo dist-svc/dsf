@@ -647,7 +647,7 @@ mod test {
             &r,
             &[LocateInfo {
                 id: target_id,
-                flags: ServiceFlags::ORIGIN,
+                flags: ServiceFlags::empty(),
                 updated: true,
                 page_version: 0,
                 page: Some(p)
