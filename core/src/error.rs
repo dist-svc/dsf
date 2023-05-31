@@ -56,6 +56,7 @@ pub enum Error {
     InvalidUtf8,
     Encrypted,
     PageExpired,
+    MissingSecretKey,
 }
 
 #[cfg(feature = "std")]

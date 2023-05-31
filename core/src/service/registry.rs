@@ -92,8 +92,16 @@ impl Default for TertiaryOptions {
 impl<B: PageBody> Registry for Service<B> {
     /// Resolve an ID for a given hash
     fn resolve(&self, q: impl Queryable) -> Result<Id, Error> {
+        let mut keys = self.keys();
+        if self.encrypted && keys.sec_key.is_none() {
+            return Err(Error::MissingSecretKey)
+        }
+        if !self.encrypted {
+            keys.sec_key = None;
+        }
+
         // Generate ID for page lookup using this registry
-        match Crypto::hash_tid(self.id(), &self.keys(), q) {
+        match Crypto::hash_tid(self.id(), &keys, q) {
             Ok(tid) => Ok(Id::from(tid.as_bytes())),
             Err(_) => Err(Error::CryptoError),
         }
