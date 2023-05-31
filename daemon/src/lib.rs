@@ -2,6 +2,7 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![feature(async_fn_in_trait)]
+#![feature(proc_macro_hygiene, decl_macro)]
 
 extern crate std;
 

@@ -55,6 +55,14 @@ pub struct EngineOptions {
     /// Unix socket for communication with the daemon
     pub daemon_socket: String,
 
+    #[clap(
+        short = 's',
+        long = "daemon-http",
+        env = "DSF_HTTP"
+    )]
+    /// Unix socket for communication with the daemon
+    pub daemon_http: Option<SocketAddr>,
+
     #[clap(long = "no-bootstrap")]
     /// Disable automatic bootstrapping
     pub no_bootstrap: bool,
@@ -81,6 +89,7 @@ impl Default for EngineOptions {
                 10100,
             )],
             daemon_socket: daemon_socket.to_string_lossy().to_string(),
+            daemon_http: None,
             database_file: database_file.to_string_lossy().to_string(),
             no_bootstrap: false,
             daemon_options: DaemonOptions {
@@ -107,6 +116,7 @@ impl EngineOptions {
         Self {
             bind_addresses,
             daemon_socket: format!("{}.{}", self.daemon_socket, suffix),
+            daemon_http: None,
             database_file: format!("{}.{}", self.database_file, suffix),
             no_bootstrap: self.no_bootstrap,
             daemon_options: DaemonOptions {
@@ -121,6 +131,7 @@ pub struct Engine {
     dsf: Dsf<mpsc::Sender<(Address, Vec<u8>)>>,
 
     unix: Unix,
+    http: Option<Http>,
     net: Net,
 
     net_source: mpsc::Receiver<(Address, Vec<u8>)>,
@@ -200,6 +211,21 @@ impl Engine {
             }
         };
 
+        let http = match options.daemon_http {
+            Some(s) => {
+                info!("Creating HTTP socket: {}", s);
+
+                match Http::new(s.clone()).await {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        error!("Failed to create HTTP connector: {:?}", e);
+                        return Err(e.into());
+                    }
+                }
+            },
+            None => None,
+        };
+
         let (net_sink, net_source) = mpsc::channel::<(Address, Vec<u8>)>(1000);
 
         // Create new DSF instance
@@ -212,7 +238,8 @@ impl Engine {
             dsf: dsf,
             net: net,
             net_source: net_source,
-            unix: unix,
+            unix,
+            http,
             options,
         })
     }
@@ -229,6 +256,7 @@ impl Engine {
             mut net,
             mut net_source,
             mut unix,
+            mut http,
             options,
         } = self;
 
@@ -340,7 +368,7 @@ impl Engine {
                         trace!("engine::unix_rx");
 
                         if let Some(m) = rpc_rx {
-                            Self::handle_rpc(&mut dsf, m).await.unwrap();
+                            Self::handle_unix_rpc(&mut dsf, m).await.unwrap();
                         }
                     },
                     // TODO: periodic update
@@ -378,7 +406,7 @@ impl Engine {
         })
     }
 
-    async fn handle_rpc<Net>(dsf: &mut Dsf<Net>, unix_req: UnixMessage) -> Result<(), Error>
+    async fn handle_unix_rpc<Net>(dsf: &mut Dsf<Net>, unix_req: UnixMessage) -> Result<(), Error>
     where
         Dsf<Net>: NetIf<Interface = Net>,
     {

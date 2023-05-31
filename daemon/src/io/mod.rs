@@ -10,6 +10,9 @@ pub use unix::{Unix, UnixError, UnixMessage};
 
 pub mod mock;
 
+pub mod http;
+pub use http::Http;
+
 use dsf_core::prelude::*;
 
 use crate::error::Error;
