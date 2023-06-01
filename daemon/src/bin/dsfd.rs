@@ -30,8 +30,10 @@ async fn main() -> Result<(), anyhow::Error> {
     let opts = Args::parse();
 
     // Initialise logging
-    let filter = EnvFilter::from_default_env().add_directive(opts.log_level.into());
-    //.add_directive("kad::dht=info".parse()?);
+    let filter = EnvFilter::from_default_env()
+        .add_directive("hyper=warn".parse()?)
+        .add_directive("rocket=warn".parse()?)
+        .add_directive(opts.log_level.into());
 
     let _ = FmtSubscriber::builder()
         .compact()

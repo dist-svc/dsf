@@ -39,7 +39,7 @@ async fn test_ns() {
     let _h = e.start().await.expect("Error launching engine");
 
     // Setup client connector
-    let mut client = Client::new(&ClientConfig::new(
+    let mut client = Client::new(ClientConfig::new(
         Some(&daemon_socket),
         Duration::from_secs(5),
     ))

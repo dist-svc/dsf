@@ -5,8 +5,7 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 use home::home_dir;
 use humantime::Duration as HumanDuration;
-use log::debug;
-use tracing::{span, Level};
+use tracing::{debug, span, Level};
 
 use dsf_core::api::*;
 use dsf_rpc::*;
@@ -55,6 +54,15 @@ impl Config {
     }
 }
 
+impl From<&str> for Config {
+    fn from(value: &str) -> Self {
+        Self {
+            daemon_socket: Some(value.to_string()),
+            timeout: Duration::from_secs(10).into(),
+        }
+    }
+}
+
 /// DSF client connector
 #[derive(Debug)]
 pub struct Client<D: Driver = GenericDriver> {
@@ -67,8 +75,10 @@ pub struct Client<D: Driver = GenericDriver> {
 
 impl Client {
     /// Create a new client
-    pub async fn new(options: &Config) -> Result<Self, Error> {
-        let daemon_socket = options.daemon_socket();
+    pub async fn new<C: Into<Config>>(options: C) -> Result<Self, Error> {
+        let c = options.into();
+
+        let daemon_socket = c.daemon_socket();
 
         let span = span!(Level::DEBUG, "client", "{}", daemon_socket);
         let _enter = span.enter();
@@ -81,7 +91,7 @@ impl Client {
         Ok(Client {
             addr: daemon_socket,
             driver,
-            timeout: *options.timeout,
+            timeout: *c.timeout,
         })
     }
 

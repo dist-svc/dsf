@@ -49,7 +49,7 @@ async fn end_to_end() {
         let handle = e.start().await.expect("Error launching engine");
 
         // Create client
-        let mut client = Client::new(&ClientConfig::new(Some(&addr), Duration::from_secs(1)))
+        let mut client = Client::new(ClientConfig::new(Some(&addr), Duration::from_secs(5)))
             .await
             .expect("Error creating client");
 

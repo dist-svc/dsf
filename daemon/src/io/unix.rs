@@ -274,6 +274,7 @@ mod test {
                 id,
                 peers: 10,
                 services: 14,
+                version: "idk something".to_string(),
             }),
         );
 

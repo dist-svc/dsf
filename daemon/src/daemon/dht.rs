@@ -166,7 +166,7 @@ where
 }
 
 /// Reducer function reduces pages stored in the database
-pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
+pub(crate) fn dht_reducer(id: Id, pages: Vec<Container>) -> Vec<Container> {
     // Build sorted array for filtering
     let mut ordered: Vec<_> = pages.iter().collect();
     ordered.sort_by_key(|p| p.header().index());
@@ -181,7 +181,7 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
     for c in &ordered {
         let h = c.header();
         match c.info() {
-            Ok(PageInfo::Primary(_)) if &c.id() == id && h.index() >= index => {
+            Ok(PageInfo::Primary(_)) if c.id() == id && h.index() >= index => {
                 primary = Some(c.to_owned())
             }
             _ => (),
@@ -195,7 +195,7 @@ pub(crate) fn dht_reducer(id: &Id, pages: &[Container]) -> Vec<Container> {
     // Reduce secondary pages by peer_id and version (via a hashmap to get only the latest value)
     // These must be public so `.info()` works here
     let secondaries = ordered.iter().filter_map(|c| match c.info() {
-        Ok(PageInfo::Secondary(s)) if &c.id() == id && !c.expired() => {
+        Ok(PageInfo::Secondary(s)) if c.id() == id && !c.expired() => {
             Some((s.peer_id, c.to_owned()))
         }
         _ => None,
@@ -308,7 +308,7 @@ mod test {
         let (_, p1) = svc.publish_primary_buff(Default::default()).unwrap();
         let (_, p2) = svc.publish_primary_buff(Default::default()).unwrap();
 
-        let r = dht_reducer(&svc.id(), &[p1.to_owned(), p2.to_owned()]);
+        let r = dht_reducer(svc.id(), vec![p1.to_owned(), p2.to_owned()]);
         assert_eq!(r, vec![p2.to_owned()]);
     }
 
@@ -373,7 +373,7 @@ mod test {
             p2b.to_owned(),
         ];
 
-        let mut r = dht_reducer(&svc.id(), &pages);
+        let mut r = dht_reducer(svc.id(), pages.to_vec());
 
         let mut e = vec![svc_page.to_owned(), p1b.to_owned(), p2b.to_owned()];
 
@@ -430,7 +430,7 @@ mod test {
         let pages = vec![t1.to_owned(), t2.to_owned(), t2a.to_owned()];
 
         // Reduce should leave only the _later_ tertiary page for a given target
-        let mut r = dht_reducer(&tid, &pages);
+        let mut r = dht_reducer(tid, pages.to_vec());
 
         let mut e = vec![t1.to_owned(), t2a.to_owned()];
 
@@ -479,7 +479,7 @@ mod test {
 
         // Reduce should leave only the _later_ tertiary page
         // TODO: could sort by time equally as well as index?
-        let mut r = dht_reducer(&tid, &pages);
+        let mut r = dht_reducer(tid, pages.to_vec());
 
         let mut e = vec![t1.to_owned(), t2.to_owned()];
 

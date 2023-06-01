@@ -2,9 +2,12 @@ use std::net::SocketAddr;
 use std::time::SystemTime;
 
 use clap::Parser;
-use log::{debug, error, warn};
 use prettytable::{row, Table};
-use simplelog::{LevelFilter, TermLogger};
+use tracing::{debug, error, warn};
+use tracing_subscriber::{
+    filter::{EnvFilter, LevelFilter},
+    FmtSubscriber,
+};
 
 use dsf_client::{Client, Config};
 use dsf_core::{helpers::print_bytes, prelude::MaybeEncrypted, types::Id};
@@ -26,9 +29,9 @@ struct Args {
     #[clap(long)]
     no_trunc: bool,
 
-    #[clap(long = "log-level", default_value = "info")]
+    #[clap(long, default_value = "info")]
     /// Enable verbose logging
-    level: LevelFilter,
+    log_level: LevelFilter,
 }
 
 #[derive(Parser)]
@@ -55,20 +58,15 @@ async fn main() -> Result<(), anyhow::Error> {
     // Fetch arguments
     let opts = Args::parse();
 
-    // Setup logging
-    let mut log_config = simplelog::ConfigBuilder::new();
-    log_config.add_filter_ignore_str("tokio");
-    let log_config = log_config.build();
+    // Initialise logging
+    let filter = EnvFilter::from_default_env().add_directive(opts.log_level.into());
+    //.add_directive("kad::dht=info".parse()?);
 
-    if TermLogger::init(
-        opts.level,
-        log_config.clone(),
-        simplelog::TerminalMode::Mixed,
-    )
-    .is_err()
-    {
-        let _ = simplelog::SimpleLogger::init(opts.level, log_config);
-    }
+    let _ = FmtSubscriber::builder()
+        .compact()
+        .with_max_level(opts.log_level)
+        .with_env_filter(filter)
+        .try_init();
 
     // Parse out commands
     let cmd = match &opts.cmd {
@@ -86,7 +84,7 @@ async fn main() -> Result<(), anyhow::Error> {
         "Connecting to client socket: '{}'",
         &opts.config.daemon_socket()
     );
-    let mut c = match Client::new(&opts.config).await {
+    let mut c = match Client::new(opts.config.clone()).await {
         Ok(c) => c,
         Err(e) => {
             return Err(anyhow::anyhow!(

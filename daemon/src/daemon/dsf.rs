@@ -125,7 +125,8 @@ where
 
         // Instantiate DHT
         let (dht_sink, dht_source) = mpsc::channel(100);
-        let dht = Dht::<Id, Peer, Data>::standard(id, config.dht, dht_sink);
+        let mut dht = Dht::<Id, Peer, Data>::standard(id, config.dht, dht_sink);
+        dht.set_reducer(Box::new(dht_reducer));
 
         let (op_tx, op_rx) = mpsc::unbounded();
 

@@ -246,6 +246,7 @@ pub struct StatusInfo {
     pub id: Id,
     pub peers: usize,
     pub services: usize,
+    #[serde(default)]
     pub version: String,
 }
 

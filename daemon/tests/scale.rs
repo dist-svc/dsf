@@ -67,7 +67,7 @@ async fn scale(n: usize, level: LevelFilter) {
         let handle = e.start().await.unwrap();
 
         // Create client
-        let mut client = Client::new(&ClientConfig::new(Some(&addr), Duration::from_secs(10)))
+        let mut client = Client::new(ClientConfig::new(Some(&addr), Duration::from_secs(10)))
             .await
             .expect("Error connecting to client");
 
