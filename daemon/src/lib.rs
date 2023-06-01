@@ -16,6 +16,8 @@ extern crate jemallocator;
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+pub const VERSION: &str = std::env!("GIT_TAG");
+
 pub(crate) mod sync {
     pub(crate) type Arc<T> = std::sync::Arc<T>;
 

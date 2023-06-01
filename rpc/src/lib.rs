@@ -246,6 +246,7 @@ pub struct StatusInfo {
     pub id: Id,
     pub peers: usize,
     pub services: usize,
+    pub version: String,
 }
 
 pub use dsf_core::base::Body;

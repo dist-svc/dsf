@@ -65,6 +65,7 @@ where
                     id: self.id(),
                     peers: self.peers().count(),
                     services: self.services().count(),
+                    version: crate::VERSION.to_string(),
                 };
 
                 Some(ResponseKind::Status(i))
