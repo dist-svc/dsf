@@ -584,6 +584,9 @@ where
                     error!("Failed to forward responses to DHT: {:?}", e);
                 }
             });
+
+            // Force re-wake
+            ctx.waker().clone().wake();
         }
 
         // Poll on pending outgoing responses to be forwarded
@@ -592,6 +595,9 @@ where
             if let Err(e) = self.net_send(&[(addr, id)], msg) {
                 error!("Error sending outgoing response message: {:?}", e);
             }
+
+            // Force re-wake
+            ctx.waker().clone().wake();
         }
 
         // Poll on internal network operations

@@ -112,37 +112,6 @@ impl Unix {
         })
     }
 
-    /// Send a network message
-    #[cfg(nope)]
-    pub async fn send(&mut self, msg: dsf_rpc::Response, close: bool) -> Result<(), UnixError> {
-        // Sink must be cloned here so the connection lock can be dropped
-        // before the await point, interestingly explicitly dropping doesn't
-        // work, but, adding a scope does...
-
-        let connection_id = msg.connection_id;
-
-        let (mut tx_sink, mut exit_sink) = {
-            let mut connections = self.connections.lock().unwrap();
-
-            let interface = match connections.get_mut(&connection_id) {
-                Some(v) => v,
-                None => return Err(UnixError::NoMatchingConnection),
-            };
-
-            debug!("send on interface: {}", interface.index);
-
-            (interface.sink.clone(), interface.exit_sink.clone())
-        };
-
-        tx_sink.send(msg).await?;
-
-        if close {
-            exit_sink.send(()).await?;
-        }
-
-        Ok(())
-    }
-
     pub async fn close(self) -> Result<(), UnixError> {
         // TODO: add listener exit channel, handle close
         let _ = self.handle;
@@ -170,7 +139,7 @@ impl Connection {
         let tx = tx_sink.clone();
 
         let handle: JoinHandle<Result<(), UnixError>> = task::spawn(async move {
-            debug!("new UNIX task {}", index);
+            trace!("new UNIX task {}", index);
 
             let (mut unix_rx, mut unix_tx) = unix_stream.split();
 
@@ -182,12 +151,13 @@ impl Connection {
                 select!{
                     // Encode and send outgoing messages
                     tx = tx_stream.next() => {
+                        // Exit on tx stream closed
                         let tx = match tx {
                             Some(v) => v,
-                            None => {
-                                break;
-                            }
+                            None => break,
                         };
+
+                        trace!("tx: {:?}", tx);
 
                         // Encode message to JSON
                         let resp = match serde_json::to_vec(&tx) {
@@ -223,6 +193,8 @@ impl Connection {
                                         continue;
                                     }
                                 };
+
+                                trace!("req: {:?}", req);
 
                                 // Forward to client
                                 if let Err(e) = rx_sink.send((req, tx.clone())).await {

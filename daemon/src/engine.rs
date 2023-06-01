@@ -281,8 +281,9 @@ impl Engine {
         let mut tick_timer = interval(Duration::from_millis(200));
 
         // Setup network channels
-        let (mut net_in_tx, mut net_in_rx) = mpsc::channel(0);
-        let (mut net_out_tx, mut net_out_rx) = mpsc::channel(0);
+        // Note: this must have a non-zero buffer to avoid deadlocks
+        let (mut net_in_tx, mut net_in_rx) = mpsc::channel(1000);
+        let (mut net_out_tx, mut net_out_rx) = mpsc::channel(1000);
 
         // Setup exit channels
         let (exit_tx, mut exit_rx) = mpsc::channel(1);
@@ -369,12 +370,35 @@ impl Engine {
                     },
                     // Incoming RPC messages
                     rpc_rx = rpc_source.next().fuse() => {
-                        trace!("engine::unix_rx");
+                        debug!("engine::rpc_rx");
 
-                        if let Some((req, tx)) = rpc_rx {
-                            if let Err(e) = dsf.start_rpc(req, tx) {
-                                error!("Failed to start rpc: {e:?}");
+                        let (req, mut tx) = match rpc_rx {
+                            Some(v) => v,
+                            None => {
+                                error!("No RPC");
+                                continue;
                             }
+                        };
+
+                        let (resp_sink, mut resp_source) = mpsc::channel(0);
+
+                        tokio::task::spawn(async move {
+                            match resp_source.next().await {
+                                Some(r) => {
+                                    debug!("RPC response: {r:?}");
+
+                                    if let Err(e) = tx.send(r).await {
+                                        error!("Failed to foward RPC response: {:?}", e);
+                                    }
+                                },
+                                None => {
+                                    error!("Empty response");
+                                }
+                            }
+                        });
+
+                        if let Err(e) = dsf.start_rpc(req, resp_sink) {
+                            error!("Failed to start rpc: {e:?}");
                         }
                     },
                     // TODO: periodic update
