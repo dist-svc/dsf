@@ -2,8 +2,8 @@
 //!
 //!
 
-use std::{convert::TryFrom, time::Instant};
 use std::time::Duration;
+use std::{convert::TryFrom, time::Instant};
 
 use futures::{future, Future, FutureExt};
 use serde::{Deserialize, Serialize};
@@ -212,9 +212,12 @@ impl<T: Engine> NameService for T {
             // _if_ this is possible with opaque hashes..?
         }
 
-        
         let elapsed = Instant::now().duration_since(t1);
-        info!("Search complete after {} ms: {:?}", elapsed.as_millis() , resolved);
+        info!(
+            "Search complete after {} ms: {:?}",
+            elapsed.as_millis(),
+            resolved
+        );
 
         // Return resolved service information
         Ok(resolved)
@@ -376,9 +379,12 @@ impl<T: Engine> NameService for T {
             hashes: opts.hashes,
         };
 
-        
         let elapsed = Instant::now().duration_since(t1);
-        info!("Register complete after {} ms: {:?}", elapsed.as_millis() , info);
+        info!(
+            "Register complete after {} ms: {:?}",
+            elapsed.as_millis(),
+            info
+        );
 
         Ok(info)
     }

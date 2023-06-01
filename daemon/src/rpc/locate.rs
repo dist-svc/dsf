@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::{SystemTime, Instant};
+use std::time::{Instant, SystemTime};
 
 use dsf_core::wire::Container;
 use futures::channel::mpsc;
@@ -119,7 +119,6 @@ impl<T: Engine> ServiceRegistry for T {
             flags |= ServiceFlags::ENCRYPTED;
         }
 
-
         // Return info
         let info = LocateInfo {
             id: opts.id,
@@ -130,7 +129,11 @@ impl<T: Engine> ServiceRegistry for T {
         };
 
         let elapsed = Instant::now().duration_since(t1);
-        info!("Locate complete after {} ms: {:?}", elapsed.as_millis() , info);
+        info!(
+            "Locate complete after {} ms: {:?}",
+            elapsed.as_millis(),
+            info
+        );
 
         Ok(info)
     }

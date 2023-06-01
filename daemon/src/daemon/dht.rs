@@ -6,7 +6,7 @@ use std::num;
 use dsf_core::options::Filters;
 use dsf_core::wire::Container;
 use kad::prelude::*;
-use tracing::{trace, error};
+use tracing::{error, trace};
 
 use futures::channel::mpsc;
 
