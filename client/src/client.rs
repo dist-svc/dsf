@@ -1,30 +1,18 @@
-use std::collections::HashMap;
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clap::Parser;
 use futures::channel::mpsc;
 use futures::prelude::*;
-use futures::{SinkExt, StreamExt};
 use home::home_dir;
 use humantime::Duration as HumanDuration;
-use log::{debug, error, trace, warn};
-use tokio::select;
-use tokio::{
-    task::{self, JoinHandle},
-    time::timeout,
-};
+use log::debug;
 use tracing::{span, Level};
 
 use dsf_core::api::*;
 use dsf_rpc::*;
-use dsf_rpc::{Request as RpcRequest, Response as RpcResponse};
 
-use crate::driver::{Driver, UnixDriver};
+use crate::driver::{Driver, GenericDriver};
 use crate::error::Error;
-
-type RequestMap = Arc<Mutex<HashMap<u64, mpsc::Sender<ResponseKind>>>>;
 
 /// Options for client instantiation
 #[derive(Clone, Debug, Parser)]
@@ -58,27 +46,23 @@ impl Config {
         if let Some(h) = home_dir() {
             let p = h.join(".dsfd/dsf.sock");
             if p.exists() {
-                return p.to_string_lossy().to_string();
+                return format!("unix://{}", p.to_string_lossy());
             }
         }
 
         // Otherwise fallback to system socket
-        "/var/run/dsfd/dsf.sock".to_string()
+        "unix:///var/run/dsfd/dsf.sock".to_string()
     }
 }
 
 /// DSF client connector
 #[derive(Debug)]
-pub struct Client<D: Driver = UnixDriver> {
+pub struct Client<D: Driver = GenericDriver> {
     addr: String,
-    sink: mpsc::Sender<RpcRequest>,
-    requests: RequestMap,
+
+    driver: D,
 
     timeout: Duration,
-
-    _rx_handle: JoinHandle<()>,
-    _stream_handle: JoinHandle<()>,
-    _d: PhantomData<D>,
 }
 
 impl Client {
@@ -91,52 +75,13 @@ impl Client {
 
         debug!("Client connecting (address: {})", daemon_socket);
 
-        // Connect to stream
-        let mut driver = UnixDriver::new(&daemon_socket).await?;
-
-        // Create internal streams
-        let (tx_sink, mut tx_stream) = mpsc::channel::<RpcRequest>(0);
-        let (mut rx_sink, mut rx_stream) = mpsc::channel::<RpcResponse>(0);
-
-        // Route messages between streams and driver
-        let stream_handle = task::spawn(async move {
-            loop {
-                select! {
-                    Some(resp) = driver.next() => {
-                        rx_sink.send(resp).await.unwrap();
-                    },
-                    Some(m) = tx_stream.next() => {
-                        driver.send(m).await.unwrap();
-                    }
-                }
-            }
-        });
-
-        // Create receiving task
-        let requests = Arc::new(Mutex::new(HashMap::new()));
-        let reqs = requests.clone();
-
-        let rx_handle = task::spawn(async move {
-            trace!("started client rx listener");
-            loop {
-                match rx_stream.next().await {
-                    Some(resp) => Self::handle(&reqs, resp).await.unwrap(),
-                    None => {
-                        warn!("Client rx channel closed");
-                        break;
-                    }
-                }
-            }
-        });
+        // Connect to driver
+        let driver = GenericDriver::new(&daemon_socket).await?;
 
         Ok(Client {
-            sink: tx_sink,
             addr: daemon_socket,
-            requests,
+            driver,
             timeout: *options.timeout,
-            _rx_handle: rx_handle,
-            _stream_handle: stream_handle,
-            _d: PhantomData,
         })
     }
 
@@ -148,80 +93,11 @@ impl Client {
 
         debug!("Issuing request: {:?}", rk);
 
-        let resp = self.do_request(rk).await.map(|(v, _)| v)?;
+        let resp = self.driver.exec(rk, self.timeout).await?;
 
         debug!("Received response: {:?}", resp);
 
         Ok(resp)
-    }
-
-    // TODO: #[instrument]
-    async fn do_request(
-        &mut self,
-        rk: RequestKind,
-    ) -> Result<(ResponseKind, mpsc::Receiver<ResponseKind>), Error> {
-        let (tx, mut rx) = mpsc::channel(0);
-        let req = RpcRequest::new(rk);
-        let id = req.req_id();
-
-        // Add to tracking
-        trace!("request add lock");
-        self.requests.lock().unwrap().insert(id, tx);
-
-        // Send message
-        self.sink.send(req).await.unwrap();
-
-        // Await and return response
-        let res = timeout(self.timeout, rx.next()).await;
-
-        // TODO: Handle timeout errors
-        let res = match res {
-            Ok(Some(v)) => Ok(v),
-            // TODO: this seems like it should be a yeild / retry point..?
-            Ok(None) => {
-                error!("No response received");
-                Err(Error::None(()))
-            }
-            Err(e) => {
-                error!("Response error: {:?}", e);
-                Err(Error::Timeout)
-            }
-        };
-
-        // Remove request on failure
-        if let Err(_e) = &res {
-            trace!("request failure lock");
-            self.requests.lock().unwrap().remove(&id);
-        }
-
-        res.map(|v| (v, rx))
-    }
-
-    // Internal function to handle received messages
-    async fn handle(requests: &RequestMap, resp: RpcResponse) -> Result<(), Error> {
-        // Find matching sender
-        let id = resp.req_id();
-
-        debug!("Response: {:?}", resp);
-
-        trace!("receive request lock");
-        let mut a = match requests.lock().unwrap().get_mut(&id) {
-            Some(a) => a.clone(),
-            None => {
-                error!("Unix RX with no matching request ID");
-                return Err(Error::Unknown);
-            }
-        };
-
-        // Forward response
-        match a.send(resp.kind()).await {
-            Ok(_) => (),
-            Err(e) => {
-                error!("client send error: {:?}", e);
-            }
-        };
-
-        Ok(())
     }
 
     /// Fetch daemon status information
@@ -386,17 +262,13 @@ impl Client {
     /// Subscribe to data from a given service
     pub async fn subscribe(
         &mut self,
-        options: SubscribeOptions,
+        _options: SubscribeOptions,
     ) -> Result<impl Stream<Item = ResponseKind>, Error> {
-        let req = RequestKind::Service(ServiceCommands::Subscribe(options));
+        let (_tx, _rx) = mpsc::channel(1000);
 
-        let (resp, rx) = self.do_request(req).await?;
+        // TODO: re-implement with updated driver
 
-        match resp {
-            ResponseKind::Subscribed(_info) => Ok(rx),
-            ResponseKind::Error(e) => Err(Error::Remote(e)),
-            _ => Err(Error::UnrecognizedResult),
-        }
+        Ok(_rx)
     }
 
     /// Fetch data from a given service

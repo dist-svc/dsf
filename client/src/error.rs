@@ -25,6 +25,8 @@ pub enum Error {
     Timeout,
     #[cfg_attr(feature = "thiserror", error("socket error"))]
     Socket,
+    #[cfg_attr(feature = "thiserror", error("address error"))]
+    Address,
 }
 
 impl From<IoError> for Error {

@@ -59,7 +59,7 @@ async fn scale(n: usize, level: LevelFilter) {
         // Ensure database does not exist
         let _ = std::fs::remove_file(c.database_file);
 
-        let addr = c.daemon_socket.clone();
+        let addr = format!("unix://{}", c.daemon_socket);
         let net_addr = c.bind_addresses[0];
         let e = Engine::new(c1).await.expect("Error creating engine");
 
