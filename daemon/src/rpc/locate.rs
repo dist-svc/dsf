@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::SystemTime;
+use std::time::{SystemTime, Instant};
 
 use dsf_core::wire::Container;
 use futures::channel::mpsc;
@@ -39,6 +39,8 @@ pub trait ServiceRegistry {
 impl<T: Engine> ServiceRegistry for T {
     #[instrument(skip(self))]
     async fn service_locate(&self, opts: LocateOptions) -> Result<LocateInfo, DsfError> {
+        let t1 = Instant::now();
+
         info!("Locating service: {:?}", opts);
 
         // Check for existing / local information
@@ -117,6 +119,7 @@ impl<T: Engine> ServiceRegistry for T {
             flags |= ServiceFlags::ENCRYPTED;
         }
 
+
         // Return info
         let info = LocateInfo {
             id: opts.id,
@@ -125,6 +128,9 @@ impl<T: Engine> ServiceRegistry for T {
             page_version,
             page: Some(primary_page),
         };
+
+        let elapsed = Instant::now().duration_since(t1);
+        info!("Locate complete after {} ms: {:?}", elapsed.as_millis() , info);
 
         Ok(info)
     }

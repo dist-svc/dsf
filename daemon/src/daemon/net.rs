@@ -167,7 +167,9 @@ impl Future for NetOp {
             true
 
         // Check for timeouts
-        } else if Instant::now().saturating_duration_since(self.ts) > Duration::from_secs(5) {
+        // TODO: propagate this timeout value from global config? network latency should _never_ be this high,
+        // but the time for a peer to compute the response may also be non-zero
+        } else if Instant::now().saturating_duration_since(self.ts) > Duration::from_millis(1000) {
             debug!("Net operation {} timeout", self.req.id);
             true
         } else {

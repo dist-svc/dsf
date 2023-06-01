@@ -193,7 +193,7 @@ impl Engine {
         }
 
         // Setup RPC channels
-        let (rpc_tx, rpc_rx) = mpsc::channel(0);
+        let (rpc_tx, rpc_rx) = mpsc::channel(100);
 
         // Create new unix socket connector
         info!("Creating unix socket: {}", options.daemon_socket);
@@ -380,7 +380,7 @@ impl Engine {
                             }
                         };
 
-                        let (resp_sink, mut resp_source) = mpsc::channel(0);
+                        let (resp_sink, mut resp_source) = mpsc::channel(100);
 
                         tokio::task::spawn(async move {
                             match resp_source.next().await {

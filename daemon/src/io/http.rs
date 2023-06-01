@@ -83,7 +83,7 @@ impl Http {
 impl HttpCtx {
     /// Execute an RPC request via internal sink
     async fn exec(&self, req: RequestKind) -> ResponseKind {
-        let (sink, mut stream) = mpsc::channel(0);
+        let (sink, mut stream) = mpsc::channel(100);
         let req = Request::new(req);
 
         // Forward RPC request
@@ -93,7 +93,7 @@ impl HttpCtx {
         }
 
         // Poll on RPC response
-        // TODO: timeout at this level?
+        // TODO: is it useful to apply timeouts at this level?
         let resp = match stream.next().await {
             Some(v) => v,
             None => {

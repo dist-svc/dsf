@@ -2,7 +2,7 @@
 //!
 //!
 
-use std::convert::TryFrom;
+use std::{convert::TryFrom, time::Instant};
 use std::time::Duration;
 
 use futures::{future, Future, FutureExt};
@@ -102,7 +102,9 @@ impl<T: Engine> NameService for T {
     /// Search for a matching service using the provided (or relevant) nameserver
     #[instrument(skip(self))]
     async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<LocateInfo>, DsfError> {
-        debug!("Locating nameservice for search: {:?}", opts);
+        debug!("Locating nameservice");
+
+        let t1 = Instant::now();
 
         // Resolve nameserver using provided options
         let ns = self.svc_resolve(opts.ns).await;
@@ -210,6 +212,10 @@ impl<T: Engine> NameService for T {
             // _if_ this is possible with opaque hashes..?
         }
 
+        
+        let elapsed = Instant::now().duration_since(t1);
+        info!("Search complete after {} ms: {:?}", elapsed.as_millis() , resolved);
+
         // Return resolved service information
         Ok(resolved)
     }
@@ -217,7 +223,9 @@ impl<T: Engine> NameService for T {
     /// Register a service with the provided name service
     #[instrument(skip(self))]
     async fn ns_register(&self, opts: NsRegisterOptions) -> Result<NsRegisterInfo, DsfError> {
-        debug!("Locating nameservice for register: {:?}", opts);
+        debug!("Locating nameservice");
+
+        let t1 = Instant::now();
 
         // Resolve nameserver using provided options
         let ns = self.svc_resolve(opts.ns.clone()).await;
@@ -361,14 +369,18 @@ impl<T: Engine> NameService for T {
         }
 
         // TODO: return result
-        let i = NsRegisterInfo {
+        let info = NsRegisterInfo {
             ns: ns.id(),
             prefix,
             name: opts.name,
             hashes: opts.hashes,
         };
 
-        Ok(i)
+        
+        let elapsed = Instant::now().duration_since(t1);
+        info!("Register complete after {} ms: {:?}", elapsed.as_millis() , info);
+
+        Ok(info)
     }
 }
 

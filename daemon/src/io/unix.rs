@@ -240,7 +240,7 @@ mod test {
             .with_max_level(Level::DEBUG)
             .try_init();
 
-        let (unix_tx, mut unix_rx) = mpsc::channel(0);
+        let (unix_tx, mut unix_rx) = mpsc::channel(100);
 
         let _unix = Unix::new("/tmp/dsf-unix-test", unix_tx)
             .await

@@ -6,13 +6,13 @@ use std::num;
 use dsf_core::options::Filters;
 use dsf_core::wire::Container;
 use kad::prelude::*;
+use tracing::{trace, error};
 
 use futures::channel::mpsc;
 
 use dsf_core::net::{RequestBody, ResponseBody};
 use dsf_core::prelude::*;
 use dsf_core::types::{Data, Id, RequestId};
-use log::error;
 
 use super::{net::NetIf, Dsf};
 
@@ -238,7 +238,7 @@ pub(crate) fn dht_reducer(id: Id, pages: Vec<Container>) -> Vec<Container> {
         }
     }
 
-    println!("Public tertiaries: {:?}", public_tertiaries);
+    trace!("Public tertiaries: {:?}", public_tertiaries);
 
     // For private registries we just have to take the latest subset of pages
     // TODO: any better approach to this? some form of deterministic one-way fn for
@@ -247,7 +247,7 @@ pub(crate) fn dht_reducer(id: Id, pages: Vec<Container>) -> Vec<Container> {
         h.kind().is_page() && h.flags().contains(Flags::TERTIARY | Flags::ENCRYPTED) && !c.expired()
     });
 
-    println!("Private tertiaries: {:?}", private_tertiaries);
+    trace!("Private tertiaries: {:?}", private_tertiaries);
 
     // TODO: should we reduce per-ns?
     // (it is _very improbable_ that hash collisions result in more than one NS attempting to use the same TID)
