@@ -204,7 +204,9 @@ where
                             .connect(vec![DhtEntry::new(from.clone(), peer)], Default::default())
                             .await
                         {
-                            Ok((p, _i)) => Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect())),
+                            Ok((p, _i)) => {
+                                Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect()))
+                            }
                             Err(e) => {
                                 error!("DHT connect error: {e:?}");
                                 Err(CoreError::Unknown)
@@ -258,7 +260,9 @@ where
                             .store(id.clone(), pages.clone(), Default::default())
                             .await
                         {
-                            Ok((p, _i)) => Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect())),
+                            Ok((p, _i)) => {
+                                Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect()))
+                            }
                             Err(e) => {
                                 error!("DHT store error: {e:?}");
                                 Err(dht_to_core_error(e))
