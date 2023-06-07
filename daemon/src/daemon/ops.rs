@@ -204,7 +204,7 @@ where
                             .connect(vec![DhtEntry::new(from.clone(), peer)], Default::default())
                             .await
                         {
-                            Ok(p) => Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect())),
+                            Ok((p, _i)) => Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect())),
                             Err(e) => {
                                 error!("DHT connect error: {e:?}");
                                 Err(CoreError::Unknown)
@@ -221,7 +221,7 @@ where
 
                     tokio::task::spawn(async move {
                         let r = match dht.lookup(id.clone(), Default::default()).await {
-                            Ok(p) => Ok(Res::Peers(vec![p.info().clone()])),
+                            Ok((p, _i)) => Ok(Res::Peers(vec![p.info().clone()])),
                             Err(e) => {
                                 error!("DHT lookup error: {e:?}");
                                 Err(dht_to_core_error(e))
@@ -238,7 +238,7 @@ where
 
                     tokio::task::spawn(async move {
                         let r = match dht.search(id.clone(), Default::default()).await {
-                            Ok(p) => Ok(Res::Pages(p)),
+                            Ok((p, _i)) => Ok(Res::Pages(p)),
                             Err(e) => {
                                 error!("DHT search error: {e:?}");
                                 Err(dht_to_core_error(e))
@@ -258,7 +258,7 @@ where
                             .store(id.clone(), pages.clone(), Default::default())
                             .await
                         {
-                            Ok(p) => Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect())),
+                            Ok((p, _i)) => Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect())),
                             Err(e) => {
                                 error!("DHT store error: {e:?}");
                                 Err(dht_to_core_error(e))

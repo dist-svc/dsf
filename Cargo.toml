@@ -7,6 +7,7 @@ members = [
     "engine",
     "rpc",
 ]
+resolver = "2"
 
 [profile.release]
 debug = true
