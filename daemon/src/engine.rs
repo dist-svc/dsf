@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -63,8 +64,18 @@ pub struct EngineOptions {
     /// Disable automatic bootstrapping
     pub no_bootstrap: bool,
 
+    #[clap(long, hide=true, value_parser=parse_human_duration, env)]
+    /// Insert delays into message receive path to emulate constant
+    /// point-to-point network latencies
+    pub mock_rx_latency: Option<Duration>,
+
     #[clap(flatten)]
     pub daemon_options: DaemonOptions,
+}
+
+fn parse_human_duration(s: &str) -> Result<Duration, humantime::DurationError> {
+    let h = humantime::Duration::from_str(s)?;
+    Ok(h.into())
 }
 
 impl Default for EngineOptions {
@@ -91,6 +102,7 @@ impl Default for EngineOptions {
             daemon_options: DaemonOptions {
                 dht: DhtConfig::default(),
             },
+            mock_rx_latency: None,
         }
     }
 }
@@ -118,6 +130,7 @@ impl EngineOptions {
             daemon_options: DaemonOptions {
                 dht: self.daemon_options.dht.clone(),
             },
+            mock_rx_latency: None,
         }
     }
 }
@@ -190,6 +203,9 @@ impl Engine {
                 error!("Error binding interface: {:?}", addr);
                 return Err(e.into());
             }
+        }
+        if let Some(s) = options.mock_rx_latency {
+            warn!("using mock rx latency: {s:?}");
         }
 
         // Setup RPC channels
@@ -282,7 +298,7 @@ impl Engine {
 
         // Setup network channels
         // Note: this must have a non-zero buffer to avoid deadlocks
-        let (mut net_in_tx, mut net_in_rx) = mpsc::channel(1000);
+        let (net_in_tx, mut net_in_rx) = mpsc::channel(1000);
         let (mut net_out_tx, mut net_out_rx) = mpsc::channel(1000);
 
         // Setup exit channels
@@ -302,6 +318,8 @@ impl Engine {
             dsf_exit_tx.send(()).await.unwrap();
         });
 
+        let mock_rx_latency = options.mock_rx_latency.clone();
+
         // Setup network IO task
         let net_handle: JoinHandle<Result<(), Error>> = task::spawn(async move {
             loop {
@@ -310,12 +328,22 @@ impl Engine {
                     net_rx = net.next() => {
                         if let Some(m) = net_rx {
                             trace!("engine::net_rx {:?}", m);
+                            let mut net_in_tx = net_in_tx.clone();
 
-                            // Forward to DSF for execution
-                            if let Err(e) = net_in_tx.send(m).await {
-                                error!("error forwarding incoming network message: {:?}", e);
-                                return Err(Error::Unknown);
-                            }
+                            // TODO: prefer not to spawn a task every rx but,
+                            // need to be able to inject rx delays so this seems like 
+                            // an easy option for the moment...
+                            task::spawn(async move {
+                                // Inject mock rx delay if enabled
+                                if let Some(d) = mock_rx_latency {
+                                    tokio::time::sleep(d).await;
+                                }
+
+                                // Forward to DSF for execution
+                                if let Err(e) = net_in_tx.send(m).await {
+                                    error!("error forwarding incoming network message: {:?}", e);
+                                }
+                            });
                         } else {
                             error!("engine::net_rx returned None");
                         }
