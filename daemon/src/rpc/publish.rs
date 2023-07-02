@@ -89,14 +89,14 @@ pub(super) async fn publish_data<E: Engine, B: DataBody>(
             info.id.clone(),
             Box::new(move |svc, _state| {
                 let (_n, c) = svc.publish_data_buff(data_options.clone())?;
-                Ok(Res::Pages(vec![c.to_owned()]))
+                Ok(Res::Pages(vec![c.to_owned()], None))
             }),
         )
         .await;
 
     // Handle build results
     let block = match r {
-        Ok(Res::Pages(p)) if p.len() == 1 => p[0].clone(),
+        Ok(Res::Pages(p, _)) if p.len() == 1 => p[0].clone(),
         Err(e) => {
             error!("Failed to build data object: {:?}", e);
             return Err(e);

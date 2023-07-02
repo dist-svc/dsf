@@ -72,7 +72,7 @@ impl<T: Engine> ServiceRegistry for T {
         // Otherwise, lookup via DHT
         let pages = self.dht_search(opts.id.clone()).await;
         let mut pages = match (pages, &local) {
-            (Ok(p), _) => p,
+            (Ok((p, _info)), _) => p,
             (_, Some(i)) => {
                 warn!("DHT search failed, using local service info");
                 return Ok(i.clone());

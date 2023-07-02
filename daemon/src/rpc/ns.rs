@@ -22,8 +22,8 @@ use dsf_core::{
     wire::Container,
 };
 use dsf_rpc::{
-    DataInfo, LocateInfo, LocateOptions, NsCreateOptions, NsRegisterInfo, NsRegisterOptions,
-    NsSearchOptions, Response, ServiceIdentifier, ServiceInfo,
+    DataInfo, DhtInfo, LocateInfo, LocateOptions, NsCreateOptions, NsRegisterInfo,
+    NsRegisterOptions, NsSearchInfo, NsSearchOptions, Response, ServiceIdentifier, ServiceInfo,
 };
 
 use crate::daemon::Dsf;
@@ -39,7 +39,7 @@ pub trait NameService {
     async fn ns_create(&self, opts: NsCreateOptions) -> Result<ServiceInfo, DsfError>;
 
     /// Search for a service or block by hashed value
-    async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<LocateInfo>, DsfError>;
+    async fn ns_search(&self, opts: NsSearchOptions) -> Result<NsSearchInfo, DsfError>;
 
     /// Register a service by name
     async fn ns_register(&self, opts: NsRegisterOptions) -> Result<NsRegisterInfo, DsfError>;
@@ -101,7 +101,7 @@ impl<T: Engine> NameService for T {
 
     /// Search for a matching service using the provided (or relevant) nameserver
     #[instrument(skip(self))]
-    async fn ns_search(&self, opts: NsSearchOptions) -> Result<Vec<LocateInfo>, DsfError> {
+    async fn ns_search(&self, opts: NsSearchOptions) -> Result<NsSearchInfo, DsfError> {
         debug!("Locating nameservice");
 
         let t1 = Instant::now();
@@ -134,7 +134,7 @@ impl<T: Engine> NameService for T {
         info!("NS query for {} via {}", lookup, ns.id());
 
         // Issue query for tertiary pages
-        let mut tertiary_pages = match self.dht_search(lookup).await {
+        let (mut tertiary_pages, search_info) = match self.dht_search(lookup.clone()).await {
             Ok(p) => p,
             Err(e) => {
                 error!("DHT lookup failed: {:?}", e);
@@ -220,7 +220,15 @@ impl<T: Engine> NameService for T {
         );
 
         // Return resolved service information
-        Ok(resolved)
+        Ok(NsSearchInfo {
+            ns: ns.id(),
+            hash: lookup,
+            matches: resolved,
+            info: dsf_rpc::DhtInfo {
+                depth: search_info.depth,
+                elapsed,
+            },
+        })
     }
 
     /// Register a service with the provided name service
@@ -326,12 +334,12 @@ impl<T: Engine> NameService for T {
                         ..Default::default()
                     })?;
 
-                    Ok(Res::Pages(vec![d.to_owned()]))
+                    Ok(Res::Pages(vec![d.to_owned()], None))
                 }),
             )
             .await?;
         let data = match res {
-            Res::Pages(p) if p.len() == 1 => p[0].clone(),
+            Res::Pages(p, _) if p.len() == 1 => p[0].clone(),
             _ => unreachable!(),
         };
 
@@ -364,10 +372,18 @@ impl<T: Engine> NameService for T {
         }
 
         // Publish pages to database
+        let mut info = vec![];
         for p in pages {
             // TODO: handle no peers case, return list of updated pages perhaps?
-            if let Err(e) = self.dht_put(p.id(), vec![p]).await {
-                warn!("Failed to publish pages to DHT: {:?}", e);
+            let put_t1 = Instant::now();
+            match self.dht_put(p.id(), vec![p]).await {
+                Ok((_, i)) => info.push(DhtInfo {
+                    depth: i.depth,
+                    elapsed: Instant::now().duration_since(put_t1),
+                }),
+                Err(e) => {
+                    warn!("Failed to publish pages to DHT: {:?}", e);
+                }
             }
         }
 
@@ -377,6 +393,7 @@ impl<T: Engine> NameService for T {
             prefix,
             name: opts.name,
             hashes: opts.hashes,
+            info,
         };
 
         let elapsed = Instant::now().duration_since(t1);
@@ -401,6 +418,8 @@ mod test {
     use dsf_core::page::ServiceLink;
     use dsf_rpc::{ServiceFlags, ServiceInfo, ServiceState};
     use futures::future;
+
+    use crate::rpc::SearchInfo;
 
     use super::*;
     use dsf_core::prelude::*;
@@ -611,7 +630,10 @@ mod test {
             }),
             // Lookup tertiary pages in dht
             Box::new(move |op, ns, _t| match op {
-                OpKind::DhtSearch(_id) => Ok(Res::Pages(vec![tertiary.clone()])),
+                OpKind::DhtSearch(_id) => Ok(Res::Pages(
+                    vec![tertiary.clone()],
+                    Some(SearchInfo::default()),
+                )),
                 _ => panic!(
                     "Unexpected operation: {:?}, expected DhtSearch for tertiary page{}",
                     op,
@@ -629,7 +651,10 @@ mod test {
             }),
             // Lookup primary pages for linked service
             Box::new(move |op, ns, _t| match op {
-                OpKind::DhtSearch(id) if id == t => Ok(Res::Pages(vec![primary.clone()])),
+                OpKind::DhtSearch(id) if id == t => Ok(Res::Pages(
+                    vec![primary.clone()],
+                    Some(SearchInfo::default()),
+                )),
                 _ => panic!(
                     "Unexpected operation: {:?}, expected DhtSearch for primary page {}",
                     op,
@@ -662,7 +687,7 @@ mod test {
 
         // Returns pages for located service
         assert_eq!(
-            &r,
+            &r.matches,
             &[LocateInfo {
                 id: target_id,
                 flags: ServiceFlags::empty(),

@@ -129,6 +129,8 @@ impl core::fmt::Debug for OpKind {
 pub type UpdateFn =
     Box<dyn Fn(&mut Service, &mut ServiceState) -> Result<Res, CoreError> + Send + 'static>;
 
+pub type SearchInfo = kad::dht::SearchInfo<Id>;
+
 /// Basic engine response, used to construct higher-level functions
 #[derive(Clone, PartialEq, Debug)]
 pub enum Res {
@@ -136,12 +138,22 @@ pub enum Res {
     Id(Id),
     Service(Service),
     ServiceInfo(ServiceInfo),
-    Pages(Vec<Container>),
-    Peers(Vec<Peer>),
+    Pages(Vec<Container>, Option<SearchInfo>),
+    Peers(Vec<Peer>, Option<SearchInfo>),
     Ids(Vec<Id>),
     Responses(HashMap<Id, NetResponse>),
     Sig(Signature),
     Replicas(Vec<ReplicaInst>),
+}
+
+impl Res {
+    pub fn pages(pages: Vec<Container>, info: Option<SearchInfo>) -> Self {
+        Self::Pages(pages, info)
+    }
+
+    pub fn peers(peers: Vec<Peer>, info: Option<SearchInfo>) -> Self {
+        Self::Peers(peers, info)
+    }
 }
 
 /// Core engine implementation providing primitive operations for the construction of RPCs
@@ -156,34 +168,42 @@ pub trait Engine: Sync + Send {
     async fn exec(&self, op: OpKind) -> Result<Res, CoreError>;
 
     /// Connect to a peer to establish DHT connection
-    async fn dht_connect(&self, addr: Address, id: Option<Id>) -> Result<Vec<Peer>, CoreError> {
+    async fn dht_connect(
+        &self,
+        addr: Address,
+        id: Option<Id>,
+    ) -> Result<(Vec<Peer>, SearchInfo), CoreError> {
         match self.exec(OpKind::DhtConnect(addr, id)).await? {
-            Res::Peers(p) => Ok(p),
+            Res::Peers(p, i) => Ok((p, i.unwrap())),
             _ => Err(CoreError::Unknown),
         }
     }
 
     /// Lookup a peer using the DHT
-    async fn dht_locate(&self, id: Id) -> Result<Peer, CoreError> {
+    async fn dht_locate(&self, id: Id) -> Result<(Peer, SearchInfo), CoreError> {
         match self.exec(OpKind::DhtLocate(id)).await? {
-            Res::Peers(p) if p.len() > 0 => Ok(p[0].clone()),
-            Res::Peers(_) => Err(CoreError::NotFound),
+            Res::Peers(p, i) if p.len() > 0 => Ok((p[0].clone(), i.unwrap())),
+            Res::Peers(_, _) => Err(CoreError::NotFound),
             _ => Err(CoreError::Unknown),
         }
     }
 
     /// Search for pages in the DHT
-    async fn dht_search(&self, id: Id) -> Result<Vec<Container>, CoreError> {
+    async fn dht_search(&self, id: Id) -> Result<(Vec<Container>, SearchInfo), CoreError> {
         match self.exec(OpKind::DhtSearch(id)).await? {
-            Res::Pages(p) => Ok(p),
+            Res::Pages(p, i) => Ok((p, i.unwrap())),
             _ => Err(CoreError::Unknown),
         }
     }
 
     /// Store pages in the DHT
-    async fn dht_put(&self, id: Id, pages: Vec<Container>) -> Result<Vec<Peer>, CoreError> {
+    async fn dht_put(
+        &self,
+        id: Id,
+        pages: Vec<Container>,
+    ) -> Result<(Vec<Peer>, SearchInfo), CoreError> {
         match self.exec(OpKind::DhtPut(id, pages)).await? {
-            Res::Peers(p) => Ok(p),
+            Res::Peers(p, i) => Ok((p, i.unwrap())),
             _ => Err(CoreError::Unknown),
         }
     }
@@ -208,7 +228,7 @@ pub trait Engine: Sync + Send {
             .exec(OpKind::PeerCreateUpdate(id, addr, pub_key, flags))
             .await?
         {
-            Res::Peers(p) if p.len() == 1 => Ok(p[0].clone()),
+            Res::Peers(p, _) if p.len() == 1 => Ok(p[0].clone()),
             _ => Err(CoreError::Unknown),
         }
     }
@@ -216,7 +236,7 @@ pub trait Engine: Sync + Send {
     /// Fetch peer information
     async fn peer_get(&self, id: Id) -> Result<Peer, CoreError> {
         match self.exec(OpKind::PeerGet(id)).await? {
-            Res::Peers(p) if p.len() == 1 => Ok(p[0].clone()),
+            Res::Peers(p, _) if p.len() == 1 => Ok(p[0].clone()),
             _ => Err(CoreError::Unknown),
         }
     }
@@ -224,7 +244,7 @@ pub trait Engine: Sync + Send {
     /// List known peers
     async fn peer_list(&self) -> Result<Vec<Peer>, CoreError> {
         match self.exec(OpKind::PeerList).await? {
-            Res::Peers(p) => Ok(p),
+            Res::Peers(p, _) => Ok(p),
             _ => Err(CoreError::Unknown),
         }
     }
@@ -276,7 +296,7 @@ pub trait Engine: Sync + Send {
     /// Fetch an object with the provided signature
     async fn object_get(&self, service: Id, sig: Signature) -> Result<Container, CoreError> {
         match self.exec(OpKind::ObjectGet(service, sig)).await? {
-            Res::Pages(p) if p.len() == 1 => Ok(p[0].clone()),
+            Res::Pages(p, _) if p.len() == 1 => Ok(p[0].clone()),
             _ => Err(CoreError::NotFound),
         }
     }

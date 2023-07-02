@@ -78,7 +78,7 @@ impl<T: Engine> RegisterService for T {
 
         // Store new page(s) in the DHT
         let peers = match self.dht_put(svc.id(), pages).await {
-            Ok(v) => v.len(),
+            Ok((v, _i)) => v.len(),
             Err(e) => {
                 error!("Failed to store pages for {:#}: {:?}", svc.id(), e);
                 0
@@ -132,14 +132,14 @@ pub(super) async fn fetch_primary<E: Engine>(
             info.id.clone(),
             Box::new(|svc, _state| {
                 let (_n, c) = svc.publish_primary_buff(Default::default())?;
-                Ok(Res::Pages(vec![c.to_owned()]))
+                Ok(Res::Pages(vec![c.to_owned()], None))
             }),
         )
         .await;
 
     // Handle errors
     let p = match r {
-        Ok(Res::Pages(p)) if p.len() == 1 => p[0].clone(),
+        Ok(Res::Pages(p, _i)) if p.len() == 1 => p[0].clone(),
         Err(e) => {
             error!("Failed to sign primary page: {:?}", e);
             return Err(e.into());

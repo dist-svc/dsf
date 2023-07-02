@@ -38,7 +38,7 @@ impl<T: Engine> Connect for T {
 
         // Fetch primary page for our peer service
         let primary_page = match self.exec(OpKind::Primary).await {
-            Ok(Res::Pages(p)) if p.len() == 1 => p[0].clone(),
+            Ok(Res::Pages(p, _)) if p.len() == 1 => p[0].clone(),
             Err(e) => {
                 error!("Failed to fetch primary page: {:?}", e);
                 return Err(DsfError::NotFound);
@@ -51,7 +51,7 @@ impl<T: Engine> Connect for T {
         debug!("Starting DHT connect");
 
         // Issue DHT connect request to provided address
-        let peers = match self.dht_connect(options.address.into(), None).await {
+        let (peers, _info) = match self.dht_connect(options.address.into(), None).await {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -79,7 +79,7 @@ impl<T: Engine> Connect for T {
 
         // Publish primary peer page to DHT
         // TODO: should we manually push to all located peers or leave to DHT..?
-        let peers = match self.dht_put(self.id(), vec![primary_page]).await {
+        let (peers, _info) = match self.dht_put(self.id(), vec![primary_page]).await {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to store peer page in DHT: {:?}", e);

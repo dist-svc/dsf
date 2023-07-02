@@ -61,7 +61,7 @@ where
                 OpKind::Primary => {
                     let r = self
                         .primary(false)
-                        .map(|p| Res::Pages(vec![p]))
+                        .map(|p| Res::Pages(vec![p], None))
                         .map_err(|_| CoreError::Unknown);
 
                     if let Err(e) = done.try_send(r) {
@@ -151,7 +151,7 @@ where
                     }
                 }
                 OpKind::Publish(_id, _info) => {
-                    todo!()
+                    todo!("Implement publish RPC op")
                 }
                 // TODO: improve OpKind so this logic can move to connect RPC
                 OpKind::DhtConnect(addr, id) => {
@@ -204,9 +204,10 @@ where
                             .connect(vec![DhtEntry::new(from.clone(), peer)], Default::default())
                             .await
                         {
-                            Ok((p, _i)) => {
-                                Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect()))
-                            }
+                            Ok((p, i)) => Ok(Res::Peers(
+                                p.iter().map(|p| p.info().clone()).collect(),
+                                Some(i),
+                            )),
                             Err(e) => {
                                 error!("DHT connect error: {e:?}");
                                 Err(CoreError::Unknown)
@@ -223,7 +224,7 @@ where
 
                     tokio::task::spawn(async move {
                         let r = match dht.lookup(id.clone(), Default::default()).await {
-                            Ok((p, _i)) => Ok(Res::Peers(vec![p.info().clone()])),
+                            Ok((p, i)) => Ok(Res::Peers(vec![p.info().clone()], Some(i))),
                             Err(e) => {
                                 error!("DHT lookup error: {e:?}");
                                 Err(dht_to_core_error(e))
@@ -240,7 +241,7 @@ where
 
                     tokio::task::spawn(async move {
                         let r = match dht.search(id.clone(), Default::default()).await {
-                            Ok((p, _i)) => Ok(Res::Pages(p)),
+                            Ok((p, i)) => Ok(Res::Pages(p, Some(i))),
                             Err(e) => {
                                 error!("DHT search error: {e:?}");
                                 Err(dht_to_core_error(e))
@@ -260,9 +261,10 @@ where
                             .store(id.clone(), pages.clone(), Default::default())
                             .await
                         {
-                            Ok((p, _i)) => {
-                                Ok(Res::Peers(p.iter().map(|p| p.info().clone()).collect()))
-                            }
+                            Ok((p, i)) => Ok(Res::Peers(
+                                p.iter().map(|p| p.info().clone()).collect(),
+                                Some(i),
+                            )),
                             Err(e) => {
                                 error!("DHT store error: {e:?}");
                                 Err(dht_to_core_error(e))
@@ -295,7 +297,7 @@ where
                 OpKind::PeerCreateUpdate(id, address, pub_key, flags) => {
                     let p = self.peers().find_or_create(id, address, pub_key, flags);
 
-                    if let Err(e) = done.try_send(Ok(Res::Peers(vec![p]))) {
+                    if let Err(e) = done.try_send(Ok(Res::Peers(vec![p], None))) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
@@ -303,7 +305,7 @@ where
                     let r = self
                         .peers()
                         .find(&id)
-                        .map(|p| Ok(Res::Peers(vec![p])))
+                        .map(|p| Ok(Res::Peers(vec![p], None)))
                         .unwrap_or(Err(CoreError::NotFound));
 
                     if let Err(e) = done.try_send(r) {
@@ -313,7 +315,7 @@ where
                 OpKind::PeerList => {
                     let r = self.peers().list().drain(..).map(|(_id, p)| p).collect();
 
-                    if let Err(e) = done.try_send(Ok(Res::Peers(r))) {
+                    if let Err(e) = done.try_send(Ok(Res::Peers(r, None))) {
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
@@ -347,7 +349,7 @@ where
 
                     // And return the response object
                     let r = match page {
-                        Some(p) => Ok(Res::Pages(vec![p])),
+                        Some(p) => Ok(Res::Pages(vec![p], None)),
                         _ => Err(CoreError::NotFound),
                     };
                     if let Err(e) = done.try_send(r) {

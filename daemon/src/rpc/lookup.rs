@@ -41,7 +41,7 @@ impl<T: Engine> PeerRegistry for T {
         // TODO: Check local storage for existing peer info
 
         // Lookup via DHT
-        let peer = match self.dht_locate(options.id.clone()).await {
+        let (peer, _info) = match self.dht_locate(options.id.clone()).await {
             Ok(p) => p,
             Err(e) => {
                 error!("DHT lookup failed: {:?}", e);

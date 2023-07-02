@@ -86,7 +86,7 @@ async fn test_ns() {
     println!("Searching for service {}", s.id);
 
     // Lookup using NS
-    let found = client
+    let r = client
         .ns_search(NsSearchOptions {
             ns: ServiceIdentifier::from(ns.id),
             name: Some(n.to_string()),
@@ -97,10 +97,10 @@ async fn test_ns() {
         .await
         .unwrap();
 
-    println!("Found service(s) {:?}", found);
+    println!("Found service(s) {:?}", r.matches);
 
     // Check result
-    assert_eq!(found[0].id, s.id);
+    assert_eq!(r.matches[0].id, s.id);
 
     // Ensure engine stays up until now
     let _ = e;

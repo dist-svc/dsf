@@ -52,7 +52,7 @@ impl<T: Engine> ReplicateService for T {
 
         // Store replica page in DHT
         let peers = match self.dht_put(svc.id(), vec![p]).await {
-            Ok(v) => v.len(),
+            Ok((peers, _info)) => peers.len(),
             Err(e) => {
                 error!("Failed to store pages for {:#}: {:?}", svc.id(), e);
                 0
@@ -128,14 +128,14 @@ pub(super) async fn fetch_replica<E: Engine>(
                 let (_, c) = svc.publish_secondary_buff(&target_id, opts)?;
 
                 // Return data and secondary page
-                Ok(Res::Pages(vec![p.to_owned(), c.to_owned()]))
+                Ok(Res::Pages(vec![p.to_owned(), c.to_owned()], None))
             }),
         )
         .await;
 
     // Parse out pages from response
     let objects = match r {
-        Ok(Res::Pages(v)) => v,
+        Ok(Res::Pages(v, _)) => v,
         Err(e) => {
             error!("Failed to generate replica pages: {:?}", e);
             return Err(e.into());

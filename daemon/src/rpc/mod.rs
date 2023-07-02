@@ -343,10 +343,10 @@ where
                             exec.ns_create(opts).await.map(ResponseKind::Service)
                         }
                         NsCommands::Register(opts) => {
-                            exec.ns_register(opts).await.map(ResponseKind::Ns)
+                            exec.ns_register(opts).await.map(ResponseKind::NsRegister)
                         }
                         NsCommands::Search(opts) => {
-                            exec.ns_search(opts).await.map(ResponseKind::Located)
+                            exec.ns_search(opts).await.map(ResponseKind::NsSearch)
                         }
                     };
                     let r = match r {
@@ -367,7 +367,7 @@ where
                     debug!("Starting async debug task");
                     let r = match c {
                         DebugCommands::Search { id } => match exec.dht_search(id).await {
-                            Ok(i) => ResponseKind::Pages(i),
+                            Ok((p, _i)) => ResponseKind::Pages(p),
                             Err(e) => ResponseKind::Error(e),
                         },
                         DebugCommands::Bootstrap => match exec.bootstrap().await {

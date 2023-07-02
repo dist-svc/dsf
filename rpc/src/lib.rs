@@ -223,7 +223,8 @@ pub enum ResponseKind {
 
     Datastore(Vec<(Id, Vec<Vec<u8>>)>),
 
-    Ns(NsRegisterInfo),
+    NsRegister(NsRegisterInfo),
+    NsSearch(NsSearchInfo),
 
     Data(Vec<DataInfo>),
 

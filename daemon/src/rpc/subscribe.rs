@@ -134,7 +134,7 @@ pub(super) async fn find_replicas<E: Engine>(
     debug!("Searching for service {:#} via DHT", target_id);
 
     // Fetch service and replica information from DHT
-    let pages = match e.dht_search(target_id.clone()).await {
+    let (pages, _info) = match e.dht_search(target_id.clone()).await {
         Ok(v) => v,
         Err(e) => {
             error!("Failed to perform DHT lookup for replica pages: {:?}", e);

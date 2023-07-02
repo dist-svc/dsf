@@ -1,9 +1,11 @@
+use std::time::Duration;
+
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
 use dsf_core::{prelude::*, types::CryptoHash};
 
-use crate::ServiceIdentifier;
+use crate::{LocateInfo, ServiceIdentifier};
 
 /// Name service commands
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Subcommand)]
@@ -79,11 +81,42 @@ pub struct NsRegisterOptions {
     pub hashes: Vec<CryptoHash>,
 }
 
+/// NameService search response
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct NsSearchInfo {
+    /// NameService used for searching
+    pub ns: Id,
+    /// TID computed for search operation
+    pub hash: Id,
+    /// Matching services
+    pub matches: Vec<LocateInfo>,
+
+    /// DHT search information
+    pub info: DhtInfo,
+}
+
+/// NameService register response
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct NsRegisterInfo {
+    /// NameService used for registration
     pub ns: Id,
+    /// NameService prefix
     pub prefix: Option<String>,
 
+    /// Name of registered service (corresponds to Options::name)
     pub name: Option<String>,
+    /// TIDs used for service registration
     pub hashes: Vec<CryptoHash>,
+
+    /// DHT store information
+    pub info: Vec<DhtInfo>,
+}
+
+/// DHT operation information
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct DhtInfo {
+    /// Search depth (DHT iterations)
+    pub depth: usize,
+    /// Search duration
+    pub elapsed: Duration,
 }

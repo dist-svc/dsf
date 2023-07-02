@@ -304,7 +304,7 @@ impl Client {
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Ns(info) => Ok(info),
+            ResponseKind::NsRegister(info) => Ok(info),
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }
@@ -314,13 +314,13 @@ impl Client {
     pub async fn ns_search(
         &mut self,
         options: name::NsSearchOptions,
-    ) -> Result<Vec<LocateInfo>, Error> {
+    ) -> Result<name::NsSearchInfo, Error> {
         let req = RequestKind::Ns(NsCommands::Search(options));
 
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Located(info) => Ok(info),
+            ResponseKind::NsSearch(info) => Ok(info),
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }
