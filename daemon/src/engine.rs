@@ -331,7 +331,7 @@ impl Engine {
                             let mut net_in_tx = net_in_tx.clone();
 
                             // TODO: prefer not to spawn a task every rx but,
-                            // need to be able to inject rx delays so this seems like 
+                            // need to be able to inject rx delays so this seems like
                             // an easy option for the moment...
                             task::spawn(async move {
                                 // Inject mock rx delay if enabled
