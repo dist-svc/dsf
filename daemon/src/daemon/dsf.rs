@@ -41,7 +41,10 @@ use super::DsfOptions;
 pub type DsfDht = Dht<Id, Peer, Data>;
 
 pub struct Dsf<Net = NetSink> {
-    /// Inernal storage for daemon service
+    /// DSF Configuration
+    pub(crate) config: DsfOptions,
+
+    /// Internal storage for daemon service
     service: Service,
 
     /// Last primary page for peer service
@@ -110,7 +113,6 @@ where
         debug!("Creating new DSF instance");
 
         // Create managers
-        //let store = Arc::new(Mutex::new(Store::new(&config.database_file)?));
         let peers = PeerManager::new(store.clone());
         let mut services = ServiceManager::new(store.clone());
         let data = DataManager::new(store.clone());
@@ -125,7 +127,7 @@ where
 
         // Instantiate DHT
         let (dht_sink, dht_source) = mpsc::channel(100);
-        let mut dht = Dht::<Id, Peer, Data>::standard(id, config.dht, dht_sink);
+        let mut dht = Dht::<Id, Peer, Data>::standard(id, config.dht.clone(), dht_sink);
         dht.set_reducer(Box::new(dht_reducer));
 
         let (op_tx, op_rx) = mpsc::unbounded();
@@ -134,6 +136,7 @@ where
 
         // Create DSF object
         let s = Self {
+            config,
             service,
             last_primary: None,
 

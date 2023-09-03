@@ -1,3 +1,5 @@
+use std::{str::FromStr, time::Duration};
+
 use clap::Parser;
 
 use kad::prelude::*;
@@ -17,6 +19,10 @@ mod tests;
 /// DSF Instance Configuration Options
 #[derive(Clone, Debug, PartialEq, Parser)]
 pub struct DsfOptions {
+    /// Timeout for network requests
+    #[clap(long, default_value="3s", value_parser=parse_human_duration, env)]
+    pub net_timeout: Duration,
+
     #[clap(flatten)]
     pub dht: DhtConfig,
 }
@@ -25,6 +31,7 @@ impl Default for DsfOptions {
     fn default() -> Self {
         DsfOptions {
             dht: DhtConfig::default(),
+            net_timeout: Duration::from_millis(500),
         }
     }
 }
@@ -33,3 +40,9 @@ impl Default for DsfOptions {
 /// Used to prompt asynchronous system updates
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {}
+
+/// Helper to parse durations from string
+fn parse_human_duration(s: &str) -> Result<Duration, humantime::DurationError> {
+    let h = humantime::Duration::from_str(s)?;
+    Ok(h.into())
+}

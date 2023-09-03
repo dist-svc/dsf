@@ -1,6 +1,7 @@
 use std::str::FromStr;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
+use diesel::connection::SimpleConnection;
 use dsf_core::types::ImmutableData;
 use dsf_core::wire::Container;
 use dsf_rpc::{PeerInfo, ServiceInfo};
@@ -92,16 +93,62 @@ pub trait DataStore {
     }
 }
 
+/// SQLite3 database connection options
+///
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct StoreOptions {
+    pub enable_wal: bool,
+    pub enable_foreign_keys: bool,
+    pub busy_timeout: Option<Duration>,
+}
+
+impl Default for StoreOptions {
+    fn default() -> Self {
+        Self {
+            enable_wal: true,
+            enable_foreign_keys: true,
+            busy_timeout: Some(Duration::from_millis(500)),
+        }
+    }
+}
+
+/// Connection customisation for [StoreOptions]
+///
+/// Enables Write Ahead Logging (WAL) with busy timeouts
+///
+/// see: <https://stackoverflow.com/questions/57123453/how-to-use-diesel-with-sqlite-connections-and-avoid-database-is-locked-type-of>
+impl diesel::r2d2::CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for StoreOptions {
+    fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
+        (|| {
+            if self.enable_wal {
+                conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+            }
+            if self.enable_foreign_keys {
+                conn.batch_execute("PRAGMA foreign_keys = ON;")?;
+            }
+            if let Some(d) = self.busy_timeout {
+                conn.batch_execute(&format!("PRAGMA busy_timeout = {};", d.as_millis()))?;
+            }
+            Ok(())
+        })()
+        .map_err(diesel::r2d2::Error::QueryError)
+    }
+}
+
 impl Store {
     /// Create or connect to a store with the provided filename
-    pub fn new(path: &str) -> Result<Self, StoreError> {
+    pub fn new(path: &str, opts: StoreOptions) -> Result<Self, StoreError> {
         debug!("Connecting to store: {}", path);
 
-        // Setup connection manager / pool
-        let _conn = SqliteConnection::establish(path)?;
+        // TODO: check path exists?
 
+        // Setup connection manager / pool
         let mgr = ConnectionManager::new(path);
-        let pool = Pool::new(mgr).unwrap();
+        let pool = Pool::builder()
+            .connection_customizer(Box::new(opts))
+            .build(mgr)
+            .unwrap();
 
         // Create object
         let s = Self { pool };
@@ -286,5 +333,110 @@ impl Store {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempdir::TempDir;
+    use test::Bencher;
+
+    /// Helper to setup the store for reading / writing
+    fn setup_store(store: &mut Store) -> Service {
+        // Ensure tables are configured
+        store.drop_tables().unwrap();
+        store.create_tables().unwrap();
+
+        // Create new service
+        let mut s = Service::<Vec<u8>>::default();
+        let keys = s.keys();
+
+        let (_n, page) = s
+            .publish_primary_buff(Default::default())
+            .expect("Error creating page");
+        let sig = page.signature();
+
+        // Check no matching service exists
+        assert_eq!(None, store.load_object(&s.id(), &sig, &keys).unwrap());
+
+        // Store service page
+        store.save_object(&page).unwrap();
+        assert_eq!(
+            Some(&page.to_owned()),
+            store.load_object(&s.id(), &sig, &keys).unwrap().as_ref()
+        );
+
+        // Return service instance
+        s
+    }
+
+    /// Helper to publish a data object and write this to the store
+    fn test_write_data(store: &mut Store, s: &mut Service) {
+        // Build new data object
+        let (_n, data) = s.publish_data_buff::<Vec<u8>>(Default::default()).unwrap();
+
+        // Store data object
+        store.save_object(&data).unwrap();
+
+        // Load data object
+        assert_eq!(
+            Some(&data.to_owned()),
+            store
+                .load_object(&s.id(), &data.signature(), &s.keys())
+                .unwrap()
+                .as_ref()
+        );
+    }
+
+    /// Benchmark in-memory database
+    #[bench]
+    fn bench_db_mem(b: &mut Bencher) {
+        let mut store = Store::new("sqlite://:memory:?cache=shared", Default::default())
+            .expect("Error opening store");
+
+        let mut svc = setup_store(&mut store);
+
+        b.iter(|| {
+            test_write_data(&mut store, &mut svc);
+        })
+    }
+
+    /// Benchmark file based database without WAL
+    #[bench]
+    fn bench_db_file_nowal(b: &mut Bencher) {
+        let d = TempDir::new("dsf-db").unwrap();
+        let d = d.path().to_str().unwrap().to_string();
+
+        let mut store = Store::new(
+            &format!("{d}/sqlite-nowal.db"),
+            StoreOptions {
+                enable_wal: false,
+                ..Default::default()
+            },
+        )
+        .expect("Error opening store");
+
+        let mut svc = setup_store(&mut store);
+
+        b.iter(|| {
+            test_write_data(&mut store, &mut svc);
+        })
+    }
+
+    /// Benchmark file based database with WAL
+    #[bench]
+    fn bench_db_file_wal(b: &mut Bencher) {
+        let d = TempDir::new("dsf-db").unwrap();
+        let d = d.path().to_str().unwrap().to_string();
+
+        let mut store = Store::new(&format!("{d}/sqlite-wal.db"), Default::default())
+            .expect("Error opening store");
+
+        let mut svc = setup_store(&mut store);
+
+        b.iter(|| {
+            test_write_data(&mut store, &mut svc);
+        })
     }
 }

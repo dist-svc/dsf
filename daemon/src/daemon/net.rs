@@ -134,6 +134,9 @@ pub struct NetOp {
     /// Completion channel
     done: mpsc::Sender<HashMap<Id, net::Response>>,
 
+    /// Operation timeout / maximum duration
+    timeout: Duration,
+
     /// Operation start timestamp
     ts: Instant,
 
@@ -169,7 +172,7 @@ impl Future for NetOp {
         // Check for timeouts
         // TODO: propagate this timeout value from global config? network latency should _never_ be this high,
         // but the time for a peer to compute the response may also be non-zero
-        } else if Instant::now().saturating_duration_since(self.ts) > Duration::from_millis(1000) {
+        } else if Instant::now().saturating_duration_since(self.ts) > self.timeout {
             debug!("Net operation {} timeout", self.req.id);
             true
         } else {
@@ -244,15 +247,19 @@ where
                         || info.flags.contains(ServiceFlags::SUBSCRIBED) =>
                 {
                     // Update local service
-                    match header.kind() {
+                    let resp = match header.kind() {
                         Kind::Page { .. } => {
                             debug!(
                                 "Receive service page {:#} index {}",
                                 id,
                                 container.header().index()
                             );
-                            if let Err(e) = self.service_register(&id, vec![container.to_owned()]) {
-                                error!("Failed to update service: {:?}", e);
+                            match self.service_register(&id, vec![container.to_owned()]) {
+                                Ok(_) => Status::Ok,
+                                Err(e) => {
+                                    error!("Failed to update service: {:?}", e);
+                                    Status::Failed
+                                }
                             }
                         }
                         Kind::Data { .. } => {
@@ -261,12 +268,34 @@ where
                                 id,
                                 container.header().index()
                             );
-                            if let Err(e) = self.data().store_data(&container.to_owned()) {
-                                error!("Failed to store data object: {:?}", e);
-                            };
+
+                            // Start async store operation
+                            // so that ACK is not dependent on db performance
+                            // TODO: move db ops to async database task to
+                            // avoid blocking whenever possible
+                            let exec = self.exec();
+                            let c = container.to_owned();
+                            tokio::task::spawn(async move {
+                                if let Err(e) = exec.object_put(c).await {
+                                    error!("Failed to store object: {e:?}")
+                                }
+                            });
+
+                            Status::Ok
                         }
-                        _ => (),
-                    }
+                        _ => Status::InvalidRequest,
+                    };
+
+                    // Respond to origin
+                    let a = msg.address.into();
+                    let mut o = self.net_resp_tx.clone();
+                    let r = NetResponse::new(
+                        self.id(),
+                        header.index() as u16,
+                        NetResponseBody::Status(resp),
+                        Flags::empty(),
+                    );
+                    let _ = o.send((a, None, NetMessage::response(r))).await;
 
                     // TODO: forward to subscribers
                     match self.subscribers().find_peers(&id) {
@@ -278,6 +307,7 @@ where
 
                             debug!("Forwarding data to: {:?}", peer_subs);
 
+                            // TODO: allow these to be forwarded unwrapped if desirable
                             let req =
                                 net::RequestBody::PushData(id.clone(), vec![container.to_owned()]);
 
@@ -432,6 +462,7 @@ where
             resps: HashMap::new(),
             done: tx,
             ts: Instant::now(),
+            timeout: self.config.net_timeout,
             broadcast: false,
         };
 
@@ -457,6 +488,7 @@ where
             reqs: HashMap::new(),
             resps: HashMap::new(),
             done: tx,
+            timeout: self.config.net_timeout,
             ts: Instant::now(),
             broadcast: true,
         };

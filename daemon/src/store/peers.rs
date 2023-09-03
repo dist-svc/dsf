@@ -209,7 +209,8 @@ mod test {
             .with_max_level(LevelFilter::DEBUG)
             .try_init();
 
-        let store = Store::new("/tmp/dsf-test-2.db").expect("Error opening store");
+        let store =
+            Store::new("/tmp/dsf-test-2.db", Default::default()).expect("Error opening store");
 
         store.drop_tables().unwrap();
 

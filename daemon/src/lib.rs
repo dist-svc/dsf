@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 #![feature(async_fn_in_trait)]
 #![feature(proc_macro_hygiene, decl_macro)]
+#![feature(test)]
 
 extern crate std;
 
@@ -15,6 +16,9 @@ extern crate jemallocator;
 #[cfg(feature = "jemalloc")]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
+#[cfg(test)]
+extern crate test;
 
 pub const VERSION: &str = std::env!("GIT_TAG");
 

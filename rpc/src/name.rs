@@ -105,8 +105,9 @@ pub struct NsRegisterInfo {
 
     /// Name of registered service (corresponds to Options::name)
     pub name: Option<String>,
+    
     /// TIDs used for service registration
-    pub hashes: Vec<CryptoHash>,
+    pub tids: Vec<Id>,
 
     /// DHT store information
     pub info: Vec<DhtInfo>,

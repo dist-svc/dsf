@@ -352,7 +352,7 @@ impl<T: Engine> NameService for T {
 
         // Generate tertiary pages
         let mut pages = vec![];
-        for t in tids {
+        for t in &tids {
             let r = ns.publish_tertiary_buff::<512>(
                 TertiaryLink::Service(target.id()),
                 TertiaryOptions {
@@ -360,7 +360,7 @@ impl<T: Engine> NameService for T {
                     issued: issued,
                     expiry: expiry,
                 },
-                t,
+                t.clone(),
             );
 
             match r {
@@ -392,7 +392,7 @@ impl<T: Engine> NameService for T {
             ns: ns.id(),
             prefix,
             name: opts.name,
-            hashes: opts.hashes,
+            tids,
             info,
         };
 

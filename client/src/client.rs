@@ -294,7 +294,23 @@ impl Client {
         }
     }
 
-    /// Register a service using the provided name service
+    /// Create a registry service
+    pub async fn ns_create(
+        &mut self,
+        options: name::NsCreateOptions,
+    ) -> Result<ServiceInfo, Error> {
+        let req = RequestKind::Ns(NsCommands::Create(options));
+
+        let resp = self.request(req).await?;
+
+        match resp {
+            ResponseKind::Service(info) => Ok(info),
+            ResponseKind::Error(e) => Err(Error::Remote(e)),
+            _ => Err(Error::UnrecognizedResult),
+        }
+    }
+
+    /// Register a service using the provided registry service
     pub async fn ns_register(
         &mut self,
         options: name::NsRegisterOptions,
@@ -310,7 +326,7 @@ impl Client {
         }
     }
 
-    /// Search for a service using the provided name service
+    /// Search for a service using the provided registry service
     pub async fn ns_search(
         &mut self,
         options: name::NsSearchOptions,

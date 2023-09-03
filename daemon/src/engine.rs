@@ -101,6 +101,7 @@ impl Default for EngineOptions {
             no_bootstrap: false,
             daemon_options: DaemonOptions {
                 dht: DhtConfig::default(),
+                ..Default::default()
             },
             mock_rx_latency: None,
         }
@@ -129,6 +130,7 @@ impl EngineOptions {
             no_bootstrap: self.no_bootstrap,
             daemon_options: DaemonOptions {
                 dht: self.daemon_options.dht.clone(),
+                ..Default::default()
             },
             mock_rx_latency: None,
         }
@@ -158,12 +160,14 @@ impl Engine {
             options.database_file
         );
         // Ensure directory exists
-        if let Some(p) = PathBuf::from(&options.database_file).parent() {
-            if !p.exists() {
-                let _ = std::fs::create_dir(p);
+        if !options.database_file.contains(":memory:") {
+            if let Some(p) = PathBuf::from(&options.database_file).parent() {
+                if !p.exists() {
+                    let _ = std::fs::create_dir(p);
+                }
             }
         }
-        let store = Store::new(&options.database_file)?;
+        let store = Store::new(&options.database_file, Default::default())?;
 
         // Fetch or create new peer service
         let mut service = match store.load_peer_service()? {
