@@ -25,6 +25,7 @@ use crate::{
     daemon::{net::NetIf, Dsf},
     error::Error,
     rpc::{Engine, OpKind, Res},
+    store::{DataStore, StoreRes},
 };
 
 use super::net::NetFuture;
@@ -357,19 +358,25 @@ where
                     };
                 }
                 OpKind::ObjectPut(data) => {
-                    // TODO: Lookup matching service
+                    // TODO: Lookup matching service / check prior to put
 
-                    // Write data to local store
-                    let r = match self.data().store_data(&data) {
-                        Ok(_) => Ok(Res::Sig(data.signature())),
-                        Err(_) => {
-                            error!("Failed to store data: {:?}", data);
-                            Err(CoreError::Unknown)
+                    let store = self.store.clone();
+                    let mut done = done.clone();
+
+                    tokio::task::spawn(async move {
+                        // Write data to local store
+                        let res = store.object_put(data.clone()).await;
+
+                        // Map results and forward to caller
+                        let resp = match res {
+                            Ok(_) => Ok(Res::Sig(data.signature())),
+                            // TODO: fix store error returns
+                            Err(_e) => Err(CoreError::Unknown),
+                        };
+                        if let Err(e) = done.send(resp).await {
+                            error!("Failed to forward net response: {:?}", e);
                         }
-                    };
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    };
+                    });
                 }
                 OpKind::ReplicaGet(id) => {
                     let r = match self.replicas().find(&id) {

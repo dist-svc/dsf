@@ -72,7 +72,7 @@ pub struct Dsf<Net = NetSink> {
     dht_source: kad::dht::RequestReceiver<Id, Peer, Container>,
 
     /// Local (database) storage
-    store: Store,
+    pub(crate) store: Store,
 
     /// RPC request channel
     pub(crate) op_rx: mpsc::UnboundedReceiver<Op>,

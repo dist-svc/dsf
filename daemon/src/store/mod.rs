@@ -20,7 +20,14 @@ use dsf_core::service::Subscriber;
 pub mod error;
 pub mod schema;
 pub use error::StoreError;
+use tokio::select;
+use tokio::sync::oneshot;
+use tokio::sync::{
+    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    oneshot::Sender as OneshotSender,
+};
 
+pub mod ident;
 pub mod object;
 pub mod peers;
 pub mod services;
@@ -28,6 +35,18 @@ pub mod services;
 #[derive(Clone)]
 pub struct Store {
     pool: Pool<ConnectionManager<SqliteConnection>>,
+    tasks: UnboundedSender<(StoreOp, OneshotSender<StoreRes>)>,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum StoreOp {
+    PutObject(Container),
+}
+
+#[derive(PartialEq, Debug)]
+pub enum StoreRes {
+    Ok,
+    Err(StoreError),
 }
 
 fn to_dt(s: SystemTime) -> NaiveDateTime {
@@ -63,7 +82,7 @@ pub trait DataStore {
     }
 
     /// Fetch a service by ID
-    fn service_get(&self, _id: &Id) -> Result<ServiceInfo, StoreError> {
+    async fn service_get(&self, _id: &Id) -> Result<ServiceInfo, StoreError> {
         todo!()
     }
 
@@ -73,10 +92,8 @@ pub trait DataStore {
     }
 
     /// Store an object, linked to a service ID and signature
-    fn object_put<T: ImmutableData>(
+    async fn object_put<T: ImmutableData + Send>(
         &self,
-        _id: &Id,
-        _sig: &Signature,
         _page: Container<T>,
     ) -> Result<(), StoreError> {
         todo!()
@@ -88,6 +105,59 @@ pub trait DataStore {
     }
 
     /// Delete an object by signature
+    fn object_del(&self, _sig: &Signature) -> Result<(), StoreError> {
+        todo!()
+    }
+}
+
+#[async_trait::async_trait]
+impl DataStore for Store {
+    fn peer_update(&self, _info: &PeerInfo) -> Result<(), StoreError> {
+        todo!()
+    }
+
+    fn peer_get(&self, _id: &Id) -> Result<PeerInfo, StoreError> {
+        todo!()
+    }
+
+    fn peer_del(&self, _id: &Id) -> Result<(), StoreError> {
+        todo!()
+    }
+
+    fn service_update(&self, _info: &ServiceInfo) -> Result<(), StoreError> {
+        todo!()
+    }
+
+    async fn service_get(&self, _id: &Id) -> Result<ServiceInfo, StoreError> {
+        todo!()
+    }
+
+    fn service_del(&self, _id: &Id) -> Result<(), StoreError> {
+        todo!()
+    }
+
+    async fn object_put<T: ImmutableData + Send>(&self, c: Container<T>) -> Result<(), StoreError> {
+        let c = c.to_owned();
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((StoreOp::PutObject(c), tx)) {
+            error!("Failed to enqueue object store operation: {e:?}");
+            return Err(StoreError::Unknown);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(StoreRes::Ok) => Ok(()),
+            Ok(StoreRes::Err(e)) => Err(e),
+            Err(_) => Err(StoreError::Unknown),
+        }
+    }
+
+    fn object_get(&self, _sig: &Signature) -> Result<Container, StoreError> {
+        todo!()
+    }
+
     fn object_del(&self, _sig: &Signature) -> Result<(), StoreError> {
         todo!()
     }
@@ -108,7 +178,7 @@ impl Default for StoreOptions {
         Self {
             enable_wal: true,
             enable_foreign_keys: true,
-            busy_timeout: Some(Duration::from_millis(500)),
+            busy_timeout: Some(Duration::from_millis(5_000)),
         }
     }
 }
@@ -150,11 +220,38 @@ impl Store {
             .build(mgr)
             .unwrap();
 
+        // Setup command channel
+        let (tx, mut rx) = unbounded_channel();
+
         // Create object
-        let s = Self { pool };
+        let s = Self { pool, tasks: tx };
 
         // Ensure tables exist
         let _ = s.create_tables();
+
+        // Setup blocking store interface task
+        // TODO: rework to perform all ops this way? or only writes?
+        let s1 = s.clone();
+        tokio::task::spawn_blocking(move || {
+            // Wait for store commands
+            while let Some((cmd, done)) = rx.blocking_recv() {
+                // Handle store operations
+                let res = match cmd {
+                    StoreOp::PutObject(o) => s1.save_object(&o),
+                };
+
+                // Forward result back to waiting async tasks
+                let tx = match res {
+                    Ok(_) => StoreRes::Ok,
+                    Err(e) => {
+                        error!("Failed to store object: {e:?}");
+                        StoreRes::Err(e)
+                    }
+                };
+
+                let _ = done.send(tx);
+            }
+        });
 
         Ok(s)
     }
@@ -247,90 +344,6 @@ impl Store {
         sql_query("DROP TABLE IF EXISTS object;").execute(&mut conn)?;
 
         sql_query("DROP TABLE IF EXISTS identity;").execute(&mut conn)?;
-
-        Ok(())
-    }
-
-    pub fn load_peer_service(&self) -> Result<Option<Service>, StoreError> {
-        use crate::store::schema::identity::dsl::*;
-
-        // Find service id and last page
-        let results = identity
-            .select((service_id, public_key, private_key, secret_key, last_page))
-            .load::<(String, String, String, Option<String>, String)>(
-                &mut self.pool.get().unwrap(),
-            )?;
-
-        if results.len() != 1 {
-            return Ok(None);
-        }
-
-        let (s_id, s_pub_key, s_pri_key, s_sec_key, page_sig) = &results[0];
-
-        let id = Id::from_str(&s_id).unwrap();
-        let sig = Signature::from_str(&page_sig).unwrap();
-        let pub_key = PublicKey::from_str(&s_pub_key).unwrap();
-        let keys = Keys::new(pub_key);
-
-        // Load page
-        let page = match self.load_object(&id, &sig, &keys)? {
-            Some(v) => v,
-            None => return Ok(None),
-        };
-
-        // Generate service
-        let mut service = Service::load(&page).unwrap();
-
-        service.set_private_key(Some(PrivateKey::from_str(s_pri_key).unwrap()));
-        let sec_key = s_sec_key.as_ref().map(|v| SecretKey::from_str(&v).unwrap());
-        service.set_secret_key(sec_key);
-
-        Ok(Some(service))
-    }
-
-    pub fn set_peer_service<T: ImmutableData>(
-        &self,
-        service: &Service,
-        page: &Container<T>,
-    ) -> Result<(), StoreError> {
-        use crate::store::schema::identity::dsl::*;
-
-        let mut conn = self.pool.get().unwrap();
-
-        let pub_key = public_key.eq(service.public_key().to_string());
-        let pri_key = service.private_key().map(|v| private_key.eq(v.to_string()));
-        let sec_key = service.secret_key().map(|v| secret_key.eq(v.to_string()));
-        let sig = last_page.eq(page.signature().to_string());
-
-        let p_sig = page.signature();
-
-        let keys = Keys::new(service.public_key());
-
-        // Ensure the page has been written
-        if self.load_object(&service.id(), &p_sig, &keys)?.is_none() {
-            self.save_object(page)?;
-        }
-
-        // Setup identity values
-        let values = (
-            service_id.eq(service.id().to_string()),
-            pub_key,
-            pri_key,
-            sec_key,
-            sig,
-        );
-
-        // Check if the identity already exists
-        let results = identity.select(service_id).load::<String>(&mut conn)?;
-
-        // Create or update
-        if results.len() != 0 {
-            diesel::update(identity).set(values).execute(&mut conn)?;
-        } else {
-            diesel::insert_into(identity)
-                .values(values)
-                .execute(&mut conn)?;
-        }
 
         Ok(())
     }

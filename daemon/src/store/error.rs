@@ -17,6 +17,7 @@ pub enum StoreError {
     MissingRawData,
     NotFound,
     Decode,
+    Unknown,
 }
 
 impl From<ConnectionError> for StoreError {

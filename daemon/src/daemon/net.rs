@@ -40,6 +40,7 @@ use crate::rpc::register::RegisterService;
 use crate::rpc::subscribe::PubSub;
 use crate::rpc::Engine;
 use crate::store::object::ObjectIdentifier;
+use crate::store::DataStore;
 use crate::{
     core::{
         data::DataInfo,
@@ -275,6 +276,7 @@ where
                             // avoid blocking whenever possible
                             let exec = self.exec();
                             let c = container.to_owned();
+
                             tokio::task::spawn(async move {
                                 if let Err(e) = exec.object_put(c).await {
                                     error!("Failed to store object: {e:?}")
