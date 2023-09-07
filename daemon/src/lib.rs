@@ -1,9 +1,7 @@
 #![recursion_limit = "512"]
 #![allow(unused_imports)]
 #![allow(dead_code)]
-#![feature(async_fn_in_trait)]
-#![feature(proc_macro_hygiene, decl_macro)]
-#![feature(test)]
+#![feature(async_fn_in_trait, proc_macro_hygiene, decl_macro, test)]
 
 extern crate std;
 

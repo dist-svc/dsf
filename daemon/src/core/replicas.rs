@@ -8,61 +8,25 @@ use log::{debug, error, trace};
 use dsf_core::{prelude::*, wire::Container};
 use dsf_rpc::replica::ReplicaInfo;
 
+use super::Core;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReplicaInst {
     pub info: ReplicaInfo,
     pub page: Container,
 }
 
-impl TryFrom<Container> for ReplicaInst {
-    type Error = DsfError;
-
-    fn try_from(page: Container) -> Result<Self, Self::Error> {
-        // Replica pages are _always_ secondary types
-        let peer_id = match page.info()? {
-            PageInfo::Secondary(s) => s.peer_id.clone(),
-            _ => unimplemented!(),
-        };
-
-        let info = ReplicaInfo {
-            peer_id,
-
-            version: page.header().index(),
-            page_id: page.id(),
-
-            //peer: None,
-            issued: page.public_options_iter().issued().unwrap().into(),
-            expiry: page.public_options_iter().expiry().map(|v| v.into()),
-            updated: SystemTime::now(),
-
-            active: false,
-        };
-
-        Ok(Self { page, info })
-    }
-}
-
-pub struct ReplicaManager {
-    replicas: HashMap<Id, Vec<ReplicaInst>>,
-}
-
-impl ReplicaManager {
-    /// Create a new replica manager
-    pub fn new() -> Self {
-        ReplicaManager {
-            replicas: HashMap::new(),
-        }
-    }
+impl Core {
 
     /// Find replicas for a given service
-    pub fn find(&self, service_id: &Id) -> Result<Vec<ReplicaInst>, DsfError> {
+    pub fn find_replicas(&self, service_id: &Id) -> Result<Vec<ReplicaInst>, DsfError> {
         let v = self.replicas.get(service_id);
 
         Ok(v.map(|v| v.clone()).unwrap_or(vec![]))
     }
 
     /// Create or update a given replica instance
-    pub fn create_or_update(
+    pub fn create_or_update_replica(
         &mut self,
         service_id: &Id,
         peer_id: &Id,
@@ -100,7 +64,35 @@ impl ReplicaManager {
     }
 
     /// Remove a specified replica
-    pub fn remove(&self, _service_id: &Id, _peer_id: &Id) -> Result<Self, ()> {
-        unimplemented!()
+    pub fn remove_replica(&mut self, _service_id: &Id, _peer_id: &Id) -> Result<Self, ()> {
+        todo!()
+    }
+}
+
+
+impl TryFrom<Container> for ReplicaInst {
+    type Error = DsfError;
+
+    fn try_from(page: Container) -> Result<Self, Self::Error> {
+        // Replica pages are _always_ secondary types
+        let peer_id = match page.info()? {
+            PageInfo::Secondary(s) => s.peer_id.clone(),
+            _ => unimplemented!(),
+        };
+
+        let info = ReplicaInfo {
+            peer_id,
+
+            version: page.header().index(),
+            page_id: page.id(),
+
+            issued: page.public_options_iter().issued().unwrap().into(),
+            expiry: page.public_options_iter().expiry().map(|v| v.into()),
+            updated: SystemTime::now(),
+
+            active: false,
+        };
+
+        Ok(Self { page, info })
     }
 }

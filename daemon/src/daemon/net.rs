@@ -40,7 +40,6 @@ use crate::rpc::register::RegisterService;
 use crate::rpc::subscribe::PubSub;
 use crate::rpc::Engine;
 use crate::store::object::ObjectIdentifier;
-use crate::store::DataStore;
 use crate::{
     core::{
         data::DataInfo,

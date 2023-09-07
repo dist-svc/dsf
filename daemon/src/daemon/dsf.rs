@@ -1,3 +1,5 @@
+use crate::core::AsyncCore;
+use crate::core::store::AsyncStore;
 use crate::daemon::ops::Op;
 use crate::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -50,6 +52,9 @@ pub struct Dsf<Net = NetSink> {
     /// Last primary page for peer service
     last_primary: Option<Container>,
 
+    /// Core management of services, peers, etc.
+    core: AsyncCore,
+
     /// Peer manager
     peers: PeerManager,
 
@@ -59,12 +64,6 @@ pub struct Dsf<Net = NetSink> {
     /// Subscriber manager
     subscribers: SubscriberManager,
 
-    /// Replica manager
-    replicas: ReplicaManager,
-
-    /// Data manager
-    data: DataManager,
-
     /// Distributed Database
     dht: Dht<Id, Peer, Data>,
 
@@ -72,7 +71,7 @@ pub struct Dsf<Net = NetSink> {
     dht_source: kad::dht::RequestReceiver<Id, Peer, Container>,
 
     /// Local (database) storage
-    pub(crate) store: Store,
+    pub(crate) store: AsyncStore,
 
     /// RPC request channel
     pub(crate) op_rx: mpsc::UnboundedReceiver<Op>,
@@ -107,7 +106,7 @@ where
     pub fn new(
         config: DsfOptions,
         service: Service,
-        store: Store,
+        store: AsyncStore,
         net_sink: Net,
     ) -> Result<Self, Error> {
         debug!("Creating new DSF instance");

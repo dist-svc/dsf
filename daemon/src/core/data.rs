@@ -1,3 +1,5 @@
+use crate::core::store::DataStore;
+use crate::error::StoreError;
 use crate::store::object::ObjectIdentifier;
 use crate::sync::{Arc, Mutex};
 use std::convert::TryFrom;
@@ -11,33 +13,27 @@ use dsf_core::{keys::Keys, wire::Container};
 pub use dsf_rpc::data::DataInfo;
 use dsf_rpc::{PageBounds, TimeBounds};
 
-use crate::error::Error;
-use crate::store::Store;
-
-pub struct DataManager {
-    store: Store,
-}
+use crate::{
+    error::Error,
+    core::{Core, store::AsyncStore},
+};
 
 pub struct DataInst {
     pub info: DataInfo,
     pub page: Container,
 }
 
-impl DataManager {
-    pub fn new(store: Store) -> Self {
-        Self { store }
-    }
-
+impl Core {
     /// Fetch data for a given service
     // TODO: add paging?
-    pub fn fetch_data(
+    pub async fn fetch_data(
         &self,
         service_id: &Id,
         page_bounds: &PageBounds,
         _time_bounds: &TimeBounds,
     ) -> Result<Vec<DataInst>, Error> {
-        // Load service info
-        let service = match self.store.find_service(service_id)? {
+        // Get service info for object decoding
+        let service = match self.service_get(service_id).await {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };
@@ -47,15 +43,11 @@ impl DataManager {
             ..Default::default()
         };
 
-        // TODO: apply offset to query
-        let offset = page_bounds.offset.unwrap_or(0);
-        let count = page_bounds.count.unwrap_or(3);
-
         // TODO: filter by time bounds (where possible)
 
         // Load data from store
         // TODO: filter (and sort?) via db rather than in post
-        let mut data = self.store.find_objects(service_id, &keys, offset, count)?;
+        let mut data = self.store.object_find(service_id, &keys, page_bounds).await?;
 
         debug!("Retrieved {} objects: {:?}", data.len(), data);
 
@@ -69,13 +61,13 @@ impl DataManager {
         Ok(results)
     }
 
-    pub fn get_object<'a, F: Into<ObjectIdentifier<'a>>>(
+    pub async fn get_object<F: Into<ObjectIdentifier>>(
         &self,
         service_id: &Id,
         f: F,
     ) -> Result<Option<DataInst>, Error> {
-        // Load service info
-        let service = match self.store.find_service(service_id)? {
+        // Fetch service info for object decoding
+        let service = match self.service_get(service_id).await {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };
@@ -85,9 +77,14 @@ impl DataManager {
             ..Default::default()
         };
 
-        let object = match self.store.load_object(service_id, f, &keys)? {
-            Some(v) => v,
-            None => return Ok(None),
+        // TODO: check whether object exists in local cache
+        // and return early if found
+
+        // Fetch object from backing store
+        let object = match self.store.object_get(service_id, f.into(), &keys).await {
+            Ok(v) => v,
+            Err(StoreError::NotFound) => return Ok(None),
+            Err(e) => return Err(Error::Store(e)),
         };
 
         let i = DataInfo::from_block(&object, &keys)?;
@@ -99,10 +96,28 @@ impl DataManager {
     }
 
     /// Store data for a given service
-    pub fn store_data<T: ImmutableData>(&self, page: &Container<T>) -> Result<(), Error> {
-        // Store page object
+    pub async fn store_data<T: ImmutableData>(&self, page: &Container<T>) -> Result<(), Error> {
+        // TODO: Add data to local cache
+
+        // Start data store operation
+        // This uses a task to dispatch the operation without blocking
+        // and limiting overall throughput here
+        let s = self.store.clone();
+        let p = page.to_owned();
+
         #[cfg(feature = "store")]
-        self.store.save_object(page)?;
+        tokio::task::spawn(async move {
+            debug!("Start async store task");
+            match s.object_put(p).await {
+                Ok(_) => {
+                    debug!("Store operation complete");
+                    //TODO: signal object is allowed to be dropped from cache
+                },
+                Err(e) => {
+                    error!("Failed to write object to store: {e:?}");
+                }
+            }
+        });
 
         Ok(())
     }

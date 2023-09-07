@@ -21,11 +21,13 @@ use dsf_core::{
 };
 
 use crate::{
-    core::peers::Peer,
+    core::{
+        peers::Peer,
+        store::{DataStore, StoreRes},
+    },
     daemon::{net::NetIf, Dsf},
     error::Error,
     rpc::{Engine, OpKind, Res},
-    store::{DataStore, StoreRes},
 };
 
 use super::net::NetFuture;
@@ -365,7 +367,7 @@ where
 
                     tokio::task::spawn(async move {
                         // Write data to local store
-                        let res = store.object_put(data.clone()).await;
+                        let res = store.object_put(data).await;
 
                         // Map results and forward to caller
                         let resp = match res {
@@ -373,7 +375,7 @@ where
                             // TODO: fix store error returns
                             Err(_e) => Err(CoreError::Unknown),
                         };
-                        if let Err(e) = done.send(resp).await {
+                        if let Err(e) = done.try_send(resp) {
                             error!("Failed to forward net response: {:?}", e);
                         }
                     });

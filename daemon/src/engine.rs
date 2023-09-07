@@ -19,6 +19,7 @@ use dsf_core::types::{Address, Id};
 use dsf_rpc::{Request as RpcRequest, Response as RpcResponse};
 use kad::Config as DhtConfig;
 
+use crate::core::store::AsyncStore;
 use crate::daemon::net::NetIf;
 use crate::daemon::*;
 use crate::error::Error;
@@ -167,10 +168,11 @@ impl Engine {
                 }
             }
         }
-        let store = Store::new(&options.database_file, Default::default())?;
+        // Create new store
+        let s = Store::new_rc(&options.database_file, Default::default())?;
 
         // Fetch or create new peer service
-        let mut service = match store.load_peer_service()? {
+        let mut service = match s.load_peer_service()? {
             Some(s) => {
                 info!("Loaded existing peer service: {}", s.id());
                 s
@@ -192,9 +194,11 @@ impl Engine {
         let (_n, page) = service.publish_primary(Default::default(), buff)?;
 
         // Store peer service identity for re-use
-        store.set_peer_service(&service, &page)?;
+        s.set_peer_service(&service, &page)?;
 
         info!("Creating new engine");
+
+
 
         // Create new network connector
         info!(
@@ -247,6 +251,9 @@ impl Engine {
         };
 
         let (net_sink, net_source) = mpsc::channel::<(Address, Vec<u8>)>(1000);
+
+        // Setup async store task
+        let store = AsyncStore::new(s)?;
 
         // Create new DSF instance
         let dsf = Dsf::new(options.daemon_options.clone(), service, store, net_sink)?;

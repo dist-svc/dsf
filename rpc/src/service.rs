@@ -20,7 +20,6 @@ pub struct ServiceInfo {
     pub short_id: ShortId,
 
     pub index: usize,
-
     pub kind: ServiceKind,
     pub state: ServiceState,
 

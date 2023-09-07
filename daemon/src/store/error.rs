@@ -18,6 +18,7 @@ pub enum StoreError {
     NotFound,
     Decode,
     Unknown,
+    Acquire,
 }
 
 impl From<ConnectionError> for StoreError {

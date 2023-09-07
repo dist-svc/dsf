@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 
+use crate::core::store::AsyncStore;
 use crate::sync::{Arc, Mutex};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
@@ -42,7 +43,8 @@ async fn test_manager() {
 
     let config = DsfOptions::default();
     let db_file = format!("{}/dsf-test.db", d.path().to_str().unwrap());
-    let store = Store::new(&db_file, Default::default()).unwrap();
+    let store = Store::new_pooled(&db_file, Default::default()).unwrap();
+    let store = AsyncStore::new(store).unwrap();
 
     let (net_sink_tx, _net_sink_rx) = mpsc::channel::<(Address, Option<Id>, NetMessage)>(10);
 
