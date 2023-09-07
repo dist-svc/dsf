@@ -19,11 +19,12 @@ use dsf_core::{
     types::{Flags, Id},
     wire::Container,
 };
+use dsf_rpc::{PeerInfo, PeerAddress};
 
 use crate::{
     core::{
-        peers::Peer,
-        store::{DataStore, StoreRes},
+        Core,
+        store::{DataStore, StoreOp, StoreRes},
     },
     daemon::{net::NetIf, Dsf},
     error::Error,
@@ -120,9 +121,7 @@ where
                         error!("Failed to send operation response: {:?}", e);
                     }
                 }
-                // Handle update of peer service
-                // TODO: does this need to be a special case / could
-                // we put this in the normal service collection?
+                // Handle special-case update of our own / peer service
                 OpKind::ServiceUpdate(id, f) if id == self.id() => {
                     let svc = self.service();
                     let mut state = ServiceState::Created;
@@ -517,7 +516,6 @@ pub struct ExecHandle {
     waker: Option<core::task::Waker>,
 }
 
-#[async_trait::async_trait]
 impl Engine for ExecHandle {
     fn id(&self) -> Id {
         self.peer_id.clone()

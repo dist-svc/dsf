@@ -13,10 +13,8 @@ use dsf_core::types::{Address, CryptoHash, PublicKey, Signature};
 
 use dsf_rpc::*;
 
-use crate::core::peers::{Peer, PeerFlags};
 use crate::core::replicas::ReplicaInst;
 use crate::error::Error;
-
 use super::discover::{DiscoverOp, DiscoverState};
 
 pub type RpcSender = mpsc::Sender<Response>;
@@ -40,6 +38,7 @@ pub enum OpKind {
     ServiceCreate(Service, Container),
     ServiceRegister(Id, Vec<Container>),
     ServiceUpdate(Id, UpdateFn),
+    ServiceList(ServiceListOptions),
 
     Publish(Id, PageInfo),
 
@@ -64,7 +63,7 @@ pub enum OpKind {
     ObjectPut(Container),
 
     /// Issue a network request to the listed peers
-    Net(NetRequestBody, Vec<Peer>),
+    Net(NetRequestBody, Vec<PeerInfo>),
 
     /// Issue a broadcast network request
     NetBcast(NetRequestBody),
@@ -86,6 +85,8 @@ impl core::fmt::Debug for OpKind {
 
             Self::ServiceResolve(arg0) => f.debug_tuple("ServiceResolve").field(arg0).finish(),
             Self::ServiceGet(id) => f.debug_tuple("ServiceGet").field(id).finish(),
+            Self::ServiceList(opts) => f.debug_tuple("ServiceList").field(opts).finish(),
+
             Self::ServiceCreate(s, _p) => f.debug_tuple("ServiceCreate").field(&s.id()).finish(),
             Self::ServiceRegister(id, _pages) => {
                 f.debug_tuple("ServiceRegister").field(id).finish()
@@ -138,8 +139,9 @@ pub enum Res {
     Id(Id),
     Service(Service),
     ServiceInfo(ServiceInfo),
+    Services(Vec<ServiceInfo>),
     Pages(Vec<Container>, Option<SearchInfo>),
-    Peers(Vec<Peer>, Option<SearchInfo>),
+    Peers(Vec<PeerInfo>, Option<SearchInfo>),
     Ids(Vec<Id>),
     Responses(HashMap<Id, NetResponse>),
     Sig(Signature),
@@ -151,13 +153,12 @@ impl Res {
         Self::Pages(pages, info)
     }
 
-    pub fn peers(peers: Vec<Peer>, info: Option<SearchInfo>) -> Self {
+    pub fn peers(peers: Vec<PeerInfo>, info: Option<SearchInfo>) -> Self {
         Self::Peers(peers, info)
     }
 }
 
 /// Core engine implementation providing primitive operations for the construction of RPCs
-#[async_trait::async_trait]
 pub trait Engine: Sync + Send {
     //type Output: Future<Output=Result<Res, CoreError>> + Send;
 
@@ -172,7 +173,7 @@ pub trait Engine: Sync + Send {
         &self,
         addr: Address,
         id: Option<Id>,
-    ) -> Result<(Vec<Peer>, SearchInfo), CoreError> {
+    ) -> Result<(Vec<PeerInfo>, SearchInfo), CoreError> {
         match self.exec(OpKind::DhtConnect(addr, id)).await? {
             Res::Peers(p, i) => Ok((p, i.unwrap())),
             _ => Err(CoreError::Unknown),
@@ -180,7 +181,7 @@ pub trait Engine: Sync + Send {
     }
 
     /// Lookup a peer using the DHT
-    async fn dht_locate(&self, id: Id) -> Result<(Peer, SearchInfo), CoreError> {
+    async fn dht_locate(&self, id: Id) -> Result<(PeerInfo, SearchInfo), CoreError> {
         match self.exec(OpKind::DhtLocate(id)).await? {
             Res::Peers(p, i) if p.len() > 0 => Ok((p[0].clone(), i.unwrap())),
             Res::Peers(_, _) => Err(CoreError::NotFound),
@@ -201,7 +202,7 @@ pub trait Engine: Sync + Send {
         &self,
         id: Id,
         pages: Vec<Container>,
-    ) -> Result<(Vec<Peer>, SearchInfo), CoreError> {
+    ) -> Result<(Vec<PeerInfo>, SearchInfo), CoreError> {
         match self.exec(OpKind::DhtPut(id, pages)).await? {
             Res::Peers(p, i) => Ok((p, i.unwrap())),
             _ => Err(CoreError::Unknown),
@@ -223,7 +224,7 @@ pub trait Engine: Sync + Send {
         addr: PeerAddress,
         pub_key: Option<PublicKey>,
         flags: PeerFlags,
-    ) -> Result<Peer, CoreError> {
+    ) -> Result<PeerInfo, CoreError> {
         match self
             .exec(OpKind::PeerCreateUpdate(id, addr, pub_key, flags))
             .await?
@@ -234,7 +235,7 @@ pub trait Engine: Sync + Send {
     }
 
     /// Fetch peer information
-    async fn peer_get(&self, id: Id) -> Result<Peer, CoreError> {
+    async fn peer_get(&self, id: Id) -> Result<PeerInfo, CoreError> {
         match self.exec(OpKind::PeerGet(id)).await? {
             Res::Peers(p, _) if p.len() == 1 => Ok(p[0].clone()),
             _ => Err(CoreError::Unknown),
@@ -242,7 +243,7 @@ pub trait Engine: Sync + Send {
     }
 
     /// List known peers
-    async fn peer_list(&self) -> Result<Vec<Peer>, CoreError> {
+    async fn peer_list(&self) -> Result<Vec<PeerInfo>, CoreError> {
         match self.exec(OpKind::PeerList).await? {
             Res::Peers(p, _) => Ok(p),
             _ => Err(CoreError::Unknown),
@@ -276,6 +277,14 @@ pub trait Engine: Sync + Send {
             .await?
         {
             Res::ServiceInfo(s) => Ok(s),
+            _ => Err(CoreError::Unknown),
+        }
+    }
+
+    /// List services using the specified filters
+    async fn svc_list(&self, opts: ServiceListOptions) -> Result<Vec<ServiceInfo>, CoreError> {
+        match self.exec(OpKind::ServiceList(opts)).await? {
+            Res::Services(s) => Ok(s),
             _ => Err(CoreError::Unknown),
         }
     }
@@ -329,7 +338,7 @@ pub trait Engine: Sync + Send {
     async fn net_req(
         &self,
         req: NetRequestBody,
-        peers: Vec<Peer>,
+        peers: Vec<PeerInfo>,
     ) -> Result<HashMap<Id, NetResponse>, CoreError> {
         match self.exec(OpKind::Net(req, peers)).await? {
             Res::Responses(r) => Ok(r),

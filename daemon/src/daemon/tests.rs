@@ -25,10 +25,9 @@ use dsf_core::net::{Request, RequestBody, Response, ResponseBody};
 use dsf_core::prelude::*;
 use dsf_core::service::{Publisher, ServiceBuilder};
 use dsf_core::types::Flags;
-use dsf_rpc::{self as rpc};
+use dsf_rpc::{self as rpc, PeerState};
 
 use super::{Dsf, DsfOptions};
-use crate::core::peers::PeerState;
 use crate::io::mock::{MockConnector, MockTransaction};
 use crate::store::Store;
 
@@ -49,7 +48,7 @@ async fn test_manager() {
     let (net_sink_tx, _net_sink_rx) = mpsc::channel::<(Address, Option<Id>, NetMessage)>(10);
 
     let service = Service::default();
-    let mut dsf = Dsf::new(config, service, store, net_sink_tx).unwrap();
+    let mut dsf = Dsf::new(config, service, store, net_sink_tx).await.unwrap();
     let id1 = dsf.id().clone();
     let _addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 0, 1)), 8111);
 

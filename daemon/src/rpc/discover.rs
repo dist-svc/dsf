@@ -12,16 +12,14 @@ use tracing::{debug, error, info, instrument, span, trace, warn, Level};
 
 use dsf_core::options::Options;
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, DiscoverOptions, ServiceInfo};
+use dsf_rpc::{self as rpc, DiscoverOptions, ServiceInfo, ServiceState, PeerInfo};
 
-use super::ops::*;
 use crate::{
-    core::peers::Peer,
-    core::services::ServiceState,
     daemon::net::NetFuture,
     daemon::{net::NetIf, Dsf},
     error::Error,
 };
+use super::ops::*;
 
 pub trait Discover {
     /// Discover a service using local broadcast discovery

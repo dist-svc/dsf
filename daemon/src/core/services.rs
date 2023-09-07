@@ -1,7 +1,11 @@
-use dsf_rpc::ServiceInfo;
-use dsf_core::prelude::*;
+use std::time::SystemTime;
 
-use crate::{Error, core::store::DataStore, store::object::ObjectIdentifier};
+use tracing::{debug, warn, error};
+
+use dsf_rpc::{ServiceInfo, ServiceState, ServiceFlags};
+use dsf_core::{prelude::*, types::ShortId};
+
+use crate::{error::Error, core::store::DataStore, store::object::ObjectIdentifier};
 use super::{Core, store::AsyncStore};
 
 #[derive(Debug)]
@@ -21,54 +25,56 @@ pub struct ServiceInst {
 
 impl Core {
     /// Register a local service for tracking
-    pub fn register_service(
+    pub async fn register_service(
         &mut self,
         service: Service,
         primary_page: &Container,
         state: ServiceState,
         updated: Option<SystemTime>,
-    ) -> Result<ServiceInfo, DsfError> {
+    ) -> Result<ServiceInfo, Error> {
         let id = service.id();
 
         // Parse out service info
         let info = ServiceInfo {
             id: id.clone(),
             short_id: ShortId::from(&id),
-            kind: service.kind(),
+            index: primary_page.header().index() as usize,
+            kind: service.kind().into(),
             state,
             public_key: service.public_key(),
             private_key: service.private_key(),
             secret_key: service.secret_key(),
-            last_updated: None,
+            last_updated: updated,
             primary_page: Some(primary_page.signature()),
             replica_page: None,
             subscribers: 0,
             replicas: 0,
-            flags: 0,
+            flags: ServiceFlags::empty(),
         };
 
         // Create a service instance wrapper
         let inst = ServiceInst {
             service,
             info: info.clone(),
-            primary_page: Some(primary_page.clone()),
+            primary_page: primary_page.clone(),
             replica_page: None,
         };
 
-        let info = inst.info();
+        let info = inst.info.clone();
 
         // Insert into memory storage
         self.services.insert(id, inst);
 
         // Write to database
+        // TODO: this -could- be handed off to a separate task
         self.store.service_update(&info).await?;
 
         // Return new service info
         Ok(info)
     }
 
-
-    pub(super) async fn load_services(store: &AsyncStore) -> Result<(), Error> {
+    /// Helper to load services from the [AsyncStore], called at start
+    pub(super) async fn load_services(store: &AsyncStore) -> Result<Vec<ServiceInst>, Error> {
         // Load service info from databases
         let mut service_info = store.service_load().await?;
 
@@ -81,10 +87,10 @@ impl Core {
             let keys = Keys::new(info.public_key.clone());
 
             // Fetch primary page for service
-            let primary_page = match info.primary_page {
-                Some(sig) => self.store.object_get(&info.id, sig.into(), &keys).await?,
+            let primary_page = match &info.primary_page {
+                Some(sig) => store.object_get(&info.id, sig.into(), &keys).await?,
                 None => {
-                    warn!("Load service {} failed, no primary page", indo.id);
+                    warn!("Load service {} failed, no primary page", info.id);
                     continue;
                 }
             };
@@ -99,25 +105,33 @@ impl Core {
             };
 
             // Attach keys if available
-            service.set_private_key(info.private_key);
-            service.set_secret_key(info.secret_key);
-
-            // TODO: Load replica page if available
+            service.set_private_key(info.private_key.clone());
+            service.set_secret_key(info.secret_key.clone());
 
             // Fetch latest object to sync last signature
-            match self.store.object_get(&info.id, ObjectIdentifier::Latest, &keys).await {
+            match store.object_get(&info.id, ObjectIdentifier::Latest, &keys).await {
                 Ok(o) => service.set_last(o.header().index() + 1, o.signature()),
                 Err(_) => (),
             }
 
+            // TODO: Load replica page if available
+
+
+            // Add loaded service to list
             services.push(ServiceInst{
                 service,
                 info,
                 primary_page,
                 replica_page: None,
-            })
+            });
         }
 
         Ok(services)
+    }
+}
+
+impl ServiceInst {
+    pub fn id(&self) -> Id {
+        self.service.id()
     }
 }

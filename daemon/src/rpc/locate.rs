@@ -14,13 +14,10 @@ use rpc::ServiceFlags;
 use tracing::{instrument, span, Level};
 
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, LocateInfo, LocateOptions};
+use dsf_rpc::{self as rpc, LocateInfo, LocateOptions, PeerInfo, ServiceState};
 
 use crate::daemon::{net::NetIf, Dsf};
 use crate::error::Error;
-
-use crate::core::peers::Peer;
-use crate::core::services::ServiceState;
 
 use super::ops::*;
 

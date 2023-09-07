@@ -50,10 +50,7 @@ impl Core {
             id, address, state
         );
 
-        let index = self.index;
-        self.index += 1;
-
-        let peer = PeerInfo::new(id.clone(), address, state, index, None);
+        let peer = PeerInfo::new(id.clone(), address, state, 0, None);
 
         self.peers.insert(id.clone(), peer.clone());
 
@@ -110,15 +107,21 @@ impl Core {
     /// Update a peer instance (if found)
     pub fn update<F>(&mut self, id: &Id, mut f: F) -> Option<PeerInfo>
     where
-        F: FnMut(&mut Peer),
+        F: FnMut(&mut PeerInfo),
     {
-        match self.peers.get_mut(id) {
-            Some(p) => {
-                (f)(p);
-                Some(p.info())
-            }
-            None => None,
-        }
+        // Look for matching peer
+        let p = match self.peers.get_mut(id) {
+            Some(p) => p,
+            None => return None,
+        };
+
+        // Run update function
+        f(p);
+
+        // TODO: sync to DB?
+
+        // Return updated info
+        Some(p.clone())
     }
 
 }

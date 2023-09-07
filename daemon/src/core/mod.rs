@@ -75,16 +75,16 @@ pub enum CoreRes {
 
 impl Core {
     /// Create a new core instance to manage services / peers / etc.
-    pub async fn new(store: AsyncStore) -> Result<Self, ()> {
+    pub async fn new(store: AsyncStore) -> Result<Self, Error> {
 
         // Load persistent information from the provided store
 
         // Load services
-        let mut services = Self::load_services(&store).await.unwrap();
-        let services = HashMap::from_iter(services.drain(..).map(|s| (s.id.clone(), s)));
+        let mut services = Self::load_services(&store).await?;
+        let services = HashMap::from_iter(services.drain(..).map(|s| (s.id(), s)));
 
         // Load peers
-        let mut peers = store.peer_load().await.unwrap();
+        let mut peers = store.peer_load().await?;
         let peers = HashMap::from_iter(peers.drain(..).map(|s| (s.id.clone(), s)));
 
         // TODO: load subscribers and replicas?!
@@ -100,7 +100,7 @@ impl Core {
 
     pub async fn service_get(&self, id: &Id) -> Option<ServiceInfo> {
         // Service are cached so can be fetched from in-memory storage
-        self.services.get(id).cloned()
+        self.services.get(id).map(|s| s.info.clone() )
     }
 
     pub async fn service_update(&mut self, info: &ServiceInfo) -> Result<ServiceInfo, Error> {

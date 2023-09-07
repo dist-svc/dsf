@@ -16,11 +16,9 @@ use kad::prelude::*;
 
 use dsf_core::net;
 use dsf_core::prelude::*;
-
-use dsf_rpc::{self as rpc, ConnectInfo, ConnectOptions};
+use dsf_rpc::{self as rpc, ConnectInfo, ConnectOptions, PeerInfo, PeerAddress, PeerFlags};
 
 use super::ops::Engine;
-use crate::core::peers::{Peer, PeerAddress, PeerFlags};
 use crate::daemon::{net::NetIf, Dsf};
 use crate::error::Error;
 use crate::rpc::ops::{OpKind, Res};

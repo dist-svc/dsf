@@ -1,4 +1,4 @@
-use crate::core::AsyncCore;
+use crate::core::{AsyncCore, Core};
 use crate::core::store::AsyncStore;
 use crate::daemon::ops::Op;
 use crate::sync::{Arc, Mutex};
@@ -11,6 +11,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
 
 use dsf_core::wire::Container;
+use dsf_rpc::{PeerInfo, ServiceInfo};
 use log::{debug, error, info, trace, warn};
 use tracing::{span, Level};
 
@@ -25,10 +26,6 @@ use dsf_core::service::Publisher;
 use kad::prelude::*;
 use kad::table::NodeTable;
 
-use crate::core::data::DataManager;
-use crate::core::peers::{Peer, PeerManager, PeerState};
-use crate::core::replicas::ReplicaManager;
-use crate::core::services::{ServiceInfo, ServiceManager, ServiceState};
 use crate::core::subscribers::SubscriberManager;
 
 use super::net::{ByteSink, NetIf, NetOp, NetSink};
@@ -40,7 +37,7 @@ use super::dht::{dht_reducer, DsfDhtMessage};
 use super::DsfOptions;
 
 /// Re-export of Dht type used for DSF
-pub type DsfDht = Dht<Id, Peer, Data>;
+pub type DsfDht = Dht<Id, PeerInfo, Data>;
 
 pub struct Dsf<Net = NetSink> {
     /// DSF Configuration
@@ -55,20 +52,11 @@ pub struct Dsf<Net = NetSink> {
     /// Core management of services, peers, etc.
     core: AsyncCore,
 
-    /// Peer manager
-    peers: PeerManager,
-
-    /// Service manager
-    services: ServiceManager,
-
-    /// Subscriber manager
-    subscribers: SubscriberManager,
-
     /// Distributed Database
-    dht: Dht<Id, Peer, Data>,
+    dht: DsfDht,
 
     /// Source for outgoing DHT requests
-    dht_source: kad::dht::RequestReceiver<Id, Peer, Container>,
+    dht_source: kad::dht::RequestReceiver<Id, PeerInfo, Container>,
 
     /// Local (database) storage
     pub(crate) store: AsyncStore,
@@ -103,7 +91,7 @@ where
     Dsf<Net>: NetIf<Interface = Net>,
 {
     /// Create a new daemon
-    pub fn new(
+    pub async fn new(
         config: DsfOptions,
         service: Service,
         store: AsyncStore,
@@ -111,22 +99,15 @@ where
     ) -> Result<Self, Error> {
         debug!("Creating new DSF instance");
 
-        // Create managers
-        let peers = PeerManager::new(store.clone());
-        let mut services = ServiceManager::new(store.clone());
-        let data = DataManager::new(store.clone());
-
-        let replicas = ReplicaManager::new();
-        let subscribers = SubscriberManager::new();
-
         let id = service.id();
 
-        // Load services etc.
-        services.load(&id);
+        // Create core, sets up service / peer / data storage and loads persistent data
+        let core = Core::new(store.clone()).await?;
+        let core = AsyncCore::new(core).await;
 
         // Instantiate DHT
         let (dht_sink, dht_source) = mpsc::channel(100);
-        let mut dht = Dht::<Id, Peer, Data>::standard(id, config.dht.clone(), dht_sink);
+        let mut dht = Dht::<Id, PeerInfo, Data>::standard(id, config.dht.clone(), dht_sink);
         dht.set_reducer(Box::new(dht_reducer));
 
         let (op_tx, op_rx) = mpsc::unbounded();
@@ -139,11 +120,7 @@ where
             service,
             last_primary: None,
 
-            peers,
-            services,
-            subscribers,
-            replicas,
-            data,
+            core,
 
             dht,
             dht_source,
@@ -175,26 +152,6 @@ where
     /// Fetch a reference to the daemon service
     pub fn service(&mut self) -> &mut Service {
         &mut self.service
-    }
-
-    pub(crate) fn peers(&mut self) -> &mut PeerManager {
-        &mut self.peers
-    }
-
-    pub(crate) fn services(&mut self) -> &mut ServiceManager {
-        &mut self.services
-    }
-
-    pub(crate) fn replicas(&mut self) -> &mut ReplicaManager {
-        &mut self.replicas
-    }
-
-    pub(crate) fn subscribers(&mut self) -> &mut SubscriberManager {
-        &mut self.subscribers
-    }
-
-    pub(crate) fn data(&mut self) -> &mut DataManager {
-        &mut self.data
     }
 
     pub(crate) fn dht_mut(&mut self) -> &mut DsfDht {
@@ -230,169 +187,19 @@ where
         Ok(c.to_owned())
     }
 
-    /// Store pages in the database at the provided ID
-    #[cfg(tmp)]
-    pub fn store(
-        &mut self,
-        id: &Id,
-        pages: Vec<Container>,
-    ) -> Result<kad::dht::StoreFuture<Id, Peer>, Error> {
-        let span = span!(Level::DEBUG, "store", "{}", self.id());
-        let _enter = span.enter();
-
-        // Pre-sign new pages so encoding works
-        // TODO: this should not be needed as pages are will be signed on creation
-        let mut pages = pages.clone();
-        for p in &mut pages {
-            // We can only sign our own pages...
-            if p.id() != self.id() {
-                continue;
-            }
-
-            // TODO: ensure page is signed / verifiable
-        }
-
-        let (store, _req_id) = match self.dht.store(id.clone().into(), pages) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Error starting DHT store: {:?}", e);
-                return Err(Error::Unknown);
-            }
-        };
-
-        Ok(store)
-    }
-
-    /// Search for pages in the database at the provided ID
-    #[cfg(tmp)]
-    pub async fn search(&mut self, id: &Id) -> Result<Vec<Container>, Error> {
-        let span = span!(Level::DEBUG, "search", "{}", self.id());
-        let _enter = span.enter();
-
-        let (search, _req_id) = match self.dht.search(id.clone().into()) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Error starting DHT search: {:?}", e);
-                return Err(Error::Unknown);
-            }
-        };
-
-        match search.await {
-            Ok(d) => {
-                let data = dht_reducer(id, &d);
-
-                info!("Search complete ({} entries found)", data.len());
-                // TODO: use search results
-                if data.len() > 0 {
-                    Ok(data)
-                } else {
-                    Err(Error::NotFound)
-                }
-            }
-            Err(e) => {
-                error!("Search failed: {:?}", e);
-                Err(Error::NotFound)
-            }
-        }
-    }
-
     /// Run an update of the daemon and all managed services
     pub async fn update(&mut self, force: bool) -> Result<(), Error> {
         info!("DSF update (forced: {:?})", force);
 
-        let interval = Duration::from_secs(10 * 60);
+        let _interval = Duration::from_secs(10 * 60);
 
-        // Sync data storage
-        self.services.sync();
+        // TODO: update registered, subscribed, replicated services
 
-        // Fetch instance lists for each operation
-        let register_ops =
-            self.services
-                .updates_required(ServiceState::Registered, interval, force);
-        for _o in &register_ops {
-            //self.register(rpc::RegisterOptions{service: rpc::ServiceIdentifier{id: Some(inst.id), index: None}, no_replica: false })
-        }
-
-        let update_ops = self
-            .services
-            .updates_required(ServiceState::Located, interval, force);
-        for _o in &update_ops {
-            //self.locate(rpc::LocateOptions{id: inst.id}).await;
-        }
-
-        let subscribe_ops =
-            self.services
-                .updates_required(ServiceState::Subscribed, interval, force);
-        for _o in &subscribe_ops {
-            //self.locate(rpc::LocateOptions{id: inst.id}).await;
-            //self.subscribe(rpc::SubscribeOptions{service: rpc::ServiceIdentifier{id: Some(inst.id), index: None}}).await;
-        }
+        //self.register(rpc::RegisterOptions{service: rpc::ServiceIdentifier{id: Some(inst.id), index: None}, no_replica: false })
+        //self.locate(rpc::LocateOptions{id: inst.id}).await;
+        //self.subscribe(rpc::SubscribeOptions{service: rpc::ServiceIdentifier{id: Some(inst.id), index: None}}).await;
 
         Ok(())
-    }
-
-    /// Initialise a DSF instance
-    ///
-    /// This bootstraps using known peers then updates all tracked services
-    #[cfg(nope)]
-    pub async fn bootstrap(&mut self) -> Result<(), Error> {
-        let peers = self.peers.list();
-
-        info!("DSF bootstrap ({} peers)", peers.len());
-
-        //let mut handles = vec![];
-
-        // Build peer connect requests
-        // TODO: switched to serial due to locking issue somewhere,
-        // however, it should be possible to execute this in parallel
-        let mut success: usize = 0;
-
-        for (id, p) in peers {
-            let timeout = Duration::from_millis(200).into();
-
-            if let Ok(_) = self
-                .connect(dsf_rpc::ConnectOptions {
-                    address: p.address().into(),
-                    id: Some(id.clone()),
-                    timeout,
-                })?
-                .await
-            {
-                success += 1;
-            }
-        }
-
-        // We're not really worried about failures here
-        //let _ = timeout(Duration::from_secs(3), future::join_all(handles)).await;
-
-        info!("DSF bootstrap connect done (contacted {} peers)", success);
-
-        // Run updates
-        self.update(true).await?;
-
-        info!("DSF bootstrap update done");
-
-        Ok(())
-    }
-
-    pub fn find_public_key(&self, id: &Id) -> Option<PublicKey> {
-        if let Some(s) = self.services.find(id) {
-            return Some(s.public_key);
-        }
-
-        if let Some(p) = self.peers.find(id) {
-            if let PeerState::Known(pk) = p.state() {
-                return Some(pk);
-            }
-        }
-
-        if let Some(e) = self.dht.nodetable().contains(id) {
-            if let PeerState::Known(pk) = e.info().state() {
-                return Some(pk);
-            }
-        }
-
-        None
     }
 
     pub fn service_register(
@@ -557,7 +364,7 @@ where
 
             let peers: Vec<_> = peers.iter().map(|p| p.info().clone()).collect();
 
-            let disp: Vec<_> = peers.iter().map(|p| (p.id(), p.address())).collect();
+            let disp: Vec<_> = peers.iter().map(|p| (p.id, p.address())).collect();
 
             debug!(
                 "Issuing DHT {} request ({}) to {:?}",

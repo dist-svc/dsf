@@ -256,7 +256,7 @@ impl Engine {
         let store = AsyncStore::new(s)?;
 
         // Create new DSF instance
-        let dsf = Dsf::new(options.daemon_options.clone(), service, store, net_sink)?;
+        let dsf = Dsf::new(options.daemon_options.clone(), service, store, net_sink).await?;
 
         info!("Engine created!");
 

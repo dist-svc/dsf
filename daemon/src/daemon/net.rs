@@ -14,7 +14,7 @@ use dsf_core::types::{
 };
 use dsf_rpc::{
     LocateOptions, QosPriority, RegisterOptions, ServiceFlags, ServiceIdentifier, ServiceState,
-    SubscribeOptions,
+    SubscribeOptions, PeerInfo, PeerAddress, PeerState, PeerFlags, DataInfo
 };
 use kad::common::message;
 use log::{debug, error, info, trace, warn};
@@ -40,13 +40,7 @@ use crate::rpc::register::RegisterService;
 use crate::rpc::subscribe::PubSub;
 use crate::rpc::Engine;
 use crate::store::object::ObjectIdentifier;
-use crate::{
-    core::{
-        data::DataInfo,
-        peers::{Peer, PeerAddress, PeerFlags, PeerState},
-    },
-    rpc::locate::ServiceRegistry,
-};
+use crate::rpc::locate::ServiceRegistry;
 
 /// Network interface abstraction, allows [`Dsf`] instance to be generic over interfaces
 pub trait NetIf {
@@ -669,7 +663,7 @@ where
         address: &Address,
         c: &net::Common,
         _seen: Option<SystemTime>,
-    ) -> Option<Peer> {
+    ) -> Option<PeerInfo> {
         trace!(
             "[DSF ({:?})] Handling base message from: {:?} address: {:?} public_key: {:?}",
             self.id(),

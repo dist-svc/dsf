@@ -12,17 +12,15 @@ use futures::future::join_all;
 use futures::prelude::*;
 
 use log::{debug, error, info, trace, warn};
-use rpc::{QosPriority, ReplicaInfo};
+use rpc::{QosPriority, ReplicaInfo, PeerInfo};
 use tracing::{span, Level};
 
 use dsf_core::error::Error as CoreError;
 use dsf_core::net;
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, SubscribeOptions, SubscriptionInfo, SubscriptionKind};
+use dsf_rpc::{self as rpc, SubscribeOptions, SubscriptionInfo, SubscriptionKind, ServiceState};
 
-use crate::core::peers::Peer;
 use crate::core::replicas::ReplicaInst;
-use crate::core::services::ServiceState;
 use crate::daemon::net::{NetFuture, NetIf};
 use crate::daemon::Dsf;
 use crate::error::Error;
@@ -37,6 +35,7 @@ pub enum SubscribeState {
     Error(Error),
     Done,
 }
+
 
 pub trait PubSub {
     /// Subscribe to a known service
@@ -180,7 +179,7 @@ pub(super) async fn find_replicas<E: Engine>(
 async fn do_subscribe<E: Engine>(
     e: &E,
     target_id: Id,
-    peers: &[Peer],
+    peers: &[PeerInfo],
 ) -> Result<Vec<SubscriptionInfo>, DsfError> {
     // Issue subscription requests
     let req = net::RequestBody::Subscribe(target_id);

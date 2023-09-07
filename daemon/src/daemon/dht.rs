@@ -3,8 +3,7 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::num;
 
-use dsf_core::options::Filters;
-use dsf_core::wire::Container;
+
 use kad::prelude::*;
 use tracing::{error, trace};
 
@@ -13,10 +12,12 @@ use futures::channel::mpsc;
 use dsf_core::net::{RequestBody, ResponseBody};
 use dsf_core::prelude::*;
 use dsf_core::types::{Data, Id, RequestId};
+use dsf_core::options::Filters;
+use dsf_core::wire::Container;
+use dsf_rpc::{PeerInfo, PeerAddress, PeerFlags, PeerState};
 
 use super::{net::NetIf, Dsf};
 
-use crate::core::peers::{Peer, PeerAddress, PeerFlags};
 use crate::error::Error;
 use crate::rpc::Engine;
 
@@ -27,9 +28,9 @@ pub struct DhtAdaptor {
 }
 
 pub struct DsfDhtMessage {
-    pub(crate) target: DhtEntry<Id, Peer>,
+    pub(crate) target: DhtEntry<Id, PeerInfo>,
     pub(crate) req: DhtRequest<Id, Data>,
-    pub(crate) resp_sink: mpsc::Sender<DhtResponse<Id, Peer, Data>>,
+    pub(crate) resp_sink: mpsc::Sender<DhtResponse<Id, PeerInfo, Data>>,
 }
 
 impl<Net> Dsf<Net>
@@ -40,9 +41,9 @@ where
     pub(crate) fn handle_dht_req(
         &mut self,
         from: Id,
-        peer: Peer,
+        peer: PeerInfo,
         req: DhtRequest<Id, Data>,
-    ) -> Result<DhtResponse<Id, Peer, Data>, Error> {
+    ) -> Result<DhtResponse<Id, PeerInfo, Data>, Error> {
         // Map peer to existing DHT entry
         // TODO: resolve this rather than creating a new instance
         // (or, use only the index and rely on external storage etc.?)
@@ -77,6 +78,7 @@ where
         }
     }
 
+    /// Convert a DHT request to a DSF network message
     pub(crate) fn dht_to_net_request(req: DhtRequest<Id, Data>) -> NetRequestBody {
         match req {
             DhtRequest::Ping => RequestBody::Ping,
@@ -88,22 +90,25 @@ where
         }
     }
 
-    pub(crate) fn dht_to_net_response(resp: DhtResponse<Id, Peer, Data>) -> NetResponseBody {
+    /// Convert a DHT response to a DSF network message
+    pub(crate) fn dht_to_net_response(resp: DhtResponse<Id, PeerInfo, Data>) -> NetResponseBody {
         match resp {
             DhtResponse::NodesFound(id, nodes) => {
                 let nodes = nodes
                     .iter()
                     .filter_map(|n| {
-                        // Drop unseen or nodes without keys from responses
-                        // TODO: is this the desired behaviour?
-                        if n.info().pub_key().is_none() || n.info().seen().is_none() {
-                            None
-                        } else {
-                            Some((
-                                Id::from(n.id().clone()),
-                                n.info().address(),
-                                n.info().pub_key().unwrap(),
-                            ))
+                        let i = n.info();
+
+                        // Limit responses to contactable nodes
+                        // TODO: they shouldn't be -added- to the DHT prior to being contacted but
+                        // this needs to be confirmed / is a simple guard rail.
+                        match (&i.state, i.seen.is_some()) {
+                            (PeerState::Known(public_key), true) => Some((
+                                i.id.clone(),
+                                i.address().clone(),
+                                public_key.clone(),
+                            )),
+                            _ => None,
                         }
                     })
                     .collect();
@@ -132,7 +137,7 @@ where
     pub(crate) async fn net_to_dht_response<E: Engine>(
         e: &E,
         resp: &NetResponseBody,
-    ) -> Option<DhtResponse<Id, Peer, Data>> {
+    ) -> Option<DhtResponse<Id, PeerInfo, Data>> {
         // TODO: fix peers:new here peers:new
         match resp {
             ResponseBody::NodesFound(id, nodes) => {

@@ -14,7 +14,7 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 
 use log::{debug, error, info, warn};
-use rpc::{ServiceInfo, SyncInfo};
+use rpc::{ServiceInfo, SyncInfo, PeerInfo};
 use tracing::{span, Level};
 
 use dsf_core::prelude::*;
@@ -23,7 +23,6 @@ use dsf_core::net;
 use dsf_core::service::{DataOptions, Publisher};
 use dsf_rpc::{self as rpc, DataInfo, SyncOptions};
 
-use crate::core::peers::Peer;
 use crate::daemon::net::{NetFuture, NetIf};
 use crate::daemon::Dsf;
 use crate::error::Error;
@@ -31,6 +30,7 @@ use crate::rpc::push::push_data;
 use crate::rpc::subscribe::find_replicas;
 
 use super::ops::*;
+
 
 pub trait SyncData {
     /// Sync data for a subscribed service
@@ -205,11 +205,11 @@ impl<T: Engine> SyncData for T {
     }
 }
 
-async fn issue_query<E: Engine>(
+async fn issue_query<E: Engine + Sync + Send>(
     e: &E,
     target_id: Id,
     index: Option<u32>,
-    peers: &[Peer],
+    peers: &[PeerInfo],
 ) -> Result<Container, DsfError> {
     let req = NetRequestBody::Query(target_id.clone(), index);
 

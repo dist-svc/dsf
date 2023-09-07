@@ -488,7 +488,6 @@ mod test {
         }
     }
 
-    #[async_trait::async_trait]
     impl Engine for MockEngine {
         fn id(&self) -> Id {
             self.id.clone()

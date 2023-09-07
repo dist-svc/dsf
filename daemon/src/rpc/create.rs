@@ -14,14 +14,10 @@ use tracing::{debug, error, info, instrument, span, warn, Level};
 use dsf_core::options::Options;
 use dsf_core::prelude::*;
 use dsf_core::service::Publisher;
-
-use dsf_rpc::{self as rpc, CreateOptions, RegisterOptions, ServiceIdentifier};
+use dsf_rpc::{self as rpc, CreateOptions, RegisterOptions, ServiceIdentifier, PeerInfo, ServiceInfo, ServiceState};
 
 use crate::daemon::{net::NetIf, Dsf};
 use crate::error::Error;
-
-use crate::core::peers::Peer;
-use crate::core::services::ServiceState;
 use crate::core::services::*;
 
 use super::ops::*;

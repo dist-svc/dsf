@@ -17,8 +17,6 @@ use dsf_core::options::Options;
 use dsf_core::prelude::*;
 use dsf_rpc::{self as rpc, RegisterInfo, RegisterOptions};
 
-use crate::core::peers::Peer;
-use crate::core::services::ServiceState;
 use crate::rpc::replicate::fetch_replica;
 
 use super::ops::*;
