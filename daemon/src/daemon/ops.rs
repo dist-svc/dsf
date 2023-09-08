@@ -55,6 +55,8 @@ where
         if let Poll::Ready(Some(op)) = self.op_rx.poll_next_unpin(ctx) {
             debug!("New op request: {:?}", op);
 
+            let core = self.core.clone();
+
             let Op {
                 req_id: _,
                 kind,
@@ -83,43 +85,43 @@ where
                     };
                 }
                 OpKind::ServiceGet(id) => {
-                    let r = self
-                        .services()
-                        .find(&id)
-                        .map(|s| Ok(Res::ServiceInfo(s)))
-                        .unwrap_or(Err(CoreError::NotFound));
+                    tokio::task::spawn(async move {
+                        let r = core.service_get(id.clone()).await
+                            .map(|s| Ok(Res::ServiceInfo(s)))
+                            .unwrap_or(Err(CoreError::NotFound));
 
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    };
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
                 }
                 OpKind::ServiceCreate(service, primary_page) => {
-                    let r = self
-                        .services()
-                        .register(
-                            service,
-                            &primary_page,
-                            ServiceState::Created,
-                            Some(SystemTime::now()),
-                        )
-                        .map(|i| Ok(Res::ServiceInfo(i)))
-                        // TODO: fix this error type
-                        .unwrap_or(Err(CoreError::Unknown));
+                    tokio::task::spawn(async move {
+                        let r = core
+                            .service_create(service, vec![primary_page])
+                            .await
+                            .map(|i| Res::ServiceInfo(i))
+                            // TODO: fix this error type
+                            .map_err(|e| CoreError::Unknown);
 
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    }
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        }
+                    });
                 }
                 OpKind::ServiceRegister(id, pages) => {
-                    let r = self
-                        .service_register(&id, pages)
-                        .map(|i| Ok(Res::ServiceInfo(i)))
-                        // TODO: fix this error type
-                        .unwrap_or(Err(CoreError::Unknown));
+                    tokio::task::spawn(async move {
+                        let r = core
+                            .service_register(id.clone(), pages)
+                            .await
+                            .map(|i| Res::ServiceInfo(i))
+                            // TODO: fix this error type
+                            .map_err(|e| CoreError::Unknown);
 
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    }
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        }
+                    });
                 }
                 // Handle special-case update of our own / peer service
                 OpKind::ServiceUpdate(id, f) if id == self.id() => {
@@ -140,6 +142,9 @@ where
                     if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     }
+                }
+                OpKind::ServiceList(opts) => {
+
                 }
                 OpKind::SubscribersGet(id) => {
                     let r = self

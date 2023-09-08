@@ -3,7 +3,7 @@ use tokio::sync::{oneshot, oneshot::Sender as OneshotSender, mpsc::UnboundedSend
 use tracing::{debug, error};
 
 use dsf_core::prelude::*;
-use dsf_rpc::{PeerInfo, ServiceInfo, PageBounds};
+use dsf_rpc::{PeerInfo, ServiceInfo, PageBounds, ServiceListOptions};
 
 use crate::store::{Store, StoreError, object::ObjectIdentifier, Backend};
 
@@ -16,22 +16,26 @@ pub struct AsyncStore {
     tasks: UnboundedSender<(StoreOp, OneshotSender<StoreRes>)>,
 }
 
+/// Async datastore operations
 #[derive(Clone, PartialEq, Debug)]
 pub enum StoreOp {
     ServiceGet(Id),
     ServiceUpdate(ServiceInfo),
     ServiceDelete(Id),
     ServiceLoad,
+    
     PeerGet(Id),
     PeerUpdate(PeerInfo),
     PeerDelete(Id),
     PeerLoad,
+
     ObjectGet(Id, ObjectIdentifier, Keys),
     ObjectPut(Container),
     ObjectList(Id, PageBounds, Keys),
     ObjectDelete,
 }
 
+/// Async datastore results
 #[derive(PartialEq, Debug)]
 pub enum StoreRes {
     Ok,
@@ -126,6 +130,7 @@ pub trait DataStore {
 
     /// Delete a service by ID
     async fn service_del(&self, _id: &Id) -> Result<(), StoreError>;
+
 
     /// Load all services
     async fn service_load(&self) -> Result<Vec<ServiceInfo>, StoreError>;

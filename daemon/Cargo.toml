@@ -75,7 +75,6 @@ libsqlite3-sys = { version = "0.26.0", features = [ "bundled" ] }
 thiserror = "*"
 rocket = { version = "=0.5.0-rc.3", features = ["json"] }
 
-
 dsf-core = { version = "0.3.0", features = ["serde", "std"] }
 dsf-client = { version = "0.3.0", features = ["std"] }
 dsf-rpc = { version = "0.3.0", features = ["std"] }

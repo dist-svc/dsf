@@ -235,8 +235,9 @@ where
                 header.kind()
             );
 
-            match self.services().find(&id) {
-                Some(info)
+            // Look for matching service
+            match self.core.service_get(id.clone()).await {
+                Ok(info)
                     if info.state == ServiceState::Subscribed
                         || info.flags.contains(ServiceFlags::SUBSCRIBED) =>
                 {

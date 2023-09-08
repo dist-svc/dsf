@@ -17,7 +17,6 @@ use dsf_core::options::Options;
 use dsf_core::prelude::*;
 use dsf_rpc::{self as rpc, RegisterInfo, RegisterOptions};
 
-
 use super::ops::*;
 use crate::daemon::{net::NetIf, Dsf};
 use crate::error::Error;

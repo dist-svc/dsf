@@ -1,17 +1,17 @@
-use std::{collections::HashMap, iter::FromIterator};
+use std::{collections::HashMap, iter::FromIterator, time::SystemTime};
 
-use dsf_rpc::{PeerInfo, ServiceInfo, ReplicaInfo, SubscriptionInfo, PageBounds, DataInfo, TimeBounds};
+use dsf_rpc::{PeerInfo, ServiceInfo, ReplicaInfo, SubscriptionInfo, PageBounds, DataInfo, TimeBounds, ServiceState};
 use dsf_core::prelude::*;
 use tokio::sync::{mpsc::{UnboundedSender, unbounded_channel}, oneshot::{Sender as OneshotSender, self}};
-use tracing::error;
+use tracing::{error, info, debug};
 
 use crate::{
     core::{
         store::{AsyncStore, DataStore},
-        services::ServiceInst,
+        services::{ServiceInst, build_service_info},
         replicas::ReplicaInst,
     },
-    error::Error,
+    error::Error, rpc::UpdateFn, store::object::ObjectIdentifier,
 };
 
 pub mod data;
@@ -55,6 +55,9 @@ pub struct AsyncCore {
 #[derive(PartialEq, Debug)]
 pub enum CoreOp {
     ServiceGet(Id),
+    ServiceCreate(Service, Vec<Container>),
+    ServiceRegister(Id, Vec<Container>),
+
     GetData{
         service_id: Id,
         page_bounds: PageBounds,
@@ -62,13 +65,18 @@ pub enum CoreOp {
     StoreData{
         service_id: Id,
         pages: Vec<Container>,
-    }
+    },
+
+    GetObject(Id, ObjectIdentifier),
+    StoreObject(Id, Container),
 }
 
 #[derive(PartialEq, Debug)]
 pub enum CoreRes {
     Service(ServiceInfo),
     Peer(PeerInfo),
+    Data(Vec<(DataInfo, Container)>),
+    Object(Container),
     NotFound,
     Error(Error),
 }
@@ -141,8 +149,22 @@ impl AsyncCore {
             CoreOp::ServiceGet(id) => core.service_get(&id).await
                 .map(CoreRes::Service)
                 .unwrap_or(CoreRes::NotFound),
-            CoreOp::GetData { service_id, page_bounds } => todo!(),
+            CoreOp::ServiceRegister(id, pages) => core.service_register(id, pages).await
+                .map(CoreRes::Service)
+                .unwrap_or(CoreRes::NotFound),
+            CoreOp::ServiceCreate(service, pages) => core.service_create(service, pages).await
+                .map(CoreRes::Service)
+                .unwrap_or(CoreRes::NotFound),
+
+            CoreOp::GetData { service_id, page_bounds } => core.fetch_data(&service_id, &page_bounds, &TimeBounds::default()).await.map(CoreRes::Data)
+            .unwrap_or(CoreRes::NotFound),
             CoreOp::StoreData { service_id, pages } => todo!(),
+
+            CoreOp::GetObject(service_id, obj) => core
+                .get_object(&service_id, obj).await
+                .map(|o| o.map(CoreRes::Object).unwrap_or(CoreRes::NotFound))
+                .unwrap_or(CoreRes::NotFound),
+            CoreOp::StoreObject(_, _) => todo!(),
         }
     }
 
@@ -164,4 +186,48 @@ impl AsyncCore {
         }
     }
 
+    /// Async dispatch to [Core::service_create]
+    pub async fn service_create(&self, service: Service, pages: Vec<Container>) -> Result<ServiceInfo, Error>  {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((CoreOp::ServiceCreate(service, pages), tx)) {
+            error!("Failed to enqueue service create operation: {e:?}");
+            return Err(Error::Closed)
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Service(info)) => Ok(info),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(Error::Unknown),
+            _ => unreachable!()
+        }
+    }
+
+    /// Async dispatch to [Core::service_register]
+    pub async fn service_register(&self, id: Id, pages: Vec<Container>) -> Result<ServiceInfo, Error>  {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((CoreOp::ServiceRegister(id, pages), tx)) {
+            error!("Failed to enqueue service register operation: {e:?}");
+            return Err(Error::Closed)
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Service(info)) => Ok(info),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(Error::Unknown),
+            _ => unreachable!()
+        }
+    }
+
+}
+
+impl KeySource for AsyncCore {
+    fn keys(&self, id: &Id) -> Option<Keys> {
+        todo!()
+    }
 }

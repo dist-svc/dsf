@@ -31,7 +31,7 @@ impl Core {
         service_id: &Id,
         page_bounds: &PageBounds,
         _time_bounds: &TimeBounds,
-    ) -> Result<Vec<DataInst>, Error> {
+    ) -> Result<Vec<(DataInfo, Container)>, Error> {
         // Get service info for object decoding
         let service = match self.service_get(service_id).await {
             Some(s) => s,
@@ -55,7 +55,7 @@ impl Core {
         let mut results = Vec::with_capacity(data.len());
         for d in data.drain(..) {
             let i = DataInfo::from_block(&d, &keys)?;
-            results.push(DataInst { info: i, page: d })
+            results.push((i, d))
         }
 
         Ok(results)
@@ -65,7 +65,7 @@ impl Core {
         &self,
         service_id: &Id,
         f: F,
-    ) -> Result<Option<DataInst>, Error> {
+    ) -> Result<Option<Container>, Error> {
         // Fetch service info for object decoding
         let service = match self.service_get(service_id).await {
             Some(s) => s,
@@ -87,17 +87,27 @@ impl Core {
             Err(e) => return Err(Error::Store(e)),
         };
 
-        let i = DataInfo::from_block(&object, &keys)?;
-
-        Ok(Some(DataInst {
-            info: i,
-            page: object,
-        }))
+        Ok(Some(object))
     }
 
     /// Store data for a given service
-    pub async fn store_data<T: ImmutableData>(&self, page: &Container<T>) -> Result<(), Error> {
+    pub async fn store_data<T: ImmutableData>(&self, service_id: &Id, page: &Container<T>) -> Result<(), Error> {
+        // Fetch service info for object verification
+        let service = match self.service_get(service_id).await {
+            Some(s) => s,
+            None => return Err(Error::NotFound),
+        };
+        let _keys = Keys {
+            pub_key: Some(service.public_key.clone()),
+            sec_key: service.secret_key.clone(),
+            ..Default::default()
+        };
+
+        // TODO: verify and decode/encode objects as required for storage
+
         // TODO: Add data to local cache
+
+        // TODO: update associated service information
 
         // Start data store operation
         // This uses a task to dispatch the operation without blocking

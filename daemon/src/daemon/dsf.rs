@@ -26,13 +26,10 @@ use dsf_core::service::Publisher;
 use kad::prelude::*;
 use kad::table::NodeTable;
 
-use crate::core::subscribers::SubscriberManager;
-
-use super::net::{ByteSink, NetIf, NetOp, NetSink};
-
 use crate::error::Error;
 use crate::store::Store;
 
+use super::net::{ByteSink, NetIf, NetOp, NetSink};
 use super::dht::{dht_reducer, DsfDhtMessage};
 use super::DsfOptions;
 
@@ -50,7 +47,7 @@ pub struct Dsf<Net = NetSink> {
     last_primary: Option<Container>,
 
     /// Core management of services, peers, etc.
-    core: AsyncCore,
+    pub(super) core: AsyncCore,
 
     /// Distributed Database
     dht: DsfDht,
@@ -201,152 +198,8 @@ where
 
         Ok(())
     }
-
-    pub fn service_register(
-        &mut self,
-        id: &Id,
-        pages: Vec<Container>,
-    ) -> Result<ServiceInfo, Error> {
-        debug!("Adding service: {} to store", id);
-
-        debug!("found {} pages", pages.len());
-        // Fetch primary page
-        let primary_page = match pages.iter().find(|p| {
-            let h = p.header();
-            h.kind().is_page() && !h.flags().contains(Flags::SECONDARY) && &p.id() == id
-        }) {
-            Some(p) => p.clone(),
-            None => return Err(Error::NotFound),
-        };
-
-        // Fetch replica pages
-        let replicas: Vec<(Id, &Container)> = pages
-            .iter()
-            .filter(|p| {
-                let h = p.header();
-                h.kind().is_page()
-                    && h.flags().contains(Flags::SECONDARY)
-                    && h.application_id() == 0
-                    && h.kind() == PageKind::Replica.into()
-            })
-            .filter_map(|p| {
-                let peer_id = match p.info().map(|i| i.peer_id()) {
-                    Ok(Some(v)) => v,
-                    _ => return None,
-                };
-
-                Some((peer_id.clone(), p))
-            })
-            .collect();
-
-        debug!("found {} replicas", replicas.len());
-
-        if &primary_page.id() == id {
-            debug!("Registering service for matching peer");
-        }
-
-        // Fetch service instance
-        let info = match self.services.known(id) {
-            true => {
-                info!("updating existing service");
-
-                // Apply update to known instance
-                self.services
-                    .update_inst(id, |s| {
-                        // Apply primary page update
-                        if s.apply_update(&primary_page).unwrap() {
-                            s.primary_page = Some(primary_page.clone());
-                            s.last_updated = Some(SystemTime::now());
-                        }
-                    })
-                    .unwrap()
-            }
-            false => {
-                info!("creating new service entry");
-
-                // Create instance from page
-                let service = match Service::load(&primary_page) {
-                    Ok(s) => s,
-                    Err(e) => return Err(e.into()),
-                };
-
-                // Register in service tracking
-                self.services
-                    .register(
-                        service,
-                        &primary_page,
-                        ServiceState::Located,
-                        Some(SystemTime::now()),
-                    )
-                    .unwrap()
-            }
-        };
-
-        // Store primary page
-        self.data().store_data(&primary_page)?;
-
-        debug!("Updating replicas");
-
-        // Update listed replicas
-        for (peer_id, page) in &replicas {
-            // TODO: handle this error condition properly
-            if let Err(e) = self.replicas.create_or_update(id, peer_id, page) {
-                error!("Failed to store replica information: {:?}", e);
-            }
-        }
-
-        debug!("Service registered: {:?}", info);
-
-        Ok(info)
-    }
 }
 
-impl<Net> dsf_core::keys::KeySource for Dsf<Net>
-where
-    Dsf<Net>: NetIf<Interface = Net>,
-{
-    fn keys(&self, id: &Id) -> Option<dsf_core::keys::Keys> {
-        // Short circuit if looking for our own keys
-        if *id == self.id() {
-            return Some(self.service.keys());
-        }
-
-        // Check key cache for matching keys
-        if let Some(keys) = self.key_cache.get(id) {
-            return Some(keys.clone());
-        }
-
-        // Find public key from source
-        let (pub_key, sec_key) = if let Some(s) = self.services.find(id) {
-            (Some(s.public_key), s.secret_key)
-        } else if let Some(p) = self.peers.find(id) {
-            if let PeerState::Known(pk) = p.state() {
-                (Some(pk), None)
-            } else {
-                (None, None)
-            }
-        } else if let Some(e) = self.dht.nodetable().contains(id) {
-            if let PeerState::Known(pk) = e.info().state() {
-                (Some(pk), None)
-            } else {
-                (None, None)
-            }
-        } else {
-            (None, None)
-        };
-
-        match pub_key {
-            Some(pk) => {
-                let mut keys = Keys::new(pk);
-                if let Some(sk) = sec_key {
-                    keys.sec_key = Some(sk);
-                }
-                Some(keys)
-            }
-            None => None,
-        }
-    }
-}
 
 impl<Net> Dsf<Net>
 where
