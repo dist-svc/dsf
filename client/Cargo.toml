@@ -46,7 +46,7 @@ anyhow = "1.0.71"
 reqwest = { version = "0.11.18", default_features = false, features = [ "json", "rustls-tls" ]}
 
 dsf-core = { version = "0.3.0", features = [ "serde", "std" ] }
-dsf-rpc = { version = "0.3.0" }
+dsf-rpc = { version = "0.3.0", default_features = false, features = [ "std" ] }
 
 
 [[bin]]
