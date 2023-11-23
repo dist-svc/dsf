@@ -72,6 +72,10 @@ pub struct ServiceIdentifier {
     /// Global service ID
     pub id: Option<Id>,
 
+    #[clap(short = 's', long = "short-id", group = "identifier")]
+    /// Short service ID
+    pub short_id: Option<ShortId>,
+
     #[clap(short = 'n', long = "index", group = "identifier")]
     /// Local service index
     pub index: Option<usize>,
@@ -81,6 +85,15 @@ impl ServiceIdentifier {
     pub fn id(id: Id) -> Self {
         Self {
             id: Some(id),
+            short_id: None,
+            index: None,
+        }
+    }
+
+    pub fn short(short_id: ShortId) -> Self {
+        Self {
+            id: None,
+            short_id: Some(short_id),
             index: None,
         }
     }
@@ -88,6 +101,7 @@ impl ServiceIdentifier {
     pub fn index(index: usize) -> Self {
         Self {
             id: None,
+            short_id: None,
             index: Some(index),
         }
     }
@@ -108,6 +122,18 @@ impl From<Id> for ServiceIdentifier {
 impl From<&Id> for ServiceIdentifier {
     fn from(id: &Id) -> Self {
         Self::id(id.clone())
+    }
+}
+
+impl From<ShortId> for ServiceIdentifier {
+    fn from(short_id: ShortId) -> Self {
+        Self::short(short_id)
+    }
+}
+
+impl From<&ShortId> for ServiceIdentifier {
+    fn from(short_id: &ShortId) -> Self {
+        Self::short(short_id.clone())
     }
 }
 

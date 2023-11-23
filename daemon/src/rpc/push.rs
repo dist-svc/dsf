@@ -36,8 +36,7 @@ impl<T: Engine> PushData for T {
         info!("Push: {:?}", &options);
 
         // Resolve service id / index to a service instance
-        let svc = self.svc_resolve(options.service).await?;
-        let _info = self.svc_get(svc.id()).await?;
+        let _info = self.svc_get(options.service).await?;
 
         // TODO: Parse RPC data to container and validate
 

@@ -40,8 +40,7 @@ impl<T: Engine> RegisterService for T {
         info!("Register: {:?}", &options);
 
         // Resolve service id / index to a service instance
-        let svc = self.svc_resolve(options.service).await?;
-        let info = self.svc_get(svc.id()).await?;
+        let info = self.svc_get(options.service).await?;
 
         // Locate or generate a primary page for the service
         let primary_page = match fetch_primary(self, &info).await {
@@ -75,10 +74,10 @@ impl<T: Engine> RegisterService for T {
         debug!("Saving pages to DHT: {:?}", pages);
 
         // Store new page(s) in the DHT
-        let peers = match self.dht_put(svc.id(), pages).await {
+        let peers = match self.dht_put(info.id(), pages).await {
             Ok((v, _i)) => v.len(),
             Err(e) => {
-                error!("Failed to store pages for {:#}: {:?}", svc.id(), e);
+                error!("Failed to store pages for {:#}: {:?}", info.id(), e);
                 0
             }
         };

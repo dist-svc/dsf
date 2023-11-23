@@ -74,19 +74,9 @@ where
                         error!("Failed to send operation response: {:?}", e);
                     };
                 }
-                OpKind::ServiceResolve(i) => {
-                    let r = self
-                        .resolve_service(&i)
-                        .map(|s| Ok(Res::Service(s)))
-                        .unwrap_or(Err(CoreError::NotFound));
-
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    };
-                }
-                OpKind::ServiceGet(id) => {
+                OpKind::ServiceGet(ident) => {
                     tokio::task::spawn(async move {
-                        let r = core.service_get(id.clone()).await
+                        let r = core.service_get(ident.clone()).await
                             .map(|s| Ok(Res::ServiceInfo(s)))
                             .unwrap_or(Err(CoreError::NotFound));
 
@@ -302,7 +292,14 @@ where
                     });
                 }
                 OpKind::PeerCreateUpdate(id, address, pub_key, flags) => {
-                    let p = self.peers().find_or_create(id, address, pub_key, flags);
+                    let peer_state = match pub_key {
+                        Some(k) => PeerState::Known(k),
+                        None => PeerState::Unknown,
+                    };
+
+                    let mut peer_info = PeerInfo::new(id, address, peer_state, 0, None);
+                    peer_info.flags = flags;
+                    let p = self.core.peer_find_or_create(peer_info).await?;
 
                     if let Err(e) = done.try_send(Ok(Res::Peers(vec![p], None))) {
                         error!("Failed to send operation response: {:?}", e);
@@ -310,8 +307,9 @@ where
                 }
                 OpKind::PeerGet(id) => {
                     let r = self
-                        .peers()
-                        .find(&id)
+                        .core
+                        .peer_get(id.into())
+                        .await
                         .map(|p| Ok(Res::Peers(vec![p], None)))
                         .unwrap_or(Err(CoreError::NotFound));
 
@@ -320,7 +318,7 @@ where
                     };
                 }
                 OpKind::PeerList => {
-                    let r = self.peers().list().drain(..).map(|(_id, p)| p).collect();
+                    let r = self.core.peer_list(Default::default()).await?;
 
                     if let Err(e) = done.try_send(Ok(Res::Peers(r, None))) {
                         error!("Failed to send operation response: {:?}", e);
@@ -329,32 +327,10 @@ where
                 OpKind::ObjectGet(id, sig) => {
                     let mut page = None;
 
-                    // Attempt to fetch from services in memory
-                    match self
-                        .services()
-                        .with(&id, |s| s.primary_page.clone())
-                        .flatten()
-                    {
-                        Some(p) if p.signature() == sig => page = Some(p),
-                        _ => (),
-                    }
-                    match self
-                        .services()
-                        .with(&id, |s| s.replica_page.clone())
-                        .flatten()
-                    {
-                        Some(p) if p.signature() == sig => page = Some(p),
-                        _ => (),
-                    }
+                    // Fetch object
+                    let page = self.core.object_get(i&d, sig.into()).await?;
 
-                    // Otherwise fallback to db
-                    if page.is_none() {
-                        if let Some(d) = self.data().get_object(&id, &sig)? {
-                            page = Some(d.page);
-                        }
-                    }
-
-                    // And return the response object
+                    // And return the response object if found
                     let r = match page {
                         Some(p) => Ok(Res::Pages(vec![p], None)),
                         _ => Err(CoreError::NotFound),
@@ -454,62 +430,6 @@ where
         Ok(())
     }
 
-    /// Shared helper for resolving service identifiers
-    pub(crate) fn resolve_identifier(
-        &mut self,
-        identifier: &ServiceIdentifier,
-    ) -> Result<Id, Error> {
-        // Short circuit if ID specified or error if none
-        let index = match (&identifier.id, identifier.index) {
-            (Some(id), _) => return Ok(id.clone()),
-            (None, None) => {
-                error!("service id or index must be specified");
-                return Err(Error::UnknownService);
-            }
-            (_, Some(index)) => index,
-        };
-
-        match self.services().index_to_id(index) {
-            Some(id) => Ok(id),
-            None => {
-                error!("no service matching index: {}", index);
-                Err(Error::UnknownService)
-            }
-        }
-    }
-
-    /// Shared helper for resolving peer identifiers
-    pub(crate) fn resolve_peer_identifier(
-        &mut self,
-        identifier: &ServiceIdentifier,
-    ) -> Result<Id, Error> {
-        // Short circuit if ID specified or error if none
-        let index = match (&identifier.id, identifier.index) {
-            (Some(id), _) => return Ok(id.clone()),
-            (None, None) => {
-                error!("service id or index must be specified");
-                return Err(Error::Core(CoreError::NoPeerId));
-            }
-            (_, Some(index)) => index,
-        };
-
-        match self.peers().index_to_id(index) {
-            Some(id) => Ok(id),
-            None => {
-                error!("no peer matching index: {}", index);
-                Err(Error::Core(CoreError::UnknownPeer))
-            }
-        }
-    }
-
-    fn resolve_service(&mut self, ident: &ServiceIdentifier) -> Option<Service> {
-        let id = match self.resolve_identifier(ident) {
-            Ok(v) => v,
-            Err(_) => return None,
-        };
-
-        self.services().find_copy(&id)
-    }
 }
 
 /// Handle for executing basic operations via daemon

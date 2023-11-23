@@ -231,6 +231,7 @@ impl RegisterOptions {
             service: ServiceIdentifier {
                 id: Some(id),
                 index: None,
+                short_id: None,
             },
             no_replica: false,
         }

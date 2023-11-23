@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use tracing::{debug, info, warn, error};
 
-use dsf_rpc::{ServiceInfo, ServiceState, ServiceFlags};
+use dsf_rpc::{ServiceInfo, ServiceState, ServiceFlags, PageBounds, ServiceIdentifier};
 use dsf_core::{prelude::*, types::ShortId};
 
 use crate::{error::Error, core::store::DataStore, store::object::ObjectIdentifier};
@@ -165,6 +165,22 @@ impl Core {
         debug!("Service registered: {:?}", info);
 
         Ok(info)
+    }
+
+    pub async fn service_get(&self, ident: &ServiceIdentifier) -> Option<ServiceInfo> {
+        // Service are cached so can be fetched from in-memory storage
+        match ident {
+            ServiceIdentifier::Id(id) => self.services.get(id),
+            ServiceIdentifier::Index(index) => self.services.iter().find(|s| s.info.index == index),
+            ServiceIdentifier::ShortId(short_id) => self.services.iter().find(|s| s.info.short_id == short_id),
+        }.map(|s| s.info.clone() )
+    }
+
+    pub async fn service_list(&self, bounds: PageBounds) -> Vec<ServiceInfo> {
+        // Service are cached so can be fetched from in-memory storage
+
+        // TODO: apply bounds / filtering
+        self.services.iter().map(|s| s.info.clone() ).collect();
     }
 
     /// Helper to load services from the [AsyncStore], called at start

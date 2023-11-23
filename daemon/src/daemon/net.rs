@@ -427,7 +427,7 @@ where
     /// Create a network operation for the given request
     ///
     /// This sends the provided request to the listed peers with retries and timeouts.
-    pub fn net_op(&mut self, peers: Vec<Peer>, req: net::Request) -> NetFuture {
+    pub fn net_op(&mut self, peers: Vec<PeerInfo>, req: net::Request) -> NetFuture {
         let req_id = req.id;
 
         // Setup response channels
@@ -757,7 +757,7 @@ where
     fn handle_dsf(
         &mut self,
         from: Id,
-        peer: Peer,
+        peer: PeerInfo,
         req: net::RequestBody,
     ) -> Result<net::ResponseBody, DaemonError> {
         match req {
@@ -931,7 +931,7 @@ where
 
     fn handle_dsf_delegated<T: 'static + Sink<NetResponse> + Unpin + Send>(
         &mut self,
-        peer: &Peer,
+        peer: &PeerInfo,
         req_id: RequestId,
         req: &net::Request,
         mut tx: T,

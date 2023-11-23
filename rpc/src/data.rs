@@ -161,6 +161,7 @@ impl PublishOptions {
         Self {
             service: ServiceIdentifier {
                 id: Some(id),
+                short_id: None,
                 index: None,
             },
             kind: 0,
@@ -184,6 +185,7 @@ impl PushOptions {
         Self {
             service: ServiceIdentifier {
                 id: Some(id),
+                short_id: None,
                 index: None,
             },
             data,

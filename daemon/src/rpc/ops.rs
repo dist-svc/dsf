@@ -33,8 +33,7 @@ pub enum OpKind {
     DhtUpdate,
 
     /// Resolve a service identifier to a service instance
-    ServiceResolve(ServiceIdentifier),
-    ServiceGet(Id),
+    ServiceGet(ServiceIdentifier),
     ServiceCreate(Service, Container),
     ServiceRegister(Id, Vec<Container>),
     ServiceUpdate(Id, UpdateFn),
@@ -83,7 +82,6 @@ impl core::fmt::Debug for OpKind {
             Self::DhtPut(id, pages) => f.debug_tuple("DhtPut").field(id).field(pages).finish(),
             Self::DhtUpdate => f.debug_tuple("DhtUpdate").finish(),
 
-            Self::ServiceResolve(arg0) => f.debug_tuple("ServiceResolve").field(arg0).finish(),
             Self::ServiceGet(id) => f.debug_tuple("ServiceGet").field(id).finish(),
             Self::ServiceList(opts) => f.debug_tuple("ServiceList").field(opts).finish(),
 
@@ -250,17 +248,9 @@ pub trait Engine: Sync + Send {
         }
     }
 
-    /// Resolve a service index to ID
-    async fn svc_resolve(&self, identifier: ServiceIdentifier) -> Result<Service, CoreError> {
-        match self.exec(OpKind::ServiceResolve(identifier)).await? {
-            Res::Service(s) => Ok(s),
-            _ => Err(CoreError::Unknown),
-        }
-    }
-
     /// Fetch a service object by ID
-    async fn svc_get(&self, service: Id) -> Result<ServiceInfo, CoreError> {
-        match self.exec(OpKind::ServiceGet(service)).await? {
+    async fn svc_get(&self, ident: ServiceIdentifier) -> Result<ServiceInfo, CoreError> {
+        match self.exec(OpKind::ServiceGet(ident)).await? {
             Res::ServiceInfo(s) => Ok(s),
             _ => Err(CoreError::Unknown),
         }

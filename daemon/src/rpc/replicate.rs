@@ -38,8 +38,7 @@ impl<T: Engine> ReplicateService for T {
         info!("Replicate: {:?}", &options);
 
         // Resolve service id / index to a service instance
-        let svc = self.svc_resolve(options.service).await?;
-        let info = self.svc_get(svc.id()).await?;
+        let info = self.svc_get(options.service).await?;
 
         // Fetch or generate replica page
         let p = fetch_replica(self, &info).await?;
@@ -48,17 +47,17 @@ impl<T: Engine> ReplicateService for T {
         let replica_version = Some(p.header().index());
 
         // Store replica page in DHT
-        let peers = match self.dht_put(svc.id(), vec![p]).await {
+        let peers = match self.dht_put(info.id.clone(), vec![p]).await {
             Ok((peers, _info)) => peers.len(),
             Err(e) => {
-                error!("Failed to store pages for {:#}: {:?}", svc.id(), e);
+                error!("Failed to store pages for {:#}: {:?}", info.id, e);
                 0
             }
         };
 
         // TODO: return registered peer count
         Ok(RegisterInfo {
-            page_version: svc.version(),
+            page_version: info.index,
             replica_version,
             peers,
         })

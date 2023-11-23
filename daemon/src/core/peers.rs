@@ -14,6 +14,8 @@ use dsf_rpc::{PeerInfo, PeerAddress, PeerFlags, PeerState};
 
 use super::{Core, store::AsyncStore};
 
+/// HACK: alias to mitigate breakage from Peer -> PeerInfo migration
+pub type Peer = PeerInfo;
 
 impl Core {
     pub fn find_peer(&self, id: &Id) -> Option<PeerInfo> {
@@ -50,6 +52,7 @@ impl Core {
             id, address, state
         );
 
+        // TODO: assign index? drop indexes as cooked?
         let peer = PeerInfo::new(id.clone(), address, state, 0, None);
 
         self.peers.insert(id.clone(), peer.clone());

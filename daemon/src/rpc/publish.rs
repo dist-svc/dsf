@@ -38,8 +38,7 @@ impl<T: Engine> PublishData for T {
         info!("Publish: {:?}", &options);
 
         // Resolve service id / index to a service instance
-        let svc = self.svc_resolve(options.service).await?;
-        let info = self.svc_get(svc.id()).await?;
+        let info = self.svc_get(options.service).await?;
 
         // Check we have private keys for signing data objects
         if info.private_key.is_none() {

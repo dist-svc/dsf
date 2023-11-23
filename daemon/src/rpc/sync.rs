@@ -42,8 +42,7 @@ impl<T: Engine> SyncData for T {
         info!("Sync: {:?}", &options);
 
         // Resolve service id / index to a service instance
-        let svc = self.svc_resolve(options.service).await?;
-        let info = self.svc_get(svc.id()).await?;
+        let info = self.svc_get(options.service).await?;
 
         // Resolve replicas / peers for connection
         let mut peers = vec![];
@@ -195,7 +194,7 @@ impl<T: Engine> SyncData for T {
             }
         }
         if let Some(p) = last_page {
-            self.svc_register(svc.id(), vec![p.to_owned()]).await?;
+            self.svc_register(info.id.clone(), vec![p.to_owned()]).await?;
         }
 
         Ok(SyncInfo {
