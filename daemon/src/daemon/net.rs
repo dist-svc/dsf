@@ -8,15 +8,7 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 use std::time::{Duration, SystemTime};
 
-use dsf_core::types::ShortId;
-use dsf_core::types::{
-    address::{IPV4_BROADCAST, IPV6_BROADCAST},
-    kinds::Kind,
-};
-use dsf_rpc::{
-    LocateOptions, QosPriority, RegisterOptions, ServiceFlags, ServiceIdentifier, ServiceState,
-    SubscribeOptions, PeerInfo, PeerAddress, PeerState, PeerFlags, DataInfo, SubscriptionKind
-};
+
 use kad::common::message;
 use log::{debug, error, info, trace, warn};
 
@@ -33,6 +25,15 @@ use tracing::{span, Level};
 use dsf_core::net::{self, Status};
 use dsf_core::prelude::*;
 use dsf_core::wire::Container;
+use dsf_core::types::ShortId;
+use dsf_core::types::{
+    address::{IPV4_BROADCAST, IPV6_BROADCAST},
+    kinds::Kind,
+};
+use dsf_rpc::{
+    LocateOptions, QosPriority, RegisterOptions, ServiceFlags, ServiceIdentifier, ServiceState,
+    SubscribeOptions, PeerInfo, PeerAddress, PeerState, PeerFlags, DataInfo, SubscriptionKind, SubscriptionInfo,
+};
 
 use crate::daemon::Dsf;
 use crate::error::Error as DaemonError;
@@ -250,7 +251,7 @@ where
                                 id,
                                 container.header().index()
                             );
-                            match self.core.service_register(&id, vec![container.to_owned()]) {
+                            match self.core.service_register(id.clone(), vec![container.to_owned()]).await {
                                 Ok(_) => Status::Ok,
                                 Err(e) => {
                                     error!("Failed to update service: {:?}", e);
@@ -295,11 +296,16 @@ where
                     let _ = o.send((a, None, NetMessage::response(r))).await;
 
                     // TODO: forward to subscribers
-                    match self.core.subscribers_list(&id).await {
+                    match self.core.subscriber_list(id.clone()).await {
                         Ok(subscribers) if subscribers.len() > 0 => {
                             let mut peer_subs = Vec::new();
                             for s in subscribers {
-                                match self.core.find_peer(s.peer_id).await {
+                                let peer_id = match &s.kind {
+                                    SubscriptionKind::Peer(id) => id,
+                                    _ => continue,
+                                };
+
+                                match self.core.peer_get(peer_id).await {
                                     Ok(p) => peer_subs.push(p),
                                     _ => (),
                                 }
@@ -325,7 +331,7 @@ where
                         }
                     }
                 }
-                None => debug!("No matching service for ID: {:#}", id),
+                Err(DaemonError::NotFound) => debug!("No matching service for ID: {:#}", id),
                 _ => debug!("Not subscribed to service ID: {:#}", id),
             }
 
@@ -347,16 +353,16 @@ where
 
         // Upgrade to symmetric mode on incoming symmetric message
         // TODO: there needs to be another transition for this in p2p comms
+        let from = message.from();
         if message.flags().contains(Flags::SYMMETRIC_MODE) {
-            self.peers().update(&message.from(), |p| {
+            self.core.peer_update(&message.from(), Box::new(move |p| {
                 if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
                     warn!(
-                        "Enabling symmetric message crypto for peer: {}",
-                        message.from()
+                        "Enabling symmetric message crypto for peer: {from}"
                     );
                     p.flags |= PeerFlags::SYMMETRIC_ENABLED;
                 }
-            });
+            }));
         }
 
         trace!("Net message: {:?}", message);
@@ -364,7 +370,7 @@ where
         // Route responses as required internally
         match message {
             NetMessage::Response(resp) => {
-                self.handle_net_resp(msg.address, resp)?;
+                self.handle_net_resp(msg.address, resp).await?;
             }
             NetMessage::Request(req) => {
                 let (tx, mut rx) = mpsc::channel(1);
@@ -397,15 +403,26 @@ where
         let buff = vec![0u8; 10 * 1024];
 
         // Fetch cached keys if available, otherwise use service keys
-        let (enc_key, sym) =
-            match id.map(|id| (self.keys(id), self.peers().filter(id, |p| p.flags))) {
-                Some((Some(k), Some(f))) if f.contains(PeerFlags::SYMMETRIC_ENABLED) => (k, true),
-                // TODO: disabled to avoid attempting to encode using peer private key when symmetric mode is disabled
-                // Not _entirely_ sure why this needed to be there at all...
-                // Some((Some(k), _)) => (k, false),
-                _ => (self.service().keys(), false),
-            };
+        let (enc_key, sym) = match id {
+            Some(id) => {
+                // Fetch peer information
+                // TODO: un async-ify this?
+                let p_id = id.clone();
+                let mut core = self.core.clone();
+                let p = futures::executor::block_on(async move { core.peer_get(p_id).await });
 
+                match (self.key_cache.get(id), p) {
+                    (Some(k), Ok(p)) => (k.clone(), p.flags.contains(PeerFlags::SYMMETRIC_ENABLED)),
+                    // TODO: disabled to avoid attempting to encode using peer private key when symmetric mode is disabled
+                    // Not _entirely_ sure why this needed to be there at all...
+                    // Some((Some(k), _)) => (k, false),
+                    _ => (self.service().keys(), false),
+                }
+            },
+            None => (self.service().keys(), false)
+        };
+
+        // Set symmetric flag if enabled
         if sym {
             *msg.flags_mut() |= Flags::SYMMETRIC_MODE;
         }
@@ -451,7 +468,11 @@ where
             targets.push(((*p.address()).clone(), Some(p.id.clone())));
 
             // Update send counter
-            let _ = self.core.peer_update(&p.id, |p| p.info.sent += 1).await;
+            let p_id = p.id.clone();
+            let core = self.core.clone();
+            tokio::task::spawn(async move {
+                let _ = core.peer_update(&p_id, Box::new(|p| p.sent += 1)).await;
+            });
         }
 
         // Create net operation
@@ -525,7 +546,7 @@ where
     }
 
     /// Handle a received response message and generate an (optional) response
-    pub fn handle_net_resp(
+    pub async fn handle_net_resp(
         &mut self,
         addr: SocketAddr,
         resp: net::Response,
@@ -538,7 +559,7 @@ where
         // Generic net message processing here
         // TODO: we could forward peer object with the incoming request...
         let _peer =
-            match self.handle_base(&from, &addr.into(), &resp.common, Some(SystemTime::now())) {
+            match self.handle_base(&from, &addr.into(), &resp.common, Some(SystemTime::now())).await {
                 Some(p) => p,
                 None => return Ok(()),
             };
@@ -601,7 +622,7 @@ where
         );
 
         // Generic net message processing here
-        let peer = match self.handle_base(&from, &addr.into(), &req.common, Some(SystemTime::now()))
+        let peer = match self.handle_base(&from, &addr.into(), &req.common, Some(SystemTime::now())).await
         {
             Some(p) => p,
             None => return Ok(()),
@@ -621,13 +642,13 @@ where
 
         // Handle delegated messages
         } else if req.flags.contains(Flags::CONSTRAINED)
-            && self.handle_dsf_delegated(&peer, req_id, &req, tx.clone())?
+            && self.handle_dsf_delegated(&peer, req_id, &req, tx.clone()).await?
         {
             None
 
         // Handle normal DSF messages
         } else {
-            let dsf_resp = self.handle_dsf(from.clone(), peer, req.data)?;
+            let dsf_resp = self.handle_dsf(from.clone(), peer, req.data).await?;
             Some(net::Response::new(
                 own_id,
                 req_id,
@@ -650,7 +671,7 @@ where
         }
 
         // Update peer info
-        self.peers().update(&from, |p| p.info.sent += 1);
+        let _ = self.core.peer_update(&from, Box::new(|p| p.sent += 1)).await;
 
         trace!("returning response (to: {:?})\n {:?}", from, &resp);
 
@@ -662,7 +683,7 @@ where
     }
 
     /// Handles a base message, updating internal state for the sender
-    pub(crate) fn handle_base(
+    pub(crate) async fn handle_base(
         &mut self,
         id: &Id,
         address: &Address,
@@ -695,10 +716,10 @@ where
         // Find or create (and push) peer
         let peer = self.core.peer_create_or_update(
             PeerInfo{
-                id: d.clone(),
-                short_id: ShortId::from(&d),
+                id: id.clone(),
+                short_id: ShortId::from(id),
                 // Attach keys
-                state: c.public_key.map(PeerState::Known).unwrap_or(PeerState::Unknown),
+                state: c.public_key.clone().map(PeerState::Known).unwrap_or(PeerState::Unknown),
                 // Set address
                 address: match c.remote_address {
                     Some(a) => PeerAddress::Explicit(a),
@@ -735,7 +756,7 @@ where
     }
 
     /// Handle a DSF type message
-    fn handle_dsf(
+    async fn handle_dsf(
         &mut self,
         from: Id,
         peer: PeerInfo,
@@ -749,7 +770,7 @@ where
                     from, service_id
                 );
                 // Fetch service information, checking service exists / is known
-                let service = match self.core.service_get(service_id).await {
+                let service = match self.core.service_get(service_id.clone()).await {
                     Ok(s) if s.primary_page.is_some() => s,
                     _ => {
                         // Only known services can be subscribed
@@ -781,6 +802,7 @@ where
                         kind: SubscriptionKind::Peer(peer.id.clone()),
                         updated: Some(SystemTime::now()),
                         expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
+                        qos: QosPriority::None,
                     })
                     .await.unwrap();
 
@@ -914,7 +936,7 @@ where
         }
     }
 
-    fn handle_dsf_delegated<T: 'static + Sink<NetResponse> + Unpin + Send>(
+    async fn handle_dsf_delegated<T: 'static + Sink<NetResponse> + Unpin + Send>(
         &mut self,
         peer: &PeerInfo,
         req_id: RequestId,
@@ -983,7 +1005,7 @@ where
                 // Add subscriber to tracking
                 self.core.subscriber_create_or_update(SubscriptionInfo{
                     service_id: service_id.clone(),
-                    peer_id: peer.id.clone(),
+                    kind: SubscriptionKind::Peer(peer.id.clone()),
                     updated: Some(SystemTime::now()),
                     expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
                     qos: match req.flags.contains(Flags::QOS_PRIO_LATENCY) {
@@ -1061,5 +1083,25 @@ where
             }
             _ => Ok(false),
         }
+    }
+}
+
+impl<Net> KeySource for Dsf<Net>
+where
+    Dsf<Net>: NetIf<Interface = Net>,
+{
+    fn keys(&self, id: &Id) -> Option<Keys> {
+        // Check key cache first
+        if let Some(k) = self.key_cache.get(id) {
+            return Some(k.clone())
+        }
+
+        // Fallback to core
+        if let Some(k) = self.core.keys(id) {
+            // TODO: Update local cache?
+            return Some(k.clone())
+        }
+
+        None
     }
 }

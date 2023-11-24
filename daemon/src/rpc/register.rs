@@ -74,10 +74,10 @@ impl<T: Engine> RegisterService for T {
         debug!("Saving pages to DHT: {:?}", pages);
 
         // Store new page(s) in the DHT
-        let peers = match self.dht_put(info.id(), pages).await {
+        let peers = match self.dht_put(info.id.clone(), pages).await {
             Ok((v, _i)) => v.len(),
             Err(e) => {
-                error!("Failed to store pages for {:#}: {:?}", info.id(), e);
+                error!("Failed to store pages for {:#}: {:?}", info.id, e);
                 0
             }
         };

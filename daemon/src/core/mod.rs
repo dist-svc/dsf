@@ -1,9 +1,10 @@
 use std::{collections::HashMap, iter::FromIterator, time::SystemTime};
 
-use dsf_rpc::{PeerInfo, ServiceInfo, ReplicaInfo, SubscriptionInfo, PageBounds, DataInfo, TimeBounds, ServiceState, ServiceIdentifier};
-use dsf_core::prelude::*;
 use tokio::sync::{mpsc::{UnboundedSender, unbounded_channel}, oneshot::{Sender as OneshotSender, self}};
 use tracing::{error, info, debug};
+
+use dsf_rpc::{PeerInfo, ServiceInfo, ReplicaInfo, SubscriptionInfo, PageBounds, DataInfo, TimeBounds, ServiceState, ServiceIdentifier, PeerState};
+use dsf_core::prelude::*;
 
 use crate::{
     core::{
@@ -52,7 +53,6 @@ pub struct AsyncCore {
     tasks: UnboundedSender<(CoreOp, OneshotSender<CoreRes>)>,
 }
 
-#[derive(PartialEq, Debug)]
 pub enum CoreOp {
     ServiceGet(ServiceIdentifier),
     ServiceCreate(Service, Vec<Container>),
@@ -63,26 +63,34 @@ pub enum CoreOp {
     PeerGet(ServiceIdentifier),
     PeerList(PageBounds),
     PeerCreate(Id, Vec<Container>),
+    
     PeerUpdate(Id, PeerUpdateFn),
 
-    GetData{
-        service_id: Id,
-        page_bounds: PageBounds,
-    },
-    StoreData{
-        service_id: Id,
-        pages: Vec<Container>,
-    },
+    GetData(Id, PageBounds),
+    StoreData(Id, Vec<Container>),
 
     GetObject(Id, ObjectIdentifier),
     StoreObject(Id, Container),
+
+    GetKeys(Id),
+}
+
+impl core::fmt::Debug for CoreOp {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ServiceGet(id) => f.debug_tuple("ServiceGet").field(id).finish(),
+            // TODO: fill in debug impls
+            _ => f.debug_tuple("Something").finish(),
+        }
+    }
 }
 
 pub type PeerUpdateFn =
-    Box<dyn Fn(&mut PeerInfo) -> PeerInfo + Send + 'static>;
+    Box<dyn Fn(&mut PeerInfo) + Send + 'static>;
 
 #[derive(PartialEq, Debug)]
 pub enum CoreRes {
+    Ok,
     Service(ServiceInfo),
     Services(Vec<ServiceInfo>),
 
@@ -93,6 +101,8 @@ pub enum CoreRes {
     
     Object(Container),
     
+    Keys(Keys),
+
     NotFound,
     Error(Error),
 }
@@ -129,8 +139,8 @@ impl Core {
                 .map(CoreRes::Service)
                 .unwrap_or(CoreRes::NotFound),
 
-            CoreOp::ServiceList(bounds) => self.service_list(&bounds).await
-                .map(CoreRes::Service)
+            CoreOp::ServiceList(bounds) => self.service_list(bounds).await
+                .map(CoreRes::Services)
                 .unwrap_or(CoreRes::NotFound),
 
             CoreOp::ServiceRegister(id, pages) => self.service_register(id, pages).await
@@ -141,10 +151,12 @@ impl Core {
                 .map(CoreRes::Service)
                 .unwrap_or(CoreRes::NotFound),
 
-            CoreOp::GetData { service_id, page_bounds } => self.fetch_data(&service_id, &page_bounds, &TimeBounds::default()).await.map(CoreRes::Data)
-            .unwrap_or(CoreRes::NotFound),
+            CoreOp::GetData(service_id, page_bounds) => self.fetch_data(&service_id, &page_bounds, &TimeBounds::default()).await
+                .map(CoreRes::Data)
+                .unwrap_or(CoreRes::NotFound),
 
-            CoreOp::StoreData { service_id, pages } => todo!(),
+            CoreOp::StoreData(service_id, pages) => self.store_data(&service_id, pages).await
+                .map(|_| CoreRes::Ok).unwrap_or(CoreRes::NotFound),
 
             CoreOp::GetObject(service_id, obj) => self
                 .get_object(&service_id, obj).await
@@ -153,9 +165,25 @@ impl Core {
 
             CoreOp::StoreObject(_, _) => todo!(),
 
+            CoreOp::GetKeys(id) => self.get_keys(&id).map(CoreRes::Keys).unwrap_or(CoreRes::NotFound),
+
             // TODO: implement all core ops...
             _ => unimplemented!(),
         }
+    }
+
+    fn get_keys(&self, id: &Id) -> Option<Keys> {
+        if let Some(p) = self.peers.get(id) {
+            if let PeerState::Known(k) = p.state {
+                return Some(Keys{pub_key: Some(k.clone()), ..Default::default()})
+            }
+        }
+
+        if let Some(s) = self.services.get(id) {
+            return Some(s.info.keys())
+        }
+
+        None
     }
 
 }
@@ -251,7 +279,7 @@ impl AsyncCore {
 
         // Await operation completion
         match rx.await {
-            Ok(CoreRes::Services(info)) => Ok(info),
+            Ok(CoreRes::Service(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
             Err(_) => Err(Error::Unknown),
             _ => unreachable!()
@@ -302,13 +330,13 @@ impl AsyncCore {
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((CoreOp::PeerList(bounds), tx)) {
-            error!("Failed to enqueue service list operation: {e:?}");
+            error!("Failed to enqueue peer list operation: {e:?}");
             return Err(Error::Closed)
         }
 
         // Await operation completion
         match rx.await {
-            Ok(CoreRes::Services(info)) => Ok(info),
+            Ok(CoreRes::Peers(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
             Err(_) => Err(Error::Unknown),
             _ => unreachable!()
@@ -404,8 +432,25 @@ impl AsyncCore {
 
         // Await operation completion
         match rx.await {
-            Ok(CoreRes::Object(info)) => Ok(Some(info)),
-            Ok(CoreRes::NotFound) => Ok(None),
+            Ok(CoreRes::Ok) => Ok(()),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(Error::Unknown),
+            _ => unreachable!()
+        }
+    }
+
+    pub async fn keys_get(&self, some_id: &Id) -> Result<Keys, Error> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((CoreOp::GetKeys(some_id.clone()), tx)) {
+            error!("Failed to enqueue key get operation: {e:?}");
+            return Err(Error::Closed)
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Keys(k)) => Ok(k),
             Ok(CoreRes::Error(e)) => Err(e),
             Err(_) => Err(Error::Unknown),
             _ => unreachable!()
@@ -416,6 +461,13 @@ impl AsyncCore {
 
 impl KeySource for AsyncCore {
     fn keys(&self, id: &Id) -> Option<Keys> {
-        todo!()
+        let id = id.clone();
+
+        futures::executor::block_on(async move {
+            match self.keys_get(&id).await{
+                Ok(k) => Some(k),
+                _ => None,
+            }
+        })
     }
 }

@@ -54,7 +54,7 @@ impl<T: Engine> PubSub for T {
         info!("Subscribing to service: {:?}", options);
 
         // Lookup local service information
-        let target = match self.svc_resolve(options.service.clone()).await {
+        let target = match self.svc_get(options.service.clone()).await {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -75,12 +75,12 @@ impl<T: Engine> PubSub for T {
 
         // Attempt direct peer connection if available
         // TODO: this needs to be configurable / balanced based on QoS etc.
-        if let Ok(p) = self.peer_get(target.id()).await {
+        if let Ok(p) = self.peer_get(target.id.clone()).await {
             debug!("Found peer matching service ID, attempting direct subscription");
             peers.push(p);
         } else {
             // Resolve replicas via DHT
-            let replicas = find_replicas(self, target.id()).await?;
+            let replicas = find_replicas(self, target.id.clone()).await?;
 
             debug!("Located {} replicas", replicas.len());
 
@@ -102,11 +102,11 @@ impl<T: Engine> PubSub for T {
         debug!("Issuing subscribe request to {} peers", peers.len());
 
         // Issue subscription requests
-        let subs = do_subscribe(self, target.id(), &peers).await?;
+        let subs = do_subscribe(self, target.id.clone(), &peers).await?;
 
         // Update local service state
         self.svc_update(
-            target.id(),
+            target.id.clone(),
             Box::new(|svc, state| {
                 *state = ServiceState::Subscribed;
                 Ok(Res::Id(svc.id()))

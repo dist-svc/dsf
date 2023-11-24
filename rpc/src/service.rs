@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
 use clap::{Parser, Subcommand};
-use dsf_core::{options::Options, prelude::Service, wire::Container};
+use dsf_core::{options::Options, prelude::{Service, Keys}, wire::Container};
 
 use dsf_core::types::*;
 
@@ -47,6 +47,17 @@ bitflags::bitflags! {
         const ENCRYPTED = (1 << 1);
         const SUBSCRIBED = (1 << 2);
         const REPLICATED = (1 << 3);
+    }
+}
+
+impl ServiceInfo {
+    pub fn keys(&self) -> Keys {
+        Keys{
+            pub_key: Some(self.public_key.clone()),
+            pri_key: self.private_key.clone(),
+            sec_key: self.secret_key.clone(),
+            sym_keys: None,
+        }
     }
 }
 

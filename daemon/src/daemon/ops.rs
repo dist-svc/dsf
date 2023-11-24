@@ -16,10 +16,10 @@ use dsf_core::{
     error::Error as CoreError,
     prelude::{NetMessage, NetRequest, NetRequestBody},
     service::Service,
-    types::{Flags, Id},
+    types::{Flags, Id, ServiceKind},
     wire::Container,
 };
-use dsf_rpc::{PeerInfo, PeerAddress};
+use dsf_rpc::{PeerInfo, PeerAddress, SubscriptionInfo, PeerState};
 
 use crate::{
     core::{
@@ -123,6 +123,7 @@ where
                     }
                 }
                 OpKind::ServiceUpdate(id, f) => {
+                    tokio::task::spawn(async move {
                     let r = core
                         .service_update(id, f).await
                         .map(Res::ServiceInfo)
@@ -131,11 +132,13 @@ where
                     if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     }
+                });
                 }
                 OpKind::ServiceList(opts) => {
 
                 }
                 OpKind::SubscribersGet(id) => {
+                    tokio::task::spawn(async move {
                     let r = core
                         .subscriber_list(id.clone()).await
                         .map(Res::Subscribers)
@@ -144,6 +147,7 @@ where
                     if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     }
+                });
                 }
                 OpKind::Publish(_id, _info) => {
                     todo!("Implement publish RPC op")
@@ -290,52 +294,61 @@ where
                     });
                 }
                 OpKind::PeerCreateUpdate(id, address, pub_key, flags) => {
-                    let peer_state = match pub_key {
-                        Some(k) => PeerState::Known(k),
-                        None => PeerState::Unknown,
-                    };
+                    tokio::task::spawn(async move {
+                        let peer_state = match pub_key {
+                            Some(k) => PeerState::Known(k),
+                            None => PeerState::Unknown,
+                        };
 
-                    let mut peer_info = PeerInfo::new(id, address, peer_state, 0, None);
-                    peer_info.flags = flags;
-                    let p = self.core.peer_create_or_update(peer_info).await?;
+                        let mut peer_info = PeerInfo::new(id, address, peer_state, 0, None);
+                        peer_info.flags = flags;
+                        let r = core.peer_create_or_update(peer_info).await
+                            .map(|p| Res::Peers(vec![p], None))
+                            .map_err(|_| CoreError::NotFound);
 
-                    if let Err(e) = done.try_send(Ok(Res::Peers(vec![p], None))) {
-                        error!("Failed to send operation response: {:?}", e);
-                    };
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
                 }
                 OpKind::PeerGet(id) => {
-                    let r = self
-                        .core
-                        .peer_get(id.into())
+                    tokio::task::spawn(async move {
+                    let r = core
+                        .peer_get(&id)
                         .await
-                        .map(|p| Ok(Res::Peers(vec![p], None)))
-                        .unwrap_or(Err(CoreError::NotFound));
+                        .map(|p| Res::Peers(vec![p], None))
+                        .map_err(|_| CoreError::NotFound);
 
                     if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
+                });
                 }
                 OpKind::PeerList => {
-                    let r = self.core.peer_list(Default::default()).await?;
+                    tokio::task::spawn(async move {
+                    let r = core.peer_list(Default::default()).await
+                        .map(|v| Res::Peers(v, None))
+                        .map_err(|_| CoreError::NotFound);
 
-                    if let Err(e) = done.try_send(Ok(Res::Peers(r, None))) {
-                        error!("Failed to send operation response: {:?}", e);
-                    };
-                }
-                OpKind::ObjectGet(id, sig) => {
-                    let mut page = None;
-
-                    // Fetch object
-                    let page = self.core.object_get(i&d, sig.into()).await?;
-
-                    // And return the response object if found
-                    let r = match page {
-                        Some(p) => Ok(Res::Pages(vec![p], None)),
-                        _ => Err(CoreError::NotFound),
-                    };
                     if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     };
+                });
+                }
+                OpKind::ObjectGet(id, sig) => {
+                    tokio::task::spawn(async move {
+                        // Fetch object
+                        let page = core.object_get(&id, &sig).await;
+
+                        // And return the response object if found
+                        let r = match page {
+                            Ok(Some(p)) => Ok(Res::Pages(vec![p], None)),
+                            _ => Err(CoreError::NotFound),
+                        };
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
                 }
                 OpKind::ObjectPut(data) => {
                     // TODO: Lookup matching service / check prior to put
@@ -359,34 +372,38 @@ where
                     });
                 }
                 OpKind::ReplicaGet(id) => {
-                    let r = match core.replica_list(id.clone()).await {
-                        Ok(v) => Ok(Res::Replicas(v)),
-                        Err(e) => {
-                            error!("Failed to locate replicas for service: {:?}", id);
-                            Err(CoreError::Unknown)
-                        }
-                    };
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    };
+                    tokio::task::spawn(async move {
+                        let r = match core.replica_list(id.clone()).await {
+                            Ok(v) => Ok(Res::Replicas(v)),
+                            Err(e) => {
+                                error!("Failed to locate replicas for service: {:?}", id);
+                                Err(CoreError::Unknown)
+                            }
+                        };
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
                 }
                 OpKind::ReplicaUpdate(ref id, replicas) => {
-                    let resp = Ok(Res::Id(id.clone()));
-                    for r in replicas {
-                        match core
-                            .replica_create_or_update(id.clone(), r.info.peer_id.clone(), r.page.clone()).await
-                        {
-                            // TODO: return updated replica info?
-                            Ok(v) => (),
-                            Err(e) => {
-                                // TODO: propagate error?
-                                error!("Failed to update replica: {:?}", e);
+                    tokio::task::spawn(async move {
+                        let resp = Ok(Res::Id(id.clone()));
+                        for r in replicas {
+                            match core
+                                .replica_create_or_update(id.clone(), r.info.peer_id.clone(), r.page.clone()).await
+                            {
+                                // TODO: return updated replica info?
+                                Ok(v) => (),
+                                Err(e) => {
+                                    // TODO: propagate error?
+                                    error!("Failed to update replica: {:?}", e);
+                                }
                             }
                         }
-                    }
-                    if let Err(e) = done.try_send(resp) {
-                        error!("Failed to send operation response: {:?}", e);
-                    };
+                        if let Err(e) = done.try_send(resp) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
                 }
                 OpKind::Net(ref body, ref peers) => {
                     let req =

@@ -169,18 +169,27 @@ impl Core {
 
     pub async fn service_get(&self, ident: &ServiceIdentifier) -> Option<ServiceInfo> {
         // Service are cached so can be fetched from in-memory storage
-        match ident {
-            ServiceIdentifier::Id(id) => self.services.get(id),
-            ServiceIdentifier::Index(index) => self.services.iter().find(|s| s.info.index == index),
-            ServiceIdentifier::ShortId(short_id) => self.services.iter().find(|s| s.info.short_id == short_id),
-        }.map(|s| s.info.clone() )
+        // TODO: improve searching for non-id queries?
+        if let Some(id) = &ident.id {
+            return self.services.get(&id).map(|s| s.info.clone() )
+        }
+
+        if let Some(short_id) = &ident.short_id {
+            return self.services.iter().find(|(_id, s)| s.info.short_id == *short_id).map(|(_id, s)| s.info.clone() )
+        }
+
+        if let Some(index) = &ident.index {
+            return self.services.iter().find(|(_id, s)| s.info.index == *index).map(|(_id, s)| s.info.clone() )
+        }
+
+        None
     }
 
-    pub async fn service_list(&self, bounds: PageBounds) -> Vec<ServiceInfo> {
+    pub async fn service_list(&self, bounds: PageBounds) -> Result<Vec<ServiceInfo>, Error> {
         // Service are cached so can be fetched from in-memory storage
 
         // TODO: apply bounds / filtering
-        self.services.iter().map(|s| s.info.clone() ).collect();
+        Ok(self.services.iter().map(|(_id, s)| s.info.clone() ).collect())
     }
 
     /// Helper to load services from the [AsyncStore], called at start

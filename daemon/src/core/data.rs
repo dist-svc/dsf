@@ -11,7 +11,7 @@ use dsf_core::types::{Id, ImmutableData, Signature};
 use dsf_core::{keys::Keys, wire::Container};
 
 pub use dsf_rpc::data::DataInfo;
-use dsf_rpc::{PageBounds, TimeBounds};
+use dsf_rpc::{PageBounds, TimeBounds, ServiceIdentifier};
 
 use crate::{
     error::Error,
@@ -33,7 +33,7 @@ impl Core {
         _time_bounds: &TimeBounds,
     ) -> Result<Vec<(DataInfo, Container)>, Error> {
         // Get service info for object decoding
-        let service = match self.service_get(service_id).await {
+        let service = match self.service_get(&ServiceIdentifier::from(service_id)).await {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };
@@ -67,7 +67,7 @@ impl Core {
         f: F,
     ) -> Result<Option<Container>, Error> {
         // Fetch service info for object decoding
-        let service = match self.service_get(service_id).await {
+        let service = match self.service_get(&ServiceIdentifier::from(service_id)).await {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };
@@ -93,7 +93,7 @@ impl Core {
     /// Store data for a given service
     pub async fn store_data(&self, service_id: &Id, pages: Vec<Container>) -> Result<(), Error> {
         // Fetch service info for object verification
-        let service = match self.service_get(service_id).await {
+        let service = match self.service_get(&ServiceIdentifier::from(service_id)).await {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };

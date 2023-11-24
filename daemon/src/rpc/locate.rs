@@ -41,7 +41,7 @@ impl<T: Engine> ServiceRegistry for T {
         info!("Locating service: {:?}", opts);
 
         // Check for existing / local information
-        let local = self.svc_get(opts.id.clone()).await;
+        let local = self.svc_get(opts.id.clone().into()).await;
         let local = match local {
             Ok(i) => {
                 let page = match i.primary_page {

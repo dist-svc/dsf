@@ -57,7 +57,7 @@ impl<T: Engine> ReplicateService for T {
 
         // TODO: return registered peer count
         Ok(RegisterInfo {
-            page_version: info.index,
+            page_version: info.index as u32,
             replica_version,
             peers,
         })
