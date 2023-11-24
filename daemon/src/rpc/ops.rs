@@ -143,7 +143,8 @@ pub enum Res {
     Ids(Vec<Id>),
     Responses(HashMap<Id, NetResponse>),
     Sig(Signature),
-    Replicas(Vec<ReplicaInst>),
+    Replicas(Vec<ReplicaInfo>),
+    Subscribers(Vec<SubscriptionInfo>),
 }
 
 impl Res {

@@ -31,6 +31,9 @@ impl Core {
     ) -> PeerInfo {
         // Update and return existing peer
         if let Some(p) = self.peers.get_mut(&id) {
+
+            // Update address on change
+            // TODO: support multiple addresses
             p.update_address(address);
 
             if let Some(k) = key {

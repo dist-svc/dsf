@@ -115,19 +115,18 @@ where
                 }
                 // Handle special-case update of our own / peer service
                 OpKind::ServiceUpdate(id, f) if id == self.id() => {
-                    let svc = self.service();
                     let mut state = ServiceState::Created;
-                    let r = f(svc, &mut state);
+                    let r = f(&mut self.service, &mut state);
 
                     if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
                     }
                 }
                 OpKind::ServiceUpdate(id, f) => {
-                    let r = self
-                        .services()
-                        .with(&id, |inst| f(&mut inst.service, &mut inst.state))
-                        .unwrap_or(Err(CoreError::NotFound));
+                    let r = core
+                        .service_update(id, f).await
+                        .map(Res::ServiceInfo)
+                        .map_err(|_| CoreError::Unknown);
 
                     if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
@@ -137,10 +136,9 @@ where
 
                 }
                 OpKind::SubscribersGet(id) => {
-                    let r = self
-                        .subscribers()
-                        .find_peers(&id)
-                        .map(Res::Ids)
+                    let r = core
+                        .subscriber_list(id.clone()).await
+                        .map(Res::Subscribers)
                         .map_err(|_e| CoreError::Unknown);
 
                     if let Err(e) = done.try_send(r) {
@@ -299,7 +297,7 @@ where
 
                     let mut peer_info = PeerInfo::new(id, address, peer_state, 0, None);
                     peer_info.flags = flags;
-                    let p = self.core.peer_find_or_create(peer_info).await?;
+                    let p = self.core.peer_create_or_update(peer_info).await?;
 
                     if let Err(e) = done.try_send(Ok(Res::Peers(vec![p], None))) {
                         error!("Failed to send operation response: {:?}", e);
@@ -361,11 +359,11 @@ where
                     });
                 }
                 OpKind::ReplicaGet(id) => {
-                    let r = match self.replicas().find(&id) {
+                    let r = match core.replica_list(id.clone()).await {
                         Ok(v) => Ok(Res::Replicas(v)),
                         Err(e) => {
                             error!("Failed to locate replicas for service: {:?}", id);
-                            Err(e)
+                            Err(CoreError::Unknown)
                         }
                     };
                     if let Err(e) = done.try_send(r) {
@@ -375,11 +373,11 @@ where
                 OpKind::ReplicaUpdate(ref id, replicas) => {
                     let resp = Ok(Res::Id(id.clone()));
                     for r in replicas {
-                        match self
-                            .replicas()
-                            .create_or_update(&id, &r.info.peer_id, &r.page)
+                        match core
+                            .replica_create_or_update(id.clone(), r.info.peer_id.clone(), r.page.clone()).await
                         {
-                            Ok(v) => v,
+                            // TODO: return updated replica info?
+                            Ok(v) => (),
                             Err(e) => {
                                 // TODO: propagate error?
                                 error!("Failed to update replica: {:?}", e);

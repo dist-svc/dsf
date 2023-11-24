@@ -41,7 +41,7 @@ pub struct Dsf<Net = NetSink> {
     pub(crate) config: DsfOptions,
 
     /// Internal storage for daemon service
-    service: Service,
+    pub(crate) service: Service,
 
     /// Last primary page for peer service
     last_primary: Option<Container>,

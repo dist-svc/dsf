@@ -8,13 +8,14 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 use std::time::{Duration, SystemTime};
 
+use dsf_core::types::ShortId;
 use dsf_core::types::{
     address::{IPV4_BROADCAST, IPV6_BROADCAST},
     kinds::Kind,
 };
 use dsf_rpc::{
     LocateOptions, QosPriority, RegisterOptions, ServiceFlags, ServiceIdentifier, ServiceState,
-    SubscribeOptions, PeerInfo, PeerAddress, PeerState, PeerFlags, DataInfo
+    SubscribeOptions, PeerInfo, PeerAddress, PeerState, PeerFlags, DataInfo, SubscriptionKind
 };
 use kad::common::message;
 use log::{debug, error, info, trace, warn};
@@ -249,7 +250,7 @@ where
                                 id,
                                 container.header().index()
                             );
-                            match self.service_register(&id, vec![container.to_owned()]) {
+                            match self.core.service_register(&id, vec![container.to_owned()]) {
                                 Ok(_) => Status::Ok,
                                 Err(e) => {
                                     error!("Failed to update service: {:?}", e);
@@ -294,12 +295,15 @@ where
                     let _ = o.send((a, None, NetMessage::response(r))).await;
 
                     // TODO: forward to subscribers
-                    match self.subscribers().find_peers(&id) {
-                        Ok(peer_ids) if peer_ids.len() > 0 => {
-                            let peer_subs: Vec<_> = peer_ids
-                                .iter()
-                                .filter_map(|peer_id| self.peers().find(peer_id))
-                                .collect();
+                    match self.core.subscribers_list(&id).await {
+                        Ok(subscribers) if subscribers.len() > 0 => {
+                            let mut peer_subs = Vec::new();
+                            for s in subscribers {
+                                match self.core.find_peer(s.peer_id).await {
+                                    Ok(p) => peer_subs.push(p),
+                                    _ => (),
+                                }
+                            }
 
                             debug!("Forwarding data to: {:?}", peer_subs);
 
@@ -438,16 +442,16 @@ where
         for p in peers {
             // Create response channel
             let (tx, rx) = mpsc::channel(1);
-            self.net_requests.insert((p.address().into(), req_id), tx);
+            self.net_requests.insert(((*p.address()).clone(), req_id), tx);
 
             // Add to operation object
-            reqs.insert(p.id(), rx);
+            reqs.insert(p.id.clone(), rx);
 
             // Add as target for sending
-            targets.push((p.address(), Some(p.id())));
+            targets.push(((*p.address()).clone(), Some(p.id.clone())));
 
             // Update send counter
-            self.peers().update(&p.id(), |p| p.info.sent += 1);
+            let _ = self.core.peer_update(&p.id, |p| p.info.sent += 1).await;
         }
 
         // Create net operation
@@ -689,12 +693,25 @@ where
         }
 
         // Find or create (and push) peer
-        let peer = self.peers().find_or_create(
-            id.clone(),
-            PeerAddress::Implicit(*address),
-            c.public_key.clone(),
-            peer_flags,
-        );
+        let peer = self.core.peer_create_or_update(
+            PeerInfo{
+                id: d.clone(),
+                short_id: ShortId::from(&d),
+                // Attach keys
+                state: c.public_key.map(PeerState::Known).unwrap_or(PeerState::Unknown),
+                // Set address
+                address: match c.remote_address {
+                    Some(a) => PeerAddress::Explicit(a),
+                    None => PeerAddress::Implicit(address.clone()),
+                },
+                flags: peer_flags,
+                seen: Some(SystemTime::now()),
+                received: 1,
+                index: 0,
+                sent: 0,
+                blocked: false,
+            }
+        ).await.unwrap();
 
         // Update key cache
         match (self.key_cache.contains_key(id), &c.public_key) {
@@ -706,12 +723,6 @@ where
             _ => (),
         }
 
-        // Update peer info
-        self.peers().update(&id, |p| {
-            p.info.seen = Some(SystemTime::now());
-            p.info.received += 1;
-        });
-
         trace!(
             "[DSF ({:?})] Peer id: {:?} state: {:?} seen: {:?}",
             self.id(),
@@ -719,36 +730,6 @@ where
             peer.state(),
             peer.seen()
         );
-
-        // Add public key if appropriate
-        match (peer.state(), &c.public_key) {
-            (PeerState::Unknown, Some(pk)) => {
-                info!("Adding key: {:?} to peer: {:?}", pk, id);
-                self.peers()
-                    .update(&id, |p| p.info.state = PeerState::Known(pk.clone()));
-            }
-            _ => (),
-        };
-
-        // Update address if specified (and different from existing)
-        // TODO: support multiple addresses
-        if let Some(a) = c.remote_address {
-            if a != peer.address() {
-                info!("Setting explicit address {:?} for peer: {:?}", a, id);
-                self.peers()
-                    .update(&id, |p| p.info.address = PeerAddress::Explicit(a));
-            }
-        } else if address != &peer.address() {
-            info!(
-                "Updating peer {:#} address {:?} -> {:?}",
-                peer.id(),
-                peer.address(),
-                address
-            );
-            self.peers().update(&id, |p| {
-                p.info.address = PeerAddress::Implicit(address.clone())
-            });
-        }
 
         Some(peer)
     }
@@ -767,21 +748,22 @@ where
                     "Subscribe request from: {} for service: {}",
                     from, service_id
                 );
-                let _service = match self.services().find(&service_id) {
-                    Some(s) => s,
-                    None => {
+                // Fetch service information, checking service exists / is known
+                let service = match self.core.service_get(service_id).await {
+                    Ok(s) if s.primary_page.is_some() => s,
+                    _ => {
                         // Only known services can be subscribed
                         error!("no service found (id: {})", service_id);
                         return Ok(net::ResponseBody::Status(net::Status::InvalidRequest));
                     }
                 };
 
-                // Fetch pages for service
+                // Fetch primary page for service
                 let pages = {
                     match &self
-                        .services()
-                        .filter(&service_id, |s| s.primary_page.clone())
-                        .flatten()
+                        .core
+                        .object_get(&service_id, &service.primary_page.unwrap())
+                        .await.unwrap()
                     {
                         Some(p) => vec![p.clone()],
                         None => vec![],
@@ -793,12 +775,14 @@ where
                 // TODO: update subscriber count?
 
                 // TODO: update peer subscription information here
-                self.subscribers()
-                    .update_peer(&service_id, &peer.id(), |inst| {
-                        inst.info.updated = Some(SystemTime::now());
-                        inst.info.expiry = Some(SystemTime::now().add(Duration::from_secs(3600)));
+                self.core
+                    .subscriber_create_or_update(SubscriptionInfo{
+                        service_id: service_id.clone(),
+                        kind: SubscriptionKind::Peer(peer.id.clone()),
+                        updated: Some(SystemTime::now()),
+                        expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
                     })
-                    .unwrap();
+                    .await.unwrap();
 
                 Ok(net::ResponseBody::ValuesFound(service_id, pages))
             }
@@ -808,16 +792,16 @@ where
                     from, service_id
                 );
 
-                self.subscribers().remove(&service_id, &peer.id()).unwrap();
+                self.core.subscriber_remove(service_id.clone(), peer.id.clone()).await.unwrap();
 
                 Ok(net::ResponseBody::Status(net::Status::Ok))
             }
             net::RequestBody::Query(id, index) => {
                 info!("Query request from: {:#} for service: {:#}", from, id);
                 // TODO: Check we have a replica of this service
-                let _service = match self.services().find(&id) {
-                    Some(s) => s,
-                    None => {
+                let _service = match self.core.service_get(id.clone()).await {
+                    Ok(s) => s,
+                    Err(_) => {
                         // Only known services can be queried
                         error!("no service found (id: {})", id);
                         return Ok(net::ResponseBody::Status(net::Status::InvalidRequest));
@@ -829,8 +813,8 @@ where
                     Some(n) => ObjectIdentifier::Index(n),
                     None => ObjectIdentifier::Latest,
                 };
-                let r = match self.data().get_object(&id, q.clone()) {
-                    Ok(Some(i)) => Ok(net::ResponseBody::PullData(id, vec![i.page])),
+                let r = match self.core.object_get(&id, q.clone()).await {
+                    Ok(Some(i)) => Ok(net::ResponseBody::PullData(id, vec![i])),
                     Ok(None) => Ok(net::ResponseBody::NoResult),
                     Err(e) => {
                         error!("Failed to fetch object {:?}: {:?}", q, e);
@@ -847,7 +831,7 @@ where
                 // TODO: determine whether we should allow this service to be registered
 
                 // Add to local service registry
-                self.service_register(&id, pages)?;
+                self.core.service_register(id.clone(), pages).await?;
 
                 info!("Register request for service: {:#} complete", id);
 
@@ -863,53 +847,54 @@ where
                 info!("Data push from: {:#} for service: {:#}", from, id);
 
                 // TODO: why find _then_ validate_pages, duplicated ops?!
-                let _service = match self.services().find(&id) {
-                    Some(s) => s,
-                    None => {
+                let _service = match self.core.service_get(id.clone()).await {
+                    Ok(s) => s,
+                    Err(_e) => {
                         // Only known services can be registered
                         error!("no service found (id: {})", id);
                         return Ok(net::ResponseBody::Status(net::Status::InvalidRequest));
                     }
                 };
 
-                // Validate incoming data prior to processing
+                // TODO: validate incoming data prior to processing
+                #[cfg(nyet)]
                 if let Err(e) = self.services().validate_pages(&id, &data) {
                     error!("Invalid data for service: {} ({:?})", id, e);
                     return Ok(net::ResponseBody::Status(net::Status::InvalidRequest));
                 }
 
-                // Pick out service pages
+                // Register or update service if a primary page is provided
+                // TODO: improve behaviour for multiple page push
+                if let Some(primary_page) = data.iter().find(|p| 
+                    p.header().kind().is_page() && !p.header().flags().contains(Flags::SECONDARY)) {
 
-                // TODO: this datastore access is (probably) one of the sloww bits
-                for p in &data {
-                    // Apply any updates to the service
-                    if p.header().kind().is_page() {
-                        self.services().update_inst(&id, |s| {
-                            let _ = s.apply_update(p);
-                        });
-                    }
-
-                    // Store data pages
-                    if p.header().kind().is_data() {
-                        if let Err(e) = self.data().store_data(p) {
-                            error!("Failed to store data object: {:?}", e);
-                        };
+                    if let Err(e) = self.core.service_register(id.clone(), vec![primary_page.clone()]).await {
+                        error!("Failed to update service {id}: {e:?}");
                     }
                 }
 
-                // TODO: check this is _new_ data, otherwise ignore (avoid)
+                // Store pages and data
+                self.core.data_store(&id, data.clone()).await?;
 
-                // Generate data push message
+                // Generate data push message for subscribers
                 let req = net::RequestBody::PushData(id.clone(), data);
 
                 // Generate peer list for data push
                 // TODO: we should be cleverer about this to avoid
                 // loops etc. (and prolly add a TTL if it can be repeated?)
-                let peer_ids = self.subscribers().find_peers(&id)?;
-                let peer_subs: Vec<_> = peer_ids
-                    .iter()
-                    .filter_map(|peer_id| self.peers().find(peer_id))
-                    .collect();
+                let subscribers = self.core.subscriber_list(id.clone()).await?;
+                let mut peer_subs = Vec::new();
+                for s in subscribers {
+                    let peer_id = match s.kind {
+                        SubscriptionKind::Peer(id) => id,
+                        // TODO: include RPC peers in data push
+                        _ => continue,
+                    };
+                    match self.core.peer_get(peer_id).await {
+                        Ok(p) => peer_subs.push(p),
+                        _ => (),
+                    }
+                }
 
                 info!("Sending data push message to: {:?}", peer_subs);
 
@@ -946,7 +931,7 @@ where
             net::RequestBody::Locate(service_id) => {
                 info!(
                     "Delegated locate request from: {} for service: {}",
-                    peer.id(),
+                    peer.id,
                     service_id
                 );
 
@@ -991,21 +976,21 @@ where
             net::RequestBody::Subscribe(service_id) => {
                 info!(
                     "Delegated subscribe request from: {} for service: {}",
-                    peer.id(),
+                    peer.id,
                     service_id
                 );
 
                 // Add subscriber to tracking
-                self.subscribers()
-                    .update_peer(&service_id, &peer.id(), |inst| {
-                        inst.info.updated = Some(SystemTime::now());
-                        inst.info.expiry = Some(SystemTime::now().add(Duration::from_secs(3600)));
-                        // Set QOS latency priority if flag is provided
-                        if req.flags.contains(Flags::QOS_PRIO_LATENCY) {
-                            inst.info.qos = QosPriority::Latency;
-                        }
-                    })
-                    .unwrap();
+                self.core.subscriber_create_or_update(SubscriptionInfo{
+                    service_id: service_id.clone(),
+                    peer_id: peer.id.clone(),
+                    updated: Some(SystemTime::now()),
+                    expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
+                    qos: match req.flags.contains(Flags::QOS_PRIO_LATENCY) {
+                        true => QosPriority::Latency,
+                        false => QosPriority::None,
+                    }
+                }).await?;
 
                 // Issue subscribe request to replicas
                 let opts = SubscribeOptions {
@@ -1038,12 +1023,12 @@ where
             net::RequestBody::Register(service_id, pages) => {
                 info!(
                     "Delegated register request from: {} for service: {}",
-                    peer.id(),
+                    peer.id,
                     service_id
                 );
 
                 // Add to local service registry
-                self.service_register(&service_id, pages.clone())?;
+                self.core.service_register(service_id.clone(), pages.clone()).await?;
 
                 // Perform global registration
                 let opts = RegisterOptions {

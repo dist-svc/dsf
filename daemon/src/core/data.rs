@@ -91,7 +91,7 @@ impl Core {
     }
 
     /// Store data for a given service
-    pub async fn store_data<T: ImmutableData>(&self, service_id: &Id, page: &Container<T>) -> Result<(), Error> {
+    pub async fn store_data(&self, service_id: &Id, pages: Vec<Container>) -> Result<(), Error> {
         // Fetch service info for object verification
         let service = match self.service_get(service_id).await {
             Some(s) => s,
@@ -113,20 +113,23 @@ impl Core {
         // This uses a task to dispatch the operation without blocking
         // and limiting overall throughput here
         let s = self.store.clone();
-        let p = page.to_owned();
 
         #[cfg(feature = "store")]
         tokio::task::spawn(async move {
             debug!("Start async store task");
-            match s.object_put(p).await {
-                Ok(_) => {
-                    debug!("Store operation complete");
-                    //TODO: signal object is allowed to be dropped from cache
-                },
-                Err(e) => {
-                    error!("Failed to write object to store: {e:?}");
+
+            for p in pages {
+                match s.object_put(p).await {
+                    Ok(_) => {
+                        //TODO: signal object is allowed to be dropped from cache
+                    },
+                    Err(e) => {
+                        error!("Failed to write object to store: {e:?}");
+                    }
                 }
             }
+
+            debug!("Store operation complete");
         });
 
         Ok(())

@@ -31,7 +31,7 @@ pub enum PeerAddress {
 
 bitflags::bitflags!(
     /// Flags for peer information
-    #[derive(Serialize, Deserialize)]
+    #[derive(Default, Serialize, Deserialize)]
     pub struct PeerFlags: u16 {
         /// Message flag indicating symmetric encryption is available
         const SYMMETRIC_AVAILABLE = (1 << 0);
