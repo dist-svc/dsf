@@ -17,11 +17,13 @@ use dsf_core::options::Options;
 use dsf_core::prelude::*;
 use dsf_rpc::{self as rpc, RegisterInfo, RegisterOptions};
 
-use crate::rpc::replicate::fetch_replica;
-
 use super::ops::*;
-use crate::daemon::{net::NetIf, Dsf};
-use crate::error::Error;
+use crate::{
+    core::CoreRes,
+    daemon::{net::NetIf, Dsf},
+    error::Error,
+    rpc::replicate::fetch_replica,
+};
 
 pub enum RegisterState {
     Init,
@@ -30,6 +32,7 @@ pub enum RegisterState {
     Error,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait RegisterService {
     /// Register service information using the DHT
     async fn service_register(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError>;
@@ -127,16 +130,18 @@ pub(super) async fn fetch_primary<E: Engine>(
     let r = e
         .svc_update(
             info.id.clone(),
-            Box::new(|svc, _state| {
-                let (_n, c) = svc.publish_primary_buff(Default::default())?;
-                Ok(Res::Pages(vec![c.to_owned()], None))
-            }),
+            Box::new(
+                |svc, _state| match svc.publish_primary_buff(Default::default()) {
+                    Ok((_n, c)) => CoreRes::Pages(vec![c.to_owned()], None),
+                    Err(e) => CoreRes::Error(e.into()),
+                },
+            ),
         )
         .await;
 
     // Handle errors
     let p = match r {
-        Ok(Res::Pages(p, _i)) if p.len() == 1 => p[0].clone(),
+        Ok(CoreRes::Pages(p, _i)) if p.len() == 1 => p[0].clone(),
         Err(e) => {
             error!("Failed to sign primary page: {:?}", e);
             return Err(e.into());

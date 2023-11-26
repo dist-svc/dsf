@@ -14,11 +14,16 @@ use tracing::{debug, error, info, instrument, span, warn, Level};
 use dsf_core::options::Options;
 use dsf_core::prelude::*;
 use dsf_core::service::Publisher;
-use dsf_rpc::{self as rpc, CreateOptions, RegisterOptions, ServiceIdentifier, PeerInfo, ServiceInfo, ServiceState};
+use dsf_rpc::{
+    self as rpc, CreateOptions, PeerInfo, RegisterOptions, ServiceIdentifier, ServiceInfo,
+    ServiceState,
+};
 
-use crate::daemon::{net::NetIf, Dsf};
-use crate::error::Error;
-use crate::core::services::*;
+use crate::{
+    core::{services::*, CoreRes},
+    daemon::{net::NetIf, Dsf},
+    error::Error,
+};
 
 use super::ops::*;
 
@@ -29,6 +34,7 @@ pub enum CreateState {
     Error,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait CreateService {
     /// Create a new service
     async fn service_create(&self, options: CreateOptions) -> Result<ServiceInfo, DsfError>;
@@ -98,9 +104,9 @@ impl<T: Engine> CreateService for T {
                 Ok(_) => match self
                     .svc_update(
                         id.clone(),
-                        Box::new(|_svc, state| {
-                            *state = ServiceState::Registered;
-                            Ok(Res::Ok)
+                        Box::new(|_svc, info| {
+                            info.state = ServiceState::Registered;
+                            CoreRes::Ok
                         }),
                     )
                     .await

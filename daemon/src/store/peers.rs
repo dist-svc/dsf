@@ -4,12 +4,12 @@ use std::str::FromStr;
 use log::error;
 
 use chrono::NaiveDateTime;
-use diesel::{prelude::*, connection::LoadConnection, sqlite::Sqlite};
+use diesel::{connection::LoadConnection, prelude::*, sqlite::Sqlite};
 
 use dsf_core::{prelude::*, types::ShortId};
-use dsf_rpc::{PeerAddress, PeerInfo, PeerState, PeerFlags};
+use dsf_rpc::{PeerAddress, PeerFlags, PeerInfo, PeerState};
 
-use super::{from_dt, to_dt, Store, StoreError, Backend};
+use super::{from_dt, to_dt, Backend, Store, StoreError};
 
 const KNOWN: &str = "known";
 const UNKNOWN: &str = "unknown";
@@ -32,7 +32,7 @@ type PeerFields = (
 
 use crate::store::schema::peers::dsl::*;
 
-impl <B: Backend> Store<B> {
+impl<B: Backend> Store<B> {
     // Store an item with it's associated page
     pub fn save_peer(&self, info: &PeerInfo) -> Result<(), StoreError> {
         self.with(|conn| save_peer(conn, info))
@@ -50,11 +50,14 @@ impl <B: Backend> Store<B> {
 
     pub fn delete_peer(&self, id: &Id) -> Result<(), StoreError> {
         self.with(|conn| delete_peer(conn, id))
-    }    
+    }
 }
 
 // Store an item with it's associated page
-fn save_peer<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, info: &PeerInfo) -> Result<(), StoreError> {
+fn save_peer<C: Connection<Backend = Sqlite> + LoadConnection>(
+    conn: &mut C,
+    info: &PeerInfo,
+) -> Result<(), StoreError> {
     let (s, k) = match &info.state {
         PeerState::Known(k) => (
             state.eq(KNOWN.to_string()),
@@ -94,16 +97,17 @@ fn save_peer<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, inf
             .set(values)
             .execute(conn)?;
     } else {
-        diesel::insert_into(peers)
-            .values(values)
-            .execute(conn)?;
+        diesel::insert_into(peers).values(values).execute(conn)?;
     }
 
     Ok(())
 }
 
 // Find an item or items
-fn find_peer<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, id: &Id) -> Result<Option<PeerInfo>, StoreError> {
+fn find_peer<C: Connection<Backend = Sqlite> + LoadConnection>(
+    conn: &mut C,
+    id: &Id,
+) -> Result<Option<PeerInfo>, StoreError> {
     let results = peers
         .filter(peer_id.eq(id.to_string()))
         .select((
@@ -139,7 +143,9 @@ fn find_peer<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, id:
 }
 
 // Load all items
-fn load_peers<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C) -> Result<Vec<PeerInfo>, StoreError> {
+fn load_peers<C: Connection<Backend = Sqlite> + LoadConnection>(
+    conn: &mut C,
+) -> Result<Vec<PeerInfo>, StoreError> {
     let results = peers
         .select((
             peer_id,
@@ -169,7 +175,10 @@ fn load_peers<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C) ->
     Ok(p)
 }
 
-fn delete_peer<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, id: &Id) -> Result<(), StoreError> {
+fn delete_peer<C: Connection<Backend = Sqlite> + LoadConnection>(
+    conn: &mut C,
+    id: &Id,
+) -> Result<(), StoreError> {
     diesel::delete(peers)
         .filter(peer_id.eq(id.to_string()))
         .execute(conn)?;
@@ -178,7 +187,18 @@ fn delete_peer<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, i
 }
 
 fn parse_peer(v: &PeerFields) -> Result<PeerInfo, StoreError> {
-    let (r_id, r_index, r_state, r_pk, r_address, r_address_mode, r_seen, r_sent, r_recv, r_blocked) = v;
+    let (
+        r_id,
+        r_index,
+        r_state,
+        r_pk,
+        r_address,
+        r_address_mode,
+        r_seen,
+        r_sent,
+        r_recv,
+        r_blocked,
+    ) = v;
 
     let s_state = match (r_state.as_ref(), &r_pk) {
         (KNOWN, Some(k)) => PeerState::Known(PublicKey::from_str(k)?),
@@ -229,7 +249,7 @@ mod test {
         crypto::{Crypto, Hash, PubKey, SecKey},
         types::{Id, ShortId},
     };
-    use dsf_rpc::{PeerAddress, PeerInfo, PeerState, PeerFlags};
+    use dsf_rpc::{PeerAddress, PeerFlags, PeerInfo, PeerState};
 
     fn store_peer_inst() {
         let _ = FmtSubscriber::builder()
@@ -239,8 +259,8 @@ mod test {
         let d = TempDir::new("dsf-db").unwrap();
         let d = d.path().to_str().unwrap().to_string();
 
-        let store =
-            Store::new_rc(&format!("{d}/dsf-test-peer.db"), Default::default()).expect("Error opening store");
+        let store = Store::new_rc(&format!("{d}/dsf-test-peer.db"), Default::default())
+            .expect("Error opening store");
 
         store.drop_tables().unwrap();
 
@@ -251,7 +271,7 @@ mod test {
         let id: Id = Crypto::hash(&public_key).unwrap().into();
 
         let mut p = PeerInfo {
-            id,
+            id: id.clone(),
             short_id: ShortId::from(&id),
             index: 123,
             address: PeerAddress::Explicit("127.0.0.1:8080".parse::<SocketAddr>().unwrap().into()),

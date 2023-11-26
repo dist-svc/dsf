@@ -198,8 +198,6 @@ impl Engine {
 
         info!("Creating new engine");
 
-
-
         // Create new network connector
         info!(
             "Creating network connector on addresses: {:?}",

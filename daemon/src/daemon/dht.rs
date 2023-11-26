@@ -3,18 +3,17 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::num;
 
-
 use kad::prelude::*;
 use tracing::{error, trace};
 
 use futures::channel::mpsc;
 
 use dsf_core::net::{RequestBody, ResponseBody};
+use dsf_core::options::Filters;
 use dsf_core::prelude::*;
 use dsf_core::types::{Data, Id, RequestId};
-use dsf_core::options::Filters;
 use dsf_core::wire::Container;
-use dsf_rpc::{PeerInfo, PeerAddress, PeerFlags, PeerState};
+use dsf_rpc::{PeerAddress, PeerFlags, PeerInfo, PeerState};
 
 use super::{net::NetIf, Dsf};
 
@@ -103,11 +102,9 @@ where
                         // TODO: they shouldn't be -added- to the DHT prior to being contacted but
                         // this needs to be confirmed / is a simple guard rail.
                         match (&i.state, i.seen.is_some()) {
-                            (PeerState::Known(public_key), true) => Some((
-                                i.id.clone(),
-                                i.address().clone(),
-                                public_key.clone(),
-                            )),
+                            (PeerState::Known(public_key), true) => {
+                                Some((i.id.clone(), i.address().clone(), public_key.clone()))
+                            }
                             _ => None,
                         }
                     })

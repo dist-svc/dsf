@@ -1,17 +1,17 @@
-use diesel::{prelude::*, sqlite::Sqlite, connection::LoadConnection};
+use diesel::{connection::LoadConnection, prelude::*, sqlite::Sqlite};
 
 use dsf_core::{
     keys::KeySource, options::Filters, prelude::*, types::ImmutableData, wire::Container,
 };
 use log::error;
 
-use super::{schema::object, Store, Backend, StoreError};
+use super::{schema::object, Backend, Store, StoreError};
 
 use crate::store::schema::object::dsl::*;
 
 pub type PageFields = (String, Vec<u8>, Option<String>, String);
 
-impl <B: Backend> Store<B> {
+impl<B: Backend> Store<B> {
     pub fn save_object<T: ImmutableData>(&self, page: &Container<T>) -> Result<(), StoreError> {
         self.with(|conn| save_object(conn, page))
     }
@@ -23,27 +23,29 @@ impl <B: Backend> Store<B> {
         offset: usize,
         limit: usize,
     ) -> Result<Vec<Container>, StoreError> {
-        self.with(|conn| find_objects(conn,id, key_source, offset, limit))
+        self.with(|conn| find_objects(conn, id, key_source, offset, limit))
     }
 
     pub(crate) fn delete_object(&self, sig: &Signature) -> Result<(), StoreError> {
         self.with(|conn| delete_object(conn, sig))
-    } 
+    }
 
     pub(crate) fn load_object<'a, K: KeySource>(
         &self,
         id: &Id,
         obj: impl Into<ObjectIdentifier>,
         key_source: &K,
-    ) -> Result<Option<Container>, StoreError>  {
+    ) -> Result<Option<Container>, StoreError> {
         let obj = obj.into();
         self.with(|conn| load_object(conn, id, &obj, key_source))
     }
-
 }
 
 // Store an item
-pub(super) fn save_object<C: Connection<Backend = Sqlite> + LoadConnection, T: ImmutableData>(conn: &mut C, page: &Container<T>) -> Result<(), StoreError> {
+pub(super) fn save_object<C: Connection<Backend = Sqlite> + LoadConnection, T: ImmutableData>(
+    conn: &mut C,
+    page: &Container<T>,
+) -> Result<(), StoreError> {
     // TODO: is it possible to have an invalid container here?
     // constructors _should_ make this impossible, but, needs to be checked.
     let sig = signature.eq(page.signature().to_string());
@@ -62,7 +64,7 @@ pub(super) fn save_object<C: Connection<Backend = Sqlite> + LoadConnection, T: I
         prev,
         sig.clone(),
     );
-    
+
     diesel::insert_into(object)
         .values(values)
         .on_conflict_do_nothing()
@@ -72,7 +74,10 @@ pub(super) fn save_object<C: Connection<Backend = Sqlite> + LoadConnection, T: I
 }
 
 // Store a list of objects
-pub(super) fn save_objects<C: Connection<Backend = Sqlite> + LoadConnection, T: ImmutableData>(conn: &mut C, pages: &[Container<T>]) -> Result<(), StoreError> {
+pub(super) fn save_objects<C: Connection<Backend = Sqlite> + LoadConnection, T: ImmutableData>(
+    conn: &mut C,
+    pages: &[Container<T>],
+) -> Result<(), StoreError> {
     conn.transaction::<_, StoreError, _>(|conn| {
         for p in pages {
             save_object(conn, &p)?
@@ -120,7 +125,10 @@ fn find_objects<C: Connection<Backend = Sqlite> + LoadConnection, K: KeySource>(
 }
 
 // Delete an item
-fn delete_object<C: Connection<Backend = Sqlite>>(conn: &mut C, sig: &Signature) -> Result<(), StoreError> {
+fn delete_object<C: Connection<Backend = Sqlite>>(
+    conn: &mut C,
+    sig: &Signature,
+) -> Result<(), StoreError> {
     diesel::delete(object)
         .filter(signature.eq(sig.to_string()))
         .execute(conn)?;
@@ -128,7 +136,7 @@ fn delete_object<C: Connection<Backend = Sqlite>>(conn: &mut C, sig: &Signature)
     Ok(())
 }
 
-pub (super) fn load_object<'a, C: Connection<Backend = Sqlite> + LoadConnection, K: KeySource>(
+pub(super) fn load_object<'a, C: Connection<Backend = Sqlite> + LoadConnection, K: KeySource>(
     conn: &mut C,
     id: &Id,
     obj: &ObjectIdentifier,
@@ -166,7 +174,7 @@ pub (super) fn load_object<'a, C: Connection<Backend = Sqlite> + LoadConnection,
 
 /// Object identifiers for loading objects
 #[derive(Clone, Debug, PartialEq)]
-pub enum ObjectIdentifier{
+pub enum ObjectIdentifier {
     /// Load by globally unique signature
     Sig(Signature),
     /// Load by service and service-specific index
@@ -207,8 +215,8 @@ mod test {
         let d = TempDir::new("dsf-db").unwrap();
         let d = d.path().to_str().unwrap().to_string();
 
-        let store =
-            Store::new_rc(&format!("{d}/dsf-test-page.db"), Default::default()).expect("Error opening store");
+        let store = Store::new_rc(&format!("{d}/dsf-test-page.db"), Default::default())
+            .expect("Error opening store");
 
         store.drop_tables().unwrap();
         store.create_tables().unwrap();

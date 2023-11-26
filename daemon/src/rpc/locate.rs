@@ -28,6 +28,7 @@ pub enum LocateState {
     Error,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait ServiceRegistry {
     /// Locate service information using the DHT
     async fn service_locate(&self, options: LocateOptions) -> Result<LocateInfo, DsfError>;

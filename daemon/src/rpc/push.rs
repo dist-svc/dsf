@@ -26,6 +26,7 @@ use crate::daemon::net::{NetFuture, NetIf};
 use crate::daemon::Dsf;
 use crate::error::Error;
 
+#[allow(async_fn_in_trait)]
 pub trait PushData {
     /// Push pre-signed data for a known service
     async fn push_data(&self, options: PushOptions) -> Result<PublishInfo, DsfError>;

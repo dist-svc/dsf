@@ -10,65 +10,70 @@ use std::collections::{hash_map::Entry, HashMap};
 use log::{debug, error, info, trace, warn};
 
 use dsf_core::prelude::*;
-use dsf_rpc::{PeerInfo, PeerAddress, PeerFlags, PeerState};
+use dsf_rpc::{PeerAddress, PeerFlags, PeerInfo, PeerState, ServiceIdentifier};
 
-use super::{Core, store::AsyncStore};
+use super::{store::AsyncStore, Core};
+use crate::error::Error;
 
 /// HACK: alias to mitigate breakage from Peer -> PeerInfo migration
 pub type Peer = PeerInfo;
 
 impl Core {
-    pub fn find_peer(&self, id: &Id) -> Option<PeerInfo> {
-        self.peers.get(id).map(|p| p.clone())
+    pub fn peer_get(&self, ident: ServiceIdentifier) -> Option<PeerInfo> {
+        if let Some(id) = &ident.id {
+            return self.peers.get(id).map(|p| p.clone());
+        }
+
+        if let Some(short_id) = &ident.short_id {
+            return self
+                .peers
+                .iter()
+                .find(|(_id, s)| s.short_id == *short_id)
+                .map(|(_id, s)| s.clone());
+        }
+
+        if let Some(index) = &ident.index {
+            return self
+                .peers
+                .iter()
+                .find(|(_id, s)| s.index == *index)
+                .map(|(_id, s)| s.clone());
+        }
+
+        None
     }
 
-    pub async fn find_or_create_peer(
-        &mut self,
-        id: Id,
-        address: PeerAddress,
-        key: Option<PublicKey>,
-        flags: PeerFlags,
-    ) -> PeerInfo {
+    pub async fn peer_create_or_update(&mut self, info: PeerInfo) -> Result<PeerInfo, Error> {
         // Update and return existing peer
-        if let Some(p) = self.peers.get_mut(&id) {
-
+        if let Some(p) = self.peers.get_mut(&info.id) {
             // Update address on change
             // TODO: support multiple addresses
-            p.update_address(address);
+            p.update_address(info.address);
 
-            if let Some(k) = key {
+            if let PeerState::Known(k) = info.state {
                 p.set_state(PeerState::Known(k))
             }
 
-            return p.clone();
+            return Ok(p.clone());
         }
 
         // Create new peer
-
-        let state = match key {
-            Some(k) => PeerState::Known(k),
-            None => PeerState::Unknown,
-        };
-
         debug!(
             "Creating new peer instance id: ({:?} addr: {:?}, state: {:?})",
-            id, address, state
+            info.id, info.address, info.state
         );
 
-        // TODO: assign index? drop indexes as cooked?
-        let peer = PeerInfo::new(id.clone(), address, state, 0, None);
-
-        self.peers.insert(id.clone(), peer.clone());
+        self.peers.insert(info.id.clone(), info.clone());
 
         // Write non-transient peers to store
         #[cfg(feature = "store")]
-        if !peer.flags.contains(PeerFlags::TRANSIENT) {
-            if let Err(e) = self.store.peer_update(&peer).await {
-                error!("Error writing peer {} to db: {:?}", id, e);
+        if !info.flags.contains(PeerFlags::TRANSIENT) {
+            if let Err(e) = self.store.peer_update(&info).await {
+                error!("Error writing peer {} to db: {:?}", info.id, e);
             }
         }
 
-        peer
+        Ok(info)
     }
 
     pub async fn remove_peer(&mut self, id: &Id) -> Option<PeerInfo> {
@@ -82,7 +87,7 @@ impl Core {
             error!("Error removing peer from db: {:?}", e);
         }
 
-        Some(peer)        
+        Some(peer)
     }
 
     pub fn peer_count(&self) -> usize {
@@ -111,7 +116,7 @@ impl Core {
     }
 
     /// Update a peer instance (if found)
-    pub fn update<F>(&mut self, id: &Id, mut f: F) -> Option<PeerInfo>
+    pub fn peer_update<F>(&mut self, id: &Id, mut f: F) -> Option<PeerInfo>
     where
         F: FnMut(&mut PeerInfo),
     {
@@ -129,5 +134,4 @@ impl Core {
         // Return updated info
         Some(p.clone())
     }
-
 }

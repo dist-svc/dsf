@@ -1,6 +1,6 @@
 use diesel::prelude::*;
-use diesel::*;
 use diesel::sqlite::Sqlite;
+use diesel::*;
 
 use super::StoreError;
 
@@ -99,11 +99,12 @@ table! {
     }
 }
 
-
 /// Initialise database tables
 ///
 /// This is called automatically in the `new` function
-pub(super) fn create_tables<C: Connection<Backend = Sqlite>>(conn: &mut C)-> Result<(), StoreError> {
+pub(super) fn create_tables<C: Connection<Backend = Sqlite>>(
+    conn: &mut C,
+) -> Result<(), StoreError> {
     sql_query(
         "CREATE TABLE IF NOT EXISTS services (
         service_id TEXT NOT NULL UNIQUE PRIMARY KEY,
@@ -126,9 +127,8 @@ pub(super) fn create_tables<C: Connection<Backend = Sqlite>>(conn: &mut C)-> Res
     )
     .execute(conn)?;
 
-    sql_query(
-        "CREATE INDEX IF NOT EXISTS service_id_idx ON services(service_id);"
-    ).execute(conn)?;
+    sql_query("CREATE INDEX IF NOT EXISTS service_id_idx ON services(service_id);")
+        .execute(conn)?;
 
     sql_query(
         "CREATE TABLE IF NOT EXISTS peers (
@@ -148,9 +148,7 @@ pub(super) fn create_tables<C: Connection<Backend = Sqlite>>(conn: &mut C)-> Res
     )
     .execute(conn)?;
 
-    sql_query(
-        "CREATE INDEX IF NOT EXISTS peer_id_idx ON peers(peer_id);"
-    ).execute(conn)?;
+    sql_query("CREATE INDEX IF NOT EXISTS peer_id_idx ON peers(peer_id);").execute(conn)?;
 
     sql_query(
         "CREATE TABLE IF NOT EXISTS object (
@@ -165,12 +163,8 @@ pub(super) fn create_tables<C: Connection<Backend = Sqlite>>(conn: &mut C)-> Res
     )
     .execute(conn)?;
 
-    sql_query(
-        "CREATE INDEX IF NOT EXISTS object_sig_idx ON object(signature);"
-    ).execute(conn)?;
-    sql_query(
-        "CREATE INDEX IF NOT EXISTS object_svc_idx ON object(service_id);"
-    ).execute(conn)?;
+    sql_query("CREATE INDEX IF NOT EXISTS object_sig_idx ON object(signature);").execute(conn)?;
+    sql_query("CREATE INDEX IF NOT EXISTS object_svc_idx ON object(service_id);").execute(conn)?;
 
     sql_query(
         "CREATE TABLE IF NOT EXISTS identity (
@@ -189,8 +183,7 @@ pub(super) fn create_tables<C: Connection<Backend = Sqlite>>(conn: &mut C)-> Res
 }
 
 /// Drop database tables
-pub(super) fn drop_tables<C: Connection<Backend = Sqlite>>(conn: &mut C) -> Result<(), StoreError>
-{
+pub(super) fn drop_tables<C: Connection<Backend = Sqlite>>(conn: &mut C) -> Result<(), StoreError> {
     sql_query("DROP TABLE IF EXISTS services;").execute(conn)?;
 
     sql_query("DROP TABLE IF EXISTS peers;").execute(conn)?;

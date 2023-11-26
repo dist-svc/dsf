@@ -14,7 +14,7 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 
 use log::{debug, error, info, warn};
-use rpc::{ServiceInfo, SyncInfo, PeerInfo};
+use rpc::{PeerInfo, ServiceInfo, SyncInfo};
 use tracing::{span, Level};
 
 use dsf_core::prelude::*;
@@ -31,7 +31,7 @@ use crate::rpc::subscribe::find_replicas;
 
 use super::ops::*;
 
-
+#[allow(async_fn_in_trait)]
 pub trait SyncData {
     /// Sync data for a subscribed service
     async fn sync(&self, options: SyncOptions) -> Result<SyncInfo, DsfError>;
@@ -61,10 +61,10 @@ impl<T: Engine> SyncData for T {
             // Lookup peer services for available replicas
             // TODO: skip if no known peers / not connected to DHT?
             for r in &replicas {
-                let peer = match self.peer_get(r.info.peer_id.clone()).await {
+                let peer = match self.peer_get(r.peer_id.clone()).await {
                     Ok(v) => v,
                     Err(e) => {
-                        error!("Failed to lookup replica peer {}: {:?}", r.info.peer_id, e);
+                        error!("Failed to lookup replica peer {}: {:?}", r.peer_id, e);
                         continue;
                     }
                 };
@@ -194,7 +194,8 @@ impl<T: Engine> SyncData for T {
             }
         }
         if let Some(p) = last_page {
-            self.svc_register(info.id.clone(), vec![p.to_owned()]).await?;
+            self.svc_register(info.id.clone(), vec![p.to_owned()])
+                .await?;
         }
 
         Ok(SyncInfo {

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
-use diesel::connection::{SimpleConnection, LoadConnection};
+use diesel::connection::{LoadConnection, SimpleConnection};
 use dsf_core::types::ImmutableData;
 use dsf_core::wire::Container;
 use dsf_rpc::{PeerInfo, ServiceInfo};
@@ -10,7 +10,7 @@ use log::{debug, error, warn};
 use diesel::dsl::sql_query;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
-use diesel::sqlite::{SqliteConnection, Sqlite};
+use diesel::sqlite::{Sqlite, SqliteConnection};
 
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 
@@ -19,9 +19,12 @@ use dsf_core::service::Subscriber;
 
 use crate::store::object::ObjectIdentifier;
 
-use super::{Store, StoreError, Backend, object::{load_object, save_object}};
+use super::{
+    object::{load_object, save_object},
+    Backend, Store, StoreError,
+};
 
-impl <B: Backend>Store<B> {
+impl<B: Backend> Store<B> {
     pub fn load_peer_service(&self) -> Result<Option<Service>, StoreError> {
         self.with(|conn| load_peer_service(conn))
     }
@@ -30,20 +33,20 @@ impl <B: Backend>Store<B> {
         &self,
         service: &Service,
         page: &Container<T>,
-    ) -> Result<(), StoreError>  {
+    ) -> Result<(), StoreError> {
         self.with(|conn| set_peer_service(conn, service, page))
     }
 }
 
-pub fn load_peer_service<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C) -> Result<Option<Service>, StoreError> {
+pub fn load_peer_service<C: Connection<Backend = Sqlite> + LoadConnection>(
+    conn: &mut C,
+) -> Result<Option<Service>, StoreError> {
     use crate::store::schema::identity::dsl::*;
 
     // Find service id and last page
     let results = identity
         .select((service_id, public_key, private_key, secret_key, last_page))
-        .load::<(String, String, String, Option<String>, String)>(
-            conn,
-        )?;
+        .load::<(String, String, String, Option<String>, String)>(conn)?;
 
     if results.len() != 1 {
         return Ok(None);
@@ -109,9 +112,7 @@ pub fn set_peer_service<C: Connection<Backend = Sqlite> + LoadConnection, T: Imm
     if results.len() != 0 {
         diesel::update(identity).set(values).execute(conn)?;
     } else {
-        diesel::insert_into(identity)
-            .values(values)
-            .execute(conn)?;
+        diesel::insert_into(identity).values(values).execute(conn)?;
     }
 
     Ok(())

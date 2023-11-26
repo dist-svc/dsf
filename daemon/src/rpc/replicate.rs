@@ -18,8 +18,11 @@ use dsf_core::prelude::*;
 use dsf_rpc::{self as rpc, RegisterInfo, RegisterOptions};
 
 use super::ops::*;
-use crate::daemon::{net::NetIf, Dsf};
-use crate::error::Error;
+use crate::{
+    core::CoreRes,
+    daemon::{net::NetIf, Dsf},
+    error::Error,
+};
 
 pub enum RegisterState {
     Init,
@@ -28,6 +31,7 @@ pub enum RegisterState {
     Error,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait ReplicateService {
     /// Replicate a known service, providing a replica for other subscribers
     async fn service_replicate(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError>;
@@ -111,7 +115,10 @@ pub(super) async fn fetch_replica<E: Engine>(
                     ..Default::default()
                 };
 
-                let (_, p) = svc.publish_data_buff(primary_opts)?;
+                let (_, p) = match svc.publish_data_buff(primary_opts) {
+                    Ok(v) => v,
+                    Err(e) => return CoreRes::Error(e.into()),
+                };
 
                 // Publish secondary page object, matching replica data
                 let opts = SecondaryOptions {
@@ -121,17 +128,20 @@ pub(super) async fn fetch_replica<E: Engine>(
                     ..Default::default()
                 };
 
-                let (_, c) = svc.publish_secondary_buff(&target_id, opts)?;
+                let (_, c) = match svc.publish_secondary_buff(&target_id, opts) {
+                    Ok(v) => v,
+                    Err(e) => return CoreRes::Error(e.into()),
+                };
 
                 // Return data and secondary page
-                Ok(Res::Pages(vec![p.to_owned(), c.to_owned()], None))
+                CoreRes::Pages(vec![p.to_owned(), c.to_owned()], None)
             }),
         )
         .await;
 
     // Parse out pages from response
     let objects = match r {
-        Ok(Res::Pages(v, _)) => v,
+        Ok(CoreRes::Pages(v, _)) => v,
         Err(e) => {
             error!("Failed to generate replica pages: {:?}", e);
             return Err(e.into());

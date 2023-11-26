@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use log::{debug, error, info, trace, warn};
 
-use diesel::{prelude::*, sqlite::Sqlite, connection::LoadConnection};
+use diesel::{connection::LoadConnection, prelude::*, sqlite::Sqlite};
 
 use chrono::NaiveDateTime;
 
@@ -12,7 +12,7 @@ use dsf_core::{
 };
 use dsf_rpc::{ServiceFlags, ServiceInfo, ServiceState};
 
-use super::{from_dt, to_dt, Store, StoreError, Backend};
+use super::{from_dt, to_dt, Backend, Store, StoreError};
 
 type ServiceFields = (
     String,
@@ -30,7 +30,7 @@ type ServiceFields = (
     i32,
 );
 
-impl <B: Backend> Store<B> {
+impl<B: Backend> Store<B> {
     pub fn save_service(&self, info: &ServiceInfo) -> Result<(), StoreError> {
         self.with(|conn| save_service(conn, info))
     }
@@ -40,13 +40,16 @@ impl <B: Backend> Store<B> {
     pub fn load_services(&self) -> Result<Vec<ServiceInfo>, StoreError> {
         self.with(|conn| load_services(conn))
     }
-    pub fn delete_service(&self, id: &Id) -> Result<(), StoreError>{
+    pub fn delete_service(&self, id: &Id) -> Result<(), StoreError> {
         self.with(|conn| delete_service(conn, id))
     }
 }
 
 // Store an item
-fn save_service<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, info: &ServiceInfo) -> Result<(), StoreError> {
+fn save_service<C: Connection<Backend = Sqlite> + LoadConnection>(
+    conn: &mut C,
+    info: &ServiceInfo,
+) -> Result<(), StoreError> {
     use crate::store::schema::services::dsl::*;
 
     let pri_key = info
@@ -85,7 +88,7 @@ fn save_service<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, 
     );
 
     diesel::insert_into(services)
-        .values(values)
+        .values(values.clone())
         .on_conflict(service_id)
         .do_update()
         .set(values)
@@ -95,7 +98,10 @@ fn save_service<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, 
 }
 
 // Find an item or items
-fn find_service<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, id: &Id) -> Result<Option<ServiceInfo>, StoreError> {
+fn find_service<C: Connection<Backend = Sqlite> + LoadConnection>(
+    conn: &mut C,
+    id: &Id,
+) -> Result<Option<ServiceInfo>, StoreError> {
     use crate::store::schema::services::dsl::*;
 
     let results = services
@@ -126,7 +132,9 @@ fn find_service<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, 
 }
 
 // Load all items
-fn load_services<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C) -> Result<Vec<ServiceInfo>, StoreError> {
+fn load_services<C: Connection<Backend = Sqlite> + LoadConnection>(
+    conn: &mut C,
+) -> Result<Vec<ServiceInfo>, StoreError> {
     use crate::store::schema::services::dsl::*;
 
     let results = services
@@ -155,7 +163,10 @@ fn load_services<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C)
     Ok(v)
 }
 
-fn delete_service<C: Connection<Backend = Sqlite> + LoadConnection>(conn: &mut C, id: &Id) -> Result<(), StoreError> {
+fn delete_service<C: Connection<Backend = Sqlite> + LoadConnection>(
+    conn: &mut C,
+    id: &Id,
+) -> Result<(), StoreError> {
     use crate::store::schema::services::dsl::*;
 
     diesel::delete(services)
@@ -210,9 +221,6 @@ fn parse_service(v: &ServiceFields) -> Result<ServiceInfo, StoreError> {
     Ok(s)
 }
 
-
-
-
 #[cfg(test)]
 mod test {
     use std::time::SystemTime;
@@ -236,8 +244,8 @@ mod test {
         let d = TempDir::new("dsf-db").unwrap();
         let d = d.path().to_str().unwrap().to_string();
 
-        let store =
-            Store::new_rc(&format!("{d}/dsf-test-service.db"), Default::default()).expect("Error opening store");
+        let store = Store::new_rc(&format!("{d}/dsf-test-service.db"), Default::default())
+            .expect("Error opening store");
 
         store.drop_tables().unwrap();
 

@@ -8,7 +8,6 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 use std::time::{Duration, SystemTime};
 
-
 use kad::common::message;
 use log::{debug, error, info, trace, warn};
 
@@ -24,25 +23,26 @@ use tracing::{span, Level};
 
 use dsf_core::net::{self, Status};
 use dsf_core::prelude::*;
-use dsf_core::wire::Container;
 use dsf_core::types::ShortId;
 use dsf_core::types::{
     address::{IPV4_BROADCAST, IPV6_BROADCAST},
     kinds::Kind,
 };
+use dsf_core::wire::Container;
 use dsf_rpc::{
-    LocateOptions, QosPriority, RegisterOptions, ServiceFlags, ServiceIdentifier, ServiceState,
-    SubscribeOptions, PeerInfo, PeerAddress, PeerState, PeerFlags, DataInfo, SubscriptionKind, SubscriptionInfo,
+    DataInfo, LocateOptions, PeerAddress, PeerFlags, PeerInfo, PeerState, QosPriority,
+    RegisterOptions, ServiceFlags, ServiceIdentifier, ServiceState, SubscribeOptions,
+    SubscriptionInfo, SubscriptionKind,
 };
 
 use crate::daemon::Dsf;
 use crate::error::Error as DaemonError;
 
+use crate::rpc::locate::ServiceRegistry;
 use crate::rpc::register::RegisterService;
 use crate::rpc::subscribe::PubSub;
 use crate::rpc::Engine;
 use crate::store::object::ObjectIdentifier;
-use crate::rpc::locate::ServiceRegistry;
 
 /// Network interface abstraction, allows [`Dsf`] instance to be generic over interfaces
 pub trait NetIf {
@@ -251,7 +251,11 @@ where
                                 id,
                                 container.header().index()
                             );
-                            match self.core.service_register(id.clone(), vec![container.to_owned()]).await {
+                            match self
+                                .core
+                                .service_register(id.clone(), vec![container.to_owned()])
+                                .await
+                            {
                                 Ok(_) => Status::Ok,
                                 Err(e) => {
                                     error!("Failed to update service: {:?}", e);
@@ -331,7 +335,7 @@ where
                         }
                     }
                 }
-                Err(DaemonError::NotFound) => debug!("No matching service for ID: {:#}", id),
+                Err(DsfError::NotFound) => debug!("No matching service for ID: {:#}", id),
                 _ => debug!("Not subscribed to service ID: {:#}", id),
             }
 
@@ -355,14 +359,18 @@ where
         // TODO: there needs to be another transition for this in p2p comms
         let from = message.from();
         if message.flags().contains(Flags::SYMMETRIC_MODE) {
-            self.core.peer_update(&message.from(), Box::new(move |p| {
-                if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
-                    warn!(
-                        "Enabling symmetric message crypto for peer: {from}"
-                    );
-                    p.flags |= PeerFlags::SYMMETRIC_ENABLED;
-                }
-            }));
+            let _ = self
+                .core
+                .peer_update(
+                    &message.from(),
+                    Box::new(move |p| {
+                        if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
+                            warn!("Enabling symmetric message crypto for peer: {from}");
+                            p.flags |= PeerFlags::SYMMETRIC_ENABLED;
+                        }
+                    }),
+                )
+                .await;
         }
 
         trace!("Net message: {:?}", message);
@@ -418,8 +426,8 @@ where
                     // Some((Some(k), _)) => (k, false),
                     _ => (self.service().keys(), false),
                 }
-            },
-            None => (self.service().keys(), false)
+            }
+            None => (self.service().keys(), false),
         };
 
         // Set symmetric flag if enabled
@@ -459,7 +467,8 @@ where
         for p in peers {
             // Create response channel
             let (tx, rx) = mpsc::channel(1);
-            self.net_requests.insert(((*p.address()).clone(), req_id), tx);
+            self.net_requests
+                .insert(((*p.address()).clone(), req_id), tx);
 
             // Add to operation object
             reqs.insert(p.id.clone(), rx);
@@ -469,7 +478,7 @@ where
 
             // Update send counter
             let p_id = p.id.clone();
-            let core = self.core.clone();
+            let mut core = self.core.clone();
             tokio::task::spawn(async move {
                 let _ = core.peer_update(&p_id, Box::new(|p| p.sent += 1)).await;
             });
@@ -558,11 +567,13 @@ where
 
         // Generic net message processing here
         // TODO: we could forward peer object with the incoming request...
-        let _peer =
-            match self.handle_base(&from, &addr.into(), &resp.common, Some(SystemTime::now())).await {
-                Some(p) => p,
-                None => return Ok(()),
-            };
+        let _peer = match self
+            .handle_base(&from, &addr.into(), &resp.common, Some(SystemTime::now()))
+            .await
+        {
+            Some(p) => p,
+            None => return Ok(()),
+        };
 
         // Look for matching point-to-point requests
         if let Some(mut a) = self.net_requests.remove(&(addr.into(), req_id)) {
@@ -622,7 +633,9 @@ where
         );
 
         // Generic net message processing here
-        let peer = match self.handle_base(&from, &addr.into(), &req.common, Some(SystemTime::now())).await
+        let peer = match self
+            .handle_base(&from, &addr.into(), &req.common, Some(SystemTime::now()))
+            .await
         {
             Some(p) => p,
             None => return Ok(()),
@@ -642,7 +655,9 @@ where
 
         // Handle delegated messages
         } else if req.flags.contains(Flags::CONSTRAINED)
-            && self.handle_dsf_delegated(&peer, req_id, &req, tx.clone()).await?
+            && self
+                .handle_dsf_delegated(&peer, req_id, &req, tx.clone())
+                .await?
         {
             None
 
@@ -671,7 +686,10 @@ where
         }
 
         // Update peer info
-        let _ = self.core.peer_update(&from, Box::new(|p| p.sent += 1)).await;
+        let _ = self
+            .core
+            .peer_update(&from, Box::new(|p| p.sent += 1))
+            .await;
 
         trace!("returning response (to: {:?})\n {:?}", from, &resp);
 
@@ -714,12 +732,17 @@ where
         }
 
         // Find or create (and push) peer
-        let peer = self.core.peer_create_or_update(
-            PeerInfo{
+        let peer = self
+            .core
+            .peer_create_or_update(PeerInfo {
                 id: id.clone(),
                 short_id: ShortId::from(id),
                 // Attach keys
-                state: c.public_key.clone().map(PeerState::Known).unwrap_or(PeerState::Unknown),
+                state: c
+                    .public_key
+                    .clone()
+                    .map(PeerState::Known)
+                    .unwrap_or(PeerState::Unknown),
                 // Set address
                 address: match c.remote_address {
                     Some(a) => PeerAddress::Explicit(a),
@@ -731,8 +754,9 @@ where
                 index: 0,
                 sent: 0,
                 blocked: false,
-            }
-        ).await.unwrap();
+            })
+            .await
+            .unwrap();
 
         // Update key cache
         match (self.key_cache.contains_key(id), &c.public_key) {
@@ -784,7 +808,8 @@ where
                     match &self
                         .core
                         .object_get(&service_id, &service.primary_page.unwrap())
-                        .await.unwrap()
+                        .await
+                        .unwrap()
                     {
                         Some(p) => vec![p.clone()],
                         None => vec![],
@@ -797,14 +822,15 @@ where
 
                 // TODO: update peer subscription information here
                 self.core
-                    .subscriber_create_or_update(SubscriptionInfo{
+                    .subscriber_create_or_update(SubscriptionInfo {
                         service_id: service_id.clone(),
                         kind: SubscriptionKind::Peer(peer.id.clone()),
                         updated: Some(SystemTime::now()),
                         expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
                         qos: QosPriority::None,
                     })
-                    .await.unwrap();
+                    .await
+                    .unwrap();
 
                 Ok(net::ResponseBody::ValuesFound(service_id, pages))
             }
@@ -814,7 +840,10 @@ where
                     from, service_id
                 );
 
-                self.core.subscriber_remove(service_id.clone(), peer.id.clone()).await.unwrap();
+                self.core
+                    .subscriber_remove(service_id.clone(), peer.id.clone())
+                    .await
+                    .unwrap();
 
                 Ok(net::ResponseBody::Status(net::Status::Ok))
             }
@@ -863,7 +892,7 @@ where
                 info!("Unegister request from: {} for service: {}", from, id);
                 // TODO: determine whether we should allow this service to be unregistered
 
-                todo!()
+                todo!("unregister not yet implemented")
             }
             net::RequestBody::PushData(id, data) => {
                 info!("Data push from: {:#} for service: {:#}", from, id);
@@ -887,10 +916,14 @@ where
 
                 // Register or update service if a primary page is provided
                 // TODO: improve behaviour for multiple page push
-                if let Some(primary_page) = data.iter().find(|p| 
-                    p.header().kind().is_page() && !p.header().flags().contains(Flags::SECONDARY)) {
-
-                    if let Err(e) = self.core.service_register(id.clone(), vec![primary_page.clone()]).await {
+                if let Some(primary_page) = data.iter().find(|p| {
+                    p.header().kind().is_page() && !p.header().flags().contains(Flags::SECONDARY)
+                }) {
+                    if let Err(e) = self
+                        .core
+                        .service_register(id.clone(), vec![primary_page.clone()])
+                        .await
+                    {
                         error!("Failed to update service {id}: {e:?}");
                     }
                 }
@@ -953,8 +986,7 @@ where
             net::RequestBody::Locate(service_id) => {
                 info!(
                     "Delegated locate request from: {} for service: {}",
-                    peer.id,
-                    service_id
+                    peer.id, service_id
                 );
 
                 let opts = LocateOptions {
@@ -998,21 +1030,22 @@ where
             net::RequestBody::Subscribe(service_id) => {
                 info!(
                     "Delegated subscribe request from: {} for service: {}",
-                    peer.id,
-                    service_id
+                    peer.id, service_id
                 );
 
                 // Add subscriber to tracking
-                self.core.subscriber_create_or_update(SubscriptionInfo{
-                    service_id: service_id.clone(),
-                    kind: SubscriptionKind::Peer(peer.id.clone()),
-                    updated: Some(SystemTime::now()),
-                    expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
-                    qos: match req.flags.contains(Flags::QOS_PRIO_LATENCY) {
-                        true => QosPriority::Latency,
-                        false => QosPriority::None,
-                    }
-                }).await?;
+                self.core
+                    .subscriber_create_or_update(SubscriptionInfo {
+                        service_id: service_id.clone(),
+                        kind: SubscriptionKind::Peer(peer.id.clone()),
+                        updated: Some(SystemTime::now()),
+                        expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
+                        qos: match req.flags.contains(Flags::QOS_PRIO_LATENCY) {
+                            true => QosPriority::Latency,
+                            false => QosPriority::None,
+                        },
+                    })
+                    .await?;
 
                 // Issue subscribe request to replicas
                 let opts = SubscribeOptions {
@@ -1045,12 +1078,13 @@ where
             net::RequestBody::Register(service_id, pages) => {
                 info!(
                     "Delegated register request from: {} for service: {}",
-                    peer.id,
-                    service_id
+                    peer.id, service_id
                 );
 
                 // Add to local service registry
-                self.core.service_register(service_id.clone(), pages.clone()).await?;
+                self.core
+                    .service_register(service_id.clone(), pages.clone())
+                    .await?;
 
                 // Perform global registration
                 let opts = RegisterOptions {
@@ -1093,13 +1127,13 @@ where
     fn keys(&self, id: &Id) -> Option<Keys> {
         // Check key cache first
         if let Some(k) = self.key_cache.get(id) {
-            return Some(k.clone())
+            return Some(k.clone());
         }
 
         // Fallback to core
         if let Some(k) = self.core.keys(id) {
             // TODO: Update local cache?
-            return Some(k.clone())
+            return Some(k.clone());
         }
 
         None

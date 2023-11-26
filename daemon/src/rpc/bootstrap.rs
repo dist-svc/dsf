@@ -22,7 +22,7 @@ use kad::prelude::*;
 use dsf_core::net;
 use dsf_core::prelude::*;
 
-use dsf_rpc::{self as rpc, PeerInfo, PeerAddress, PeerFlags}; //, BootstrapInfo, BootstrapOptions};
+use dsf_rpc::{self as rpc, PeerAddress, PeerFlags, PeerInfo}; //, BootstrapInfo, BootstrapOptions};
 
 use crate::daemon::{net::NetIf, Dsf};
 use crate::error::Error;
@@ -31,6 +31,7 @@ use crate::rpc::connect::Connect;
 use super::ops::Engine;
 
 /// [Bootstrap] trait implements startup bootstrapping to connect to the network
+#[allow(async_fn_in_trait)]
 pub trait Bootstrap {
     /// Publish data using a known service
     async fn bootstrap(&self) -> Result<BootstrapInfo, DsfError>;
@@ -81,7 +82,7 @@ impl<T: Engine> Bootstrap for T {
         // Issue connect operations to available peers
         // (DHT requests required to fill KNodeTable for further DHT ops)
 
-        // TODO: this could / should be combined into a single DHT 
+        // TODO: this could / should be combined into a single DHT
         // connect op instead of splitting over peers?
 
         for p in &peers {

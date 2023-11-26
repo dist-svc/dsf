@@ -11,11 +11,11 @@ use dsf_core::types::{Id, ImmutableData, Signature};
 use dsf_core::{keys::Keys, wire::Container};
 
 pub use dsf_rpc::data::DataInfo;
-use dsf_rpc::{PageBounds, TimeBounds, ServiceIdentifier};
+use dsf_rpc::{PageBounds, ServiceIdentifier, TimeBounds};
 
 use crate::{
+    core::{store::AsyncStore, Core},
     error::Error,
-    core::{Core, store::AsyncStore},
 };
 
 pub struct DataInst {
@@ -47,7 +47,10 @@ impl Core {
 
         // Load data from store
         // TODO: filter (and sort?) via db rather than in post
-        let mut data = self.store.object_find(service_id, &keys, page_bounds).await?;
+        let mut data = self
+            .store
+            .object_find(service_id, &keys, page_bounds)
+            .await?;
 
         debug!("Retrieved {} objects: {:?}", data.len(), data);
 
@@ -122,7 +125,7 @@ impl Core {
                 match s.object_put(p).await {
                     Ok(_) => {
                         //TODO: signal object is allowed to be dropped from cache
-                    },
+                    }
                     Err(e) => {
                         error!("Failed to write object to store: {e:?}");
                     }

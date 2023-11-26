@@ -1,14 +1,15 @@
-
-use tokio::sync::{oneshot, oneshot::Sender as OneshotSender, mpsc::UnboundedSender, mpsc::unbounded_channel};
+use tokio::sync::{
+    mpsc::unbounded_channel, mpsc::UnboundedSender, oneshot, oneshot::Sender as OneshotSender,
+};
 use tracing::{debug, error};
 
 use dsf_core::prelude::*;
-use dsf_rpc::{PeerInfo, ServiceInfo, PageBounds, ServiceListOptions};
+use dsf_rpc::{PageBounds, PeerInfo, ServiceInfo, ServiceListOptions};
 
-use crate::store::{Store, StoreError, object::ObjectIdentifier, Backend};
+use crate::store::{object::ObjectIdentifier, Backend, Store, StoreError};
 
 /// Async datastore wrapper
-/// 
+///
 /// This serialises sqlite database operations to avoid the need for connection
 /// pooling while using a dedicated thread to avoid blocking executor threads
 #[derive(Clone)]
@@ -23,7 +24,7 @@ pub enum StoreOp {
     ServiceUpdate(ServiceInfo),
     ServiceDelete(Id),
     ServiceLoad,
-    
+
     PeerGet(Id),
     PeerUpdate(PeerInfo),
     PeerDelete(Id),
@@ -50,17 +51,16 @@ pub enum StoreRes {
 
 impl AsyncStore {
     /// Create a new async [Store] task
-    pub fn new<B: Backend + Send + 'static>(store: Store<B>) -> Result<Self, StoreError> {
+    pub fn new<B: Backend + Send + 'static>(mut store: Store<B>) -> Result<Self, StoreError> {
         // Setup control channels
         let (tx, mut rx) = unbounded_channel();
-        let s = Self{ tasks: tx };
+        let s = Self { tasks: tx };
 
         // Setup blocking store interface task
         // TODO: rework to perform all ops this way? or only writes?
         std::thread::spawn(move || {
             // Wait for store commands
             while let Some((op, done)) = rx.blocking_recv() {
-
                 // Handle store operations
                 let tx = match Self::handle_op(&mut store, op) {
                     Ok(r) => r,
@@ -69,7 +69,7 @@ impl AsyncStore {
                         StoreRes::Err(e)
                     }
                 };
-                
+
                 // Forward result back to waiting async tasks
                 let _ = done.send(tx);
             }
@@ -81,34 +81,41 @@ impl AsyncStore {
     fn handle_op<B: Backend>(store: &mut Store<B>, op: StoreOp) -> Result<StoreRes, StoreError> {
         // Handle store operations
         match op {
-            StoreOp::ServiceGet(id) => store.find_service(&id)
-                .map(|v| v.map(StoreRes::Service)
-                .unwrap_or(StoreRes::Err(StoreError::NotFound))),
-            StoreOp::ServiceUpdate(info) => store
-                .save_service(&info)
-                .map(|_| StoreRes::Ok),
+            StoreOp::ServiceGet(id) => store.find_service(&id).map(|v| {
+                v.map(StoreRes::Service)
+                    .unwrap_or(StoreRes::Err(StoreError::NotFound))
+            }),
+            StoreOp::ServiceUpdate(info) => store.save_service(&info).map(|_| StoreRes::Ok),
             StoreOp::ServiceDelete(id) => store.delete_service(&id).map(|_| StoreRes::Ok),
-            StoreOp::ServiceLoad => todo!(),
-            StoreOp::PeerGet(id) => store.find_peer(&id)
-                .map(|v| v.map(StoreRes::Peer).unwrap_or(StoreRes::Err(StoreError::NotFound))),
-            StoreOp::PeerUpdate(info) => store
-                .save_peer(&info)
-                .map(|_| StoreRes::Ok),
+            StoreOp::ServiceLoad => store.load_services().map(StoreRes::Services),
+
+            StoreOp::PeerGet(id) => store.find_peer(&id).map(|v| {
+                v.map(StoreRes::Peer)
+                    .unwrap_or(StoreRes::Err(StoreError::NotFound))
+            }),
+            StoreOp::PeerUpdate(info) => store.save_peer(&info).map(|_| StoreRes::Ok),
             StoreOp::PeerDelete(id) => store.delete_peer(&id).map(|_| StoreRes::Ok),
-            StoreOp::PeerLoad => todo!(),
+            StoreOp::PeerLoad => store.load_peers().map(StoreRes::Peers),
+
             StoreOp::ObjectPut(o) => store.save_object(&o).map(|_| StoreRes::Ok),
-            StoreOp::ObjectGet(id, obj, keys) => store
-                .load_object(&id, obj, &keys)
-                .map(|v| v.map(StoreRes::Object).unwrap_or(StoreRes::Err(StoreError::NotFound))),
+            StoreOp::ObjectGet(id, obj, keys) => store.load_object(&id, obj, &keys).map(|v| {
+                v.map(StoreRes::Object)
+                    .unwrap_or(StoreRes::Err(StoreError::NotFound))
+            }),
             StoreOp::ObjectList(id, bounds, keys) => store
-                .find_objects(&id, &keys, bounds.offset.unwrap_or(0), bounds.count.unwrap_or(10))
+                .find_objects(
+                    &id,
+                    &keys,
+                    bounds.offset.unwrap_or(0),
+                    bounds.count.unwrap_or(10),
+                )
                 .map(StoreRes::Objects),
-            StoreOp::ObjectDelete => todo!(),
+            StoreOp::ObjectDelete => todo!("ObjectDelete not yet implemented"),
         }
     }
 }
 
-
+#[allow(async_fn_in_trait)]
 pub trait DataStore {
     /// Store a peer, updating the object if existing
     async fn peer_update(&self, _info: &PeerInfo) -> Result<(), StoreError>;
@@ -131,7 +138,6 @@ pub trait DataStore {
     /// Delete a service by ID
     async fn service_del(&self, _id: &Id) -> Result<(), StoreError>;
 
-
     /// Load all services
     async fn service_load(&self) -> Result<Vec<ServiceInfo>, StoreError>;
 
@@ -142,10 +148,20 @@ pub trait DataStore {
     ) -> Result<(), StoreError>;
 
     /// Fetch an object by signature
-    async fn object_get(&self, id: &Id, obj: ObjectIdentifier, keys: &Keys) -> Result<Container, StoreError>;
+    async fn object_get(
+        &self,
+        id: &Id,
+        obj: ObjectIdentifier,
+        keys: &Keys,
+    ) -> Result<Container, StoreError>;
 
     /// Fetch a list of objects for a given service
-    async fn object_find(&self, id: &Id, keys: &Keys, bounds: &PageBounds) -> Result<Vec<Container>, StoreError>;
+    async fn object_find(
+        &self,
+        id: &Id,
+        keys: &Keys,
+        bounds: &PageBounds,
+    ) -> Result<Vec<Container>, StoreError>;
 
     /// Delete an object by signature
     async fn object_del(&self, _sig: &Signature) -> Result<(), StoreError>;
@@ -158,7 +174,7 @@ impl DataStore for AsyncStore {
         // Enqueue put operation
         if let Err(e) = self.tasks.send((StoreOp::PeerUpdate(info.clone()), tx)) {
             error!("Failed to enqueue peer update operation: {e:?}");
-            return Err(StoreError::Unknown)
+            return Err(StoreError::Unknown);
         }
 
         // Await operation completion
@@ -166,7 +182,7 @@ impl DataStore for AsyncStore {
             Ok(StoreRes::Ok) => Ok(()),
             Ok(StoreRes::Err(e)) => Err(e),
             Err(_) => Err(StoreError::Unknown),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -176,7 +192,7 @@ impl DataStore for AsyncStore {
         // Enqueue put operation
         if let Err(e) = self.tasks.send((StoreOp::PeerGet(id.clone()), tx)) {
             error!("Failed to enqueue peer get operation: {e:?}");
-            return Err(StoreError::Unknown)
+            return Err(StoreError::Unknown);
         }
 
         // Await operation completion
@@ -184,12 +200,12 @@ impl DataStore for AsyncStore {
             Ok(StoreRes::Peer(info)) => Ok(info),
             Ok(StoreRes::Err(e)) => Err(e),
             Err(_) => Err(StoreError::Unknown),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
     async fn peer_del(&self, _id: &Id) -> Result<(), StoreError> {
-        todo!()
+        todo!("peer_del not yet implemented")
     }
 
     async fn peer_load(&self) -> Result<Vec<PeerInfo>, StoreError> {
@@ -198,7 +214,7 @@ impl DataStore for AsyncStore {
         // Enqueue put operation
         if let Err(e) = self.tasks.send((StoreOp::PeerLoad, tx)) {
             error!("Failed to enqueue peer load operation: {e:?}");
-            return Err(StoreError::Unknown)
+            return Err(StoreError::Unknown);
         }
 
         // Await operation completion
@@ -206,7 +222,7 @@ impl DataStore for AsyncStore {
             Ok(StoreRes::Peers(info)) => Ok(info),
             Ok(StoreRes::Err(e)) => Err(e),
             Err(_) => Err(StoreError::Unknown),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -216,7 +232,7 @@ impl DataStore for AsyncStore {
         // Enqueue put operation
         if let Err(e) = self.tasks.send((StoreOp::ServiceUpdate(info.clone()), tx)) {
             error!("Failed to enqueue service update operation: {e:?}");
-            return Err(StoreError::Unknown)
+            return Err(StoreError::Unknown);
         }
 
         // Await operation completion
@@ -224,7 +240,7 @@ impl DataStore for AsyncStore {
             Ok(StoreRes::Ok) => Ok(()),
             Ok(StoreRes::Err(e)) => Err(e),
             Err(_) => Err(StoreError::Unknown),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -234,7 +250,7 @@ impl DataStore for AsyncStore {
         // Enqueue put operation
         if let Err(e) = self.tasks.send((StoreOp::ServiceGet(id.clone()), tx)) {
             error!("Failed to enqueue service get operation: {e:?}");
-            return Err(StoreError::Unknown)
+            return Err(StoreError::Unknown);
         }
 
         // Await operation completion
@@ -242,12 +258,12 @@ impl DataStore for AsyncStore {
             Ok(StoreRes::Service(info)) => Ok(info),
             Ok(StoreRes::Err(e)) => Err(e),
             Err(_) => Err(StoreError::Unknown),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
     async fn service_del(&self, _id: &Id) -> Result<(), StoreError> {
-        todo!()
+        todo!("service_del not yet implemented")
     }
 
     async fn service_load(&self) -> Result<Vec<ServiceInfo>, StoreError> {
@@ -256,7 +272,7 @@ impl DataStore for AsyncStore {
         // Enqueue put operation
         if let Err(e) = self.tasks.send((StoreOp::ServiceLoad, tx)) {
             error!("Failed to enqueue service get operation: {e:?}");
-            return Err(StoreError::Unknown)
+            return Err(StoreError::Unknown);
         }
 
         // Await operation completion
@@ -264,21 +280,18 @@ impl DataStore for AsyncStore {
             Ok(StoreRes::Services(info)) => Ok(info),
             Ok(StoreRes::Err(e)) => Err(e),
             Err(_) => Err(StoreError::Unknown),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
-    async fn object_put<T: ImmutableData + Send>(
-        &self,
-        c: Container<T>,
-    ) -> Result<(), StoreError> {
+    async fn object_put<T: ImmutableData + Send>(&self, c: Container<T>) -> Result<(), StoreError> {
         let c = c.to_owned();
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((StoreOp::ObjectPut(c), tx)) {
             error!("Failed to enqueue object store operation: {e:?}");
-            return Err(StoreError::Unknown)
+            return Err(StoreError::Unknown);
         }
 
         // Await operation completion
@@ -286,17 +299,25 @@ impl DataStore for AsyncStore {
             Ok(StoreRes::Ok) => Ok(()),
             Ok(StoreRes::Err(e)) => Err(e),
             Err(_) => Err(StoreError::Unknown),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
-    async fn object_get(&self, id: &Id, obj: ObjectIdentifier, keys: &Keys) -> Result<Container, StoreError> {
+    async fn object_get(
+        &self,
+        id: &Id,
+        obj: ObjectIdentifier,
+        keys: &Keys,
+    ) -> Result<Container, StoreError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
-        if let Err(e) = self.tasks.send((StoreOp::ObjectGet(id.clone(), obj, keys.clone()), tx)) {
+        if let Err(e) = self
+            .tasks
+            .send((StoreOp::ObjectGet(id.clone(), obj, keys.clone()), tx))
+        {
             error!("Failed to enqueue object get operation: {e:?}");
-            return Err(StoreError::Unknown)
+            return Err(StoreError::Unknown);
         }
 
         // Await operation completion
@@ -304,17 +325,25 @@ impl DataStore for AsyncStore {
             Ok(StoreRes::Object(o)) => Ok(o),
             Ok(StoreRes::Err(e)) => Err(e),
             Err(_) => Err(StoreError::Unknown),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
-    async fn object_find(&self, id: &Id, keys: &Keys, bounds: &PageBounds) -> Result<Vec<Container>, StoreError> {
+    async fn object_find(
+        &self,
+        id: &Id,
+        keys: &Keys,
+        bounds: &PageBounds,
+    ) -> Result<Vec<Container>, StoreError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
-        if let Err(e) = self.tasks.send((StoreOp::ObjectList(id.clone(), bounds.clone(), keys.clone()), tx)) {
+        if let Err(e) = self.tasks.send((
+            StoreOp::ObjectList(id.clone(), bounds.clone(), keys.clone()),
+            tx,
+        )) {
             error!("Failed to enqueue object list operation: {e:?}");
-            return Err(StoreError::Unknown)
+            return Err(StoreError::Unknown);
         }
 
         // Await operation completion
@@ -322,13 +351,11 @@ impl DataStore for AsyncStore {
             Ok(StoreRes::Objects(o)) => Ok(o),
             Ok(StoreRes::Err(e)) => Err(e),
             Err(_) => Err(StoreError::Unknown),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
     async fn object_del(&self, _sig: &Signature) -> Result<(), StoreError> {
-        todo!()
+        todo!("object_del not yet implemented")
     }
-
-
 }

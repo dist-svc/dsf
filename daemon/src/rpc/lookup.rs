@@ -26,6 +26,7 @@ pub enum LookupState {
     Error,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait PeerRegistry {
     /// Lookup a peer using the DHT
     async fn peer_lookup(&mut self, options: LookupOptions) -> Result<PeerInfo, DsfError>;

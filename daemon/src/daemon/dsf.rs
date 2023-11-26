@@ -1,5 +1,5 @@
-use crate::core::{AsyncCore, Core};
 use crate::core::store::AsyncStore;
+use crate::core::{AsyncCore, Core};
 use crate::daemon::ops::Op;
 use crate::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -29,8 +29,8 @@ use kad::table::NodeTable;
 use crate::error::Error;
 use crate::store::Store;
 
-use super::net::{ByteSink, NetIf, NetOp, NetSink};
 use super::dht::{dht_reducer, DsfDhtMessage};
+use super::net::{ByteSink, NetIf, NetOp, NetSink};
 use super::DsfOptions;
 
 /// Re-export of Dht type used for DSF
@@ -165,7 +165,7 @@ where
         }
     }
 
-    pub(crate) fn primary(&mut self, refresh: bool) -> Result<Container, Error> {
+    pub(crate) fn primary(&mut self, refresh: bool) -> Result<Container, DsfError> {
         // Check whether we have a cached primary page
         match self.last_primary.as_ref() {
             Some(c) if !c.expired() && !refresh => return Ok(c.clone()),
@@ -174,10 +174,7 @@ where
 
         // Otherwise, generate a new one
         // TODO: this should generate a peer page / contain peer contact info
-        let (_, c) = self
-            .service
-            .publish_primary_buff(Default::default())
-            .map_err(Error::Core)?;
+        let (_, c) = self.service.publish_primary_buff(Default::default())?;
 
         self.last_primary = Some(c.to_owned());
 
@@ -200,7 +197,6 @@ where
     }
 }
 
-
 impl<Net> Dsf<Net>
 where
     Dsf<Net>: NetIf<Interface = Net>,
@@ -217,7 +213,7 @@ where
 
             let peers: Vec<_> = peers.iter().map(|p| p.info().clone()).collect();
 
-            let disp: Vec<_> = peers.iter().map(|p| (p.id, p.address())).collect();
+            let disp: Vec<_> = peers.iter().map(|p| (p.id.clone(), p.address())).collect();
 
             debug!(
                 "Issuing DHT {} request ({}) to {:?}",

@@ -1,9 +1,9 @@
 //! Connect operation, sets up a connection with the provided peer
 
-use std::time::Duration;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use tracing::{debug, error, info, instrument, span, warn, Level};
 
@@ -15,14 +15,19 @@ use kad::prelude::*;
 
 use dsf_core::net;
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, ConnectInfo, ConnectOptions, PeerInfo, PeerAddress, PeerFlags};
+use dsf_rpc::{self as rpc, ConnectInfo, ConnectOptions, PeerAddress, PeerFlags, PeerInfo};
 
-use super::ops::Engine;
-use crate::daemon::{net::NetIf, Dsf};
-use crate::error::Error;
-use crate::rpc::ops::{OpKind, Res};
-use crate::rpc::register::fetch_primary;
+use crate::{
+    core::CoreRes,
+    daemon::{net::NetIf, Dsf},
+    error::Error,
+    rpc::{
+        ops::{Engine, OpKind},
+        register::fetch_primary,
+    },
+};
 
+#[allow(async_fn_in_trait)]
 pub trait Connect {
     /// Connect to a peer via IP or URL
     async fn connect(&self, options: ConnectOptions) -> Result<ConnectInfo, DsfError>;
@@ -35,8 +40,8 @@ impl<T: Engine> Connect for T {
 
         // Fetch primary page for our peer service
         let primary_page = match self.exec(OpKind::Primary).await {
-            Ok(Res::Pages(p, _)) if p.len() == 1 => p[0].clone(),
-            Err(e) => {
+            CoreRes::Pages(p, _) if p.len() == 1 => p[0].clone(),
+            CoreRes::Error(e) => {
                 error!("Failed to fetch primary page: {:?}", e);
                 return Err(DsfError::NotFound);
             }

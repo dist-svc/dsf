@@ -1,18 +1,25 @@
 use std::{collections::HashMap, iter::FromIterator, time::SystemTime};
 
-use tokio::sync::{mpsc::{UnboundedSender, unbounded_channel}, oneshot::{Sender as OneshotSender, self}};
-use tracing::{error, info, debug};
+use tokio::sync::{
+    mpsc::{unbounded_channel, UnboundedSender},
+    oneshot::{self, Sender as OneshotSender},
+};
+use tracing::{debug, error, info};
 
-use dsf_rpc::{PeerInfo, ServiceInfo, ReplicaInfo, SubscriptionInfo, PageBounds, DataInfo, TimeBounds, ServiceState, ServiceIdentifier, PeerState};
 use dsf_core::prelude::*;
+use dsf_rpc::{
+    DataInfo, PageBounds, PeerInfo, PeerState, ReplicaInfo, ServiceIdentifier, ServiceInfo,
+    ServiceState, SubscriptionInfo, TimeBounds,
+};
 
 use crate::{
     core::{
-        store::{AsyncStore, DataStore},
-        services::{ServiceInst, build_service_info},
         replicas::ReplicaInst,
+        services::{build_service_info, ServiceInst},
+        store::{AsyncStore, DataStore},
     },
-    error::Error, rpc::UpdateFn, store::object::ObjectIdentifier,
+    error::Error,
+    store::object::ObjectIdentifier,
 };
 
 pub mod data;
@@ -46,7 +53,7 @@ pub struct Core {
 }
 
 /// Async [Core] task wrapper
-/// 
+///
 /// This allows handles to be cloned and shared between async tasks
 #[derive(Clone)]
 pub struct AsyncCore {
@@ -54,17 +61,32 @@ pub struct AsyncCore {
 }
 
 pub enum CoreOp {
+    /// Fetch a service by identifier (Id, ShortId, or index)
     ServiceGet(ServiceIdentifier),
+    /// Create a new local service
     ServiceCreate(Service, Vec<Container>),
+    /// Register a service, associating replicas etc.
     ServiceRegister(Id, Vec<Container>),
+    /// List available services
     ServiceList(PageBounds),
-    ServiceUpdate(Id, UpdateFn),
+    /// Update the specified service using the provided function
+    ServiceUpdate(Id, ServiceUpdateFn),
 
+    /// Fetch a peer by identifier (Id, ShortId, or index)
     PeerGet(ServiceIdentifier),
     PeerList(PageBounds),
-    PeerCreate(Id, Vec<Container>),
-    
+    PeerCreate(PeerInfo),
     PeerUpdate(Id, PeerUpdateFn),
+
+    /// Fetch replicas for a given service ID
+    ReplicaList(Id),
+    /// Create or update replicas for a given service
+    ReplicaCreateUpdate(Id, Vec<Container>),
+
+    /// Fetch subscribers for a given service ID
+    SubscriberList(Id),
+    /// Update a subscription for a given service
+    SubscriberCreateUpdate(SubscriptionInfo),
 
     GetData(Id, PageBounds),
     StoreData(Id, Vec<Container>),
@@ -85,32 +107,55 @@ impl core::fmt::Debug for CoreOp {
     }
 }
 
-pub type PeerUpdateFn =
-    Box<dyn Fn(&mut PeerInfo) + Send + 'static>;
+pub type ServiceUpdateFn = Box<dyn Fn(&mut Service, &mut ServiceInfo) -> CoreRes + Send + 'static>;
+
+pub type PeerUpdateFn = Box<dyn Fn(&mut PeerInfo) + Send + 'static>;
+
+pub type SearchInfo = kad::dht::SearchInfo<Id>;
 
 #[derive(PartialEq, Debug)]
 pub enum CoreRes {
     Ok,
+
+    Id(Id),
+    Ids(Vec<Id>),
+
     Service(ServiceInfo),
     Services(Vec<ServiceInfo>),
 
     Peer(PeerInfo),
-    Peers(Vec<PeerInfo>),
-    
+    Peers(Vec<PeerInfo>, Option<SearchInfo>),
+
+    Replicas(Vec<ReplicaInfo>),
+    Subscribers(Vec<SubscriptionInfo>),
+
+    Pages(Vec<Container>, Option<SearchInfo>),
     Data(Vec<(DataInfo, Container)>),
-    
     Object(Container),
-    
+
     Keys(Keys),
+    Sig(Signature),
+
+    /// Network request responses by peer ID
+    Responses(HashMap<Id, NetResponse>),
 
     NotFound,
-    Error(Error),
+    Error(DsfError),
+}
+
+impl CoreRes {
+    pub fn pages(pages: Vec<Container>, info: Option<SearchInfo>) -> Self {
+        Self::Pages(pages, info)
+    }
+
+    pub fn peers(peers: Vec<PeerInfo>, info: Option<SearchInfo>) -> Self {
+        Self::Peers(peers, info)
+    }
 }
 
 impl Core {
     /// Create a new core instance to manage services / peers / etc.
     pub async fn new(store: AsyncStore) -> Result<Self, Error> {
-
         // Load persistent information from the provided store
 
         // Load services
@@ -123,7 +168,7 @@ impl Core {
 
         // TODO: load subscribers and replicas?!
 
-        Ok(Self{
+        Ok(Self {
             services,
             peers,
             subscribers: HashMap::new(),
@@ -135,57 +180,111 @@ impl Core {
     /// Async handler for [Core] operations
     async fn handle_op(&mut self, op: CoreOp) -> CoreRes {
         match op {
-            CoreOp::ServiceGet(ident) => self.service_get(&ident).await
+            CoreOp::ServiceGet(ident) => self
+                .service_get(&ident)
+                .await
                 .map(CoreRes::Service)
                 .unwrap_or(CoreRes::NotFound),
 
-            CoreOp::ServiceList(bounds) => self.service_list(bounds).await
+            CoreOp::ServiceList(bounds) => self
+                .service_list(bounds)
+                .await
                 .map(CoreRes::Services)
                 .unwrap_or(CoreRes::NotFound),
 
-            CoreOp::ServiceRegister(id, pages) => self.service_register(id, pages).await
+            CoreOp::ServiceRegister(id, pages) => self
+                .service_register(id, pages)
+                .await
                 .map(CoreRes::Service)
                 .unwrap_or(CoreRes::NotFound),
 
-            CoreOp::ServiceCreate(service, pages) => self.service_create(service, pages).await
+            CoreOp::ServiceCreate(service, pages) => self
+                .service_create(service, pages)
+                .await
                 .map(CoreRes::Service)
                 .unwrap_or(CoreRes::NotFound),
+            CoreOp::ServiceUpdate(service_id, f) => self.service_update(&service_id, f).await,
 
-            CoreOp::GetData(service_id, page_bounds) => self.fetch_data(&service_id, &page_bounds, &TimeBounds::default()).await
+            CoreOp::GetData(service_id, page_bounds) => self
+                .fetch_data(&service_id, &page_bounds, &TimeBounds::default())
+                .await
                 .map(CoreRes::Data)
                 .unwrap_or(CoreRes::NotFound),
 
-            CoreOp::StoreData(service_id, pages) => self.store_data(&service_id, pages).await
-                .map(|_| CoreRes::Ok).unwrap_or(CoreRes::NotFound),
+            CoreOp::StoreData(service_id, pages) => self
+                .store_data(&service_id, pages)
+                .await
+                .map(|_| CoreRes::Ok)
+                .unwrap_or(CoreRes::NotFound),
 
             CoreOp::GetObject(service_id, obj) => self
-                .get_object(&service_id, obj).await
+                .get_object(&service_id, obj)
+                .await
                 .map(|o| o.map(CoreRes::Object).unwrap_or(CoreRes::NotFound))
                 .unwrap_or(CoreRes::NotFound),
 
-            CoreOp::StoreObject(_, _) => todo!(),
+            CoreOp::StoreObject(service_id, obj) => self
+                .store_data(&service_id, vec![obj])
+                .await
+                .map(|_o| CoreRes::Ok)
+                .unwrap_or(CoreRes::NotFound),
 
-            CoreOp::GetKeys(id) => self.get_keys(&id).map(CoreRes::Keys).unwrap_or(CoreRes::NotFound),
+            CoreOp::GetKeys(id) => self
+                .get_keys(&id)
+                .map(CoreRes::Keys)
+                .unwrap_or(CoreRes::NotFound),
 
-            // TODO: implement all core ops...
-            _ => unimplemented!(),
+            CoreOp::PeerGet(ident) => self
+                .peer_get(ident)
+                .map(CoreRes::Peer)
+                .unwrap_or(CoreRes::NotFound),
+            CoreOp::PeerList(_bounds) => CoreRes::Peers(
+                self.list_peers().drain(..).map(|(_id, p)| p).collect(),
+                None,
+            ),
+            CoreOp::PeerCreate(info) => self
+                .peer_create_or_update(info)
+                .await
+                .map(CoreRes::Peer)
+                .unwrap_or(CoreRes::NotFound),
+            CoreOp::PeerUpdate(peer_id, f) => self
+                .peer_update(&peer_id, f)
+                .map(CoreRes::Peer)
+                .unwrap_or(CoreRes::NotFound),
+
+            CoreOp::ReplicaCreateUpdate(service_id, replicas) => self
+                .create_or_update_replicas(&service_id, replicas)
+                .map(CoreRes::Replicas)
+                .unwrap_or(CoreRes::NotFound),
+            CoreOp::ReplicaList(service_id) => self
+                .find_replicas(&service_id)
+                .map(CoreRes::Replicas)
+                .unwrap_or(CoreRes::NotFound),
+
+            CoreOp::SubscriberList(service_id) => self
+                .find_subscribers(&service_id)
+                .map(CoreRes::Subscribers)
+                .unwrap_or(CoreRes::NotFound),
+            CoreOp::SubscriberCreateUpdate(info) => todo!(),
         }
     }
 
     fn get_keys(&self, id: &Id) -> Option<Keys> {
         if let Some(p) = self.peers.get(id) {
-            if let PeerState::Known(k) = p.state {
-                return Some(Keys{pub_key: Some(k.clone()), ..Default::default()})
+            if let PeerState::Known(k) = &p.state {
+                return Some(Keys {
+                    pub_key: Some(k.clone()),
+                    ..Default::default()
+                });
             }
         }
 
         if let Some(s) = self.services.get(id) {
-            return Some(s.info.keys())
+            return Some(s.info.keys());
         }
 
         None
     }
-
 }
 
 impl AsyncCore {
@@ -193,12 +292,12 @@ impl AsyncCore {
     pub async fn new(mut core: Core) -> Self {
         // Setup control channels
         let (tx, mut rx) = unbounded_channel();
-        let s = Self{ tasks: tx };
+        let s = Self { tasks: tx };
 
         // Spawn core event handler task
         tokio::task::spawn(async move {
             // Wait for core operations
-            while let Some((op, done)) = rx.blocking_recv() {
+            while let Some((op, done)) = rx.recv().await {
                 // Handle core operations
                 let tx = core.handle_op(op).await;
 
@@ -211,204 +310,317 @@ impl AsyncCore {
         s
     }
 
-    pub async fn service_get<T: Into<ServiceIdentifier>>(&self, id: T) -> Result<ServiceInfo, Error> {
+    pub async fn service_get<T: Into<ServiceIdentifier>>(
+        &self,
+        id: T,
+    ) -> Result<ServiceInfo, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((CoreOp::ServiceGet(id.into()), tx)) {
             error!("Failed to enqueue service get operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Service(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
 
     /// Async dispatch to [Core::service_create]
-    pub async fn service_create(&self, service: Service, pages: Vec<Container>) -> Result<ServiceInfo, Error>  {
+    pub async fn service_create(
+        &self,
+        service: Service,
+        pages: Vec<Container>,
+    ) -> Result<ServiceInfo, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((CoreOp::ServiceCreate(service, pages), tx)) {
             error!("Failed to enqueue service create operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Service(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
 
     /// Async dispatch to [Core::service_register]
-    pub async fn service_register(&self, id: Id, pages: Vec<Container>) -> Result<ServiceInfo, Error>  {
+    pub async fn service_register(
+        &self,
+        id: Id,
+        pages: Vec<Container>,
+    ) -> Result<ServiceInfo, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((CoreOp::ServiceRegister(id, pages), tx)) {
             error!("Failed to enqueue service register operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Service(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
 
     /// Async dispatch to [Core::service_update]
-    pub async fn service_update(&self, id: Id, f: UpdateFn) -> Result<ServiceInfo, Error> {
+    pub async fn service_update(
+        &self,
+        id: Id,
+        f: ServiceUpdateFn,
+    ) -> Result<ServiceInfo, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((CoreOp::ServiceUpdate(id, f), tx)) {
             error!("Failed to enqueue service update operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Service(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
 
     /// Async dispatch to [Core::service_list]
-    pub async fn service_list(&self, bounds: PageBounds) -> Result<Vec<ServiceInfo>, Error>  {
+    pub async fn service_list(&self, bounds: PageBounds) -> Result<Vec<ServiceInfo>, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((CoreOp::ServiceList(bounds), tx)) {
             error!("Failed to enqueue service list operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Services(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
 
     /// Async dispatch to [Core::peer_get]
-    pub async fn peer_get<T: Into<ServiceIdentifier>>(&self, ident: T) -> Result<PeerInfo, Error> {
+    pub async fn peer_get<T: Into<ServiceIdentifier>>(
+        &self,
+        ident: T,
+    ) -> Result<PeerInfo, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((CoreOp::PeerGet(ident.into()), tx)) {
             error!("Failed to enqueue service get operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Peer(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
 
-     /// Async dispatch to [Core::peer_list]
-     pub async fn peer_list(&self, bounds: PageBounds) -> Result<Vec<PeerInfo>, Error>  {
+    /// Async dispatch to [Core::peer_list]
+    pub async fn peer_list(&self, bounds: PageBounds) -> Result<Vec<PeerInfo>, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((CoreOp::PeerList(bounds), tx)) {
             error!("Failed to enqueue peer list operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
         match rx.await {
-            Ok(CoreRes::Peers(info)) => Ok(info),
+            Ok(CoreRes::Peers(info, _)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
 
     /// Update or create a peer with associated information
-    pub async fn peer_create_or_update(
-        &mut self,
-        info: PeerInfo,
-    ) -> Result<PeerInfo, Error> {
-        todo!()
+    pub async fn peer_create_or_update(&mut self, info: PeerInfo) -> Result<PeerInfo, DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((CoreOp::PeerCreate(info), tx)) {
+            error!("Failed to enqueue peer create_or_update operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Peer(info)) => Ok(info),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
+        }
     }
 
-    /// Update or create a peer with associated information
+    /// Update an existing peer using the provided function
     pub async fn peer_update(
         &mut self,
         peer_id: &Id,
         f: PeerUpdateFn,
-    ) -> Result<PeerInfo, Error> {
-        todo!()
+    ) -> Result<PeerInfo, DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self
+            .tasks
+            .send((CoreOp::PeerUpdate(peer_id.clone(), f), tx))
+        {
+            error!("Failed to enqueue peer update operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Peer(info)) => Ok(info),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
+        }
     }
 
     /// Find all replicas for the provided service
-    pub async fn replica_list(&mut self, id: Id) -> Result<Vec<ReplicaInfo>, Error> {
-        todo!()
+    pub async fn replica_list(&mut self, service_id: Id) -> Result<Vec<ReplicaInfo>, DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((CoreOp::ReplicaList(service_id), tx)) {
+            error!("Failed to enqueue replica list operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Replicas(info)) => Ok(info),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
+        }
     }
 
     /// Create or update a replica for the provided service
     pub async fn replica_create_or_update(
         &mut self,
-        svc_id: Id,
-        peer_id: Id,
-        page: Container,
-    ) -> Result<ReplicaInfo, Error> {
-        todo!()
+        service_id: Id,
+        pages: Vec<Container>,
+    ) -> Result<Vec<ReplicaInfo>, DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self
+            .tasks
+            .send((CoreOp::ReplicaCreateUpdate(service_id, pages), tx))
+        {
+            error!("Failed to enqueue replica create update operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Replicas(info)) => Ok(info),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
+        }
     }
 
     /// List all subscribers for the provided service
-    pub async fn subscriber_list(&mut self, id: Id) -> Result<Vec<SubscriptionInfo>, Error> {
-        todo!()
+    pub async fn subscriber_list(
+        &mut self,
+        service_id: Id,
+    ) -> Result<Vec<SubscriptionInfo>, DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((CoreOp::SubscriberList(service_id), tx)) {
+            error!("Failed to enqueue subscriber list operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Subscribers(info)) => Ok(info),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
+        }
     }
 
     /// Create or update a subscriber instance
     pub async fn subscriber_create_or_update(
         &mut self,
         sub_info: SubscriptionInfo,
-    ) -> Result<ReplicaInfo, Error> {
-        todo!()
-    } 
+    ) -> Result<SubscriptionInfo, DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self
+            .tasks
+            .send((CoreOp::SubscriberCreateUpdate(sub_info), tx))
+        {
+            error!("Failed to enqueue subscriber update operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Subscribers(info)) if info.len() == 1 => Ok(info[0].clone()),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
+        }
+    }
 
     /// Remove a subscriber instance
     pub async fn subscriber_remove(
         &mut self,
         service_id: Id,
         peer_id: Id,
-    ) -> Result<ReplicaInfo, Error> {
-        todo!()
-    } 
-
+    ) -> Result<ReplicaInfo, DsfError> {
+        todo!("subscriber remove not yet implemented")
+    }
 
     pub async fn object_get<I: Into<ObjectIdentifier>>(
         &self,
         service_id: &Id,
         ident: I,
-    ) -> Result<Option<Container>, Error> {
+    ) -> Result<Option<Container>, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
-        if let Err(e) = self.tasks.send((CoreOp::GetObject(service_id.clone(), ident.into()), tx)) {
+        if let Err(e) = self
+            .tasks
+            .send((CoreOp::GetObject(service_id.clone(), ident.into()), tx))
+        {
             error!("Failed to enqueue service list operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
@@ -416,47 +628,49 @@ impl AsyncCore {
             Ok(CoreRes::Object(info)) => Ok(Some(info)),
             Ok(CoreRes::NotFound) => Ok(None),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
 
-    pub async fn data_store(&self, service_id: &Id, pages: Vec<Container>) -> Result<(), Error> {
+    pub async fn data_store(&self, service_id: &Id, pages: Vec<Container>) -> Result<(), DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
-        if let Err(e) = self.tasks.send((CoreOp::StoreData(service_id.clone(), pages), tx)) {
+        if let Err(e) = self
+            .tasks
+            .send((CoreOp::StoreData(service_id.clone(), pages), tx))
+        {
             error!("Failed to enqueue store data operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Ok) => Ok(()),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
 
-    pub async fn keys_get(&self, some_id: &Id) -> Result<Keys, Error> {
+    pub async fn keys_get(&self, some_id: &Id) -> Result<Keys, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self.tasks.send((CoreOp::GetKeys(some_id.clone()), tx)) {
             error!("Failed to enqueue key get operation: {e:?}");
-            return Err(Error::Closed)
+            return Err(DsfError::IO);
         }
 
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Keys(k)) => Ok(k),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(Error::Unknown),
-            _ => unreachable!()
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
         }
     }
-
 }
 
 impl KeySource for AsyncCore {
@@ -464,7 +678,7 @@ impl KeySource for AsyncCore {
         let id = id.clone();
 
         futures::executor::block_on(async move {
-            match self.keys_get(&id).await{
+            match self.keys_get(&id).await {
                 Ok(k) => Some(k),
                 _ => None,
             }

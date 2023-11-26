@@ -12,15 +12,16 @@ use tracing::{debug, error, info, instrument, span, trace, warn, Level};
 
 use dsf_core::options::Options;
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, DiscoverOptions, ServiceInfo, ServiceState, PeerInfo};
+use dsf_rpc::{self as rpc, DiscoverOptions, PeerInfo, ServiceInfo, ServiceState};
 
+use super::ops::*;
 use crate::{
     daemon::net::NetFuture,
     daemon::{net::NetIf, Dsf},
     error::Error,
 };
-use super::ops::*;
 
+#[allow(async_fn_in_trait)]
 pub trait Discover {
     /// Discover a service using local broadcast discovery
     async fn discover(&self, options: DiscoverOptions) -> Result<Vec<ServiceInfo>, DsfError>;

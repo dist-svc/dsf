@@ -1,12 +1,12 @@
 use std::time::SystemTime;
 
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
-use dsf_rpc::{ServiceInfo, ServiceState, ServiceFlags, PageBounds, ServiceIdentifier};
 use dsf_core::{prelude::*, types::ShortId};
+use dsf_rpc::{PageBounds, ServiceFlags, ServiceIdentifier, ServiceInfo, ServiceState};
 
-use crate::{error::Error, core::store::DataStore, store::object::ObjectIdentifier};
-use super::{Core, store::AsyncStore};
+use super::{store::AsyncStore, Core, CoreRes};
+use crate::{core::store::DataStore, error::Error, store::object::ObjectIdentifier};
 
 #[derive(Debug)]
 pub struct ServiceInst {
@@ -24,9 +24,12 @@ pub struct ServiceInst {
 }
 
 impl Core {
-
     /// Create a new service (hosted on this peer)
-    pub async fn service_create(&mut self, service: Service, pages: Vec<Container>) -> Result<ServiceInfo, Error> {
+    pub async fn service_create(
+        &mut self,
+        service: Service,
+        pages: Vec<Container>,
+    ) -> Result<ServiceInfo, Error> {
         let id = service.id();
 
         debug!("Creating service {id}");
@@ -52,7 +55,6 @@ impl Core {
         };
         self.services.insert(id.clone(), inst);
 
-
         // Write primary page and updated service info to store
         self.store.object_put(primary_page.to_owned()).await?;
         self.store.service_update(&info).await?;
@@ -62,9 +64,13 @@ impl Core {
         // Return created service info
         Ok(info)
     }
-  
+
     /// Register a service from primary and secondary pages
-    pub async fn service_register(&mut self, id: Id, pages: Vec<Container>) -> Result<ServiceInfo, Error> {
+    pub async fn service_register(
+        &mut self,
+        id: Id,
+        pages: Vec<Container>,
+    ) -> Result<ServiceInfo, Error> {
         debug!("Registering service {id}");
 
         // Fetch primary page
@@ -84,14 +90,17 @@ impl Core {
         // Create or update service instance
         let info = match self.services.get_mut(&id) {
             Some(inst) => {
-                info!("updating existing service to version {}", primary_page.header().index());
+                info!(
+                    "updating existing service to version {}",
+                    primary_page.header().index()
+                );
 
                 // Apply primary page
                 if let Err(e) = inst.service.apply_primary(&primary_page) {
                     error!("Failed to apply primary page: {e:?}");
-                    return Err(e.into())
+                    return Err(e.into());
                 }
-                
+
                 // Update in-memory representation
                 inst.primary_page = primary_page.clone();
                 inst.info.primary_page = Some(primary_page.signature());
@@ -100,15 +109,17 @@ impl Core {
                 inst.info.clone()
             }
             None => {
-                info!("creating new service entry at version {}",
-                    primary_page.header().index());
+                info!(
+                    "creating new service entry at version {}",
+                    primary_page.header().index()
+                );
 
                 // Create service from page
                 let service = match Service::load(&primary_page) {
                     Ok(s) => s,
                     Err(e) => return Err(e.into()),
                 };
-                
+
                 let info = build_service_info(&service, ServiceState::Located, &primary_page);
 
                 // Add to in-memory storage
@@ -131,35 +142,31 @@ impl Core {
         debug!("Updating replicas");
 
         // Fetch replica pages
-        let replicas: Vec<(Id, &Container)> = pages
-        .iter()
-        .filter(|p| {
-            let h = p.header();
-            h.kind().is_page()
-                && h.flags().contains(Flags::SECONDARY)
-                && h.application_id() == 0
-                && h.kind() == PageKind::Replica.into()
-        })
-        .filter_map(|p| {
-            let peer_id = match p.info().map(|i| i.peer_id()) {
-                Ok(Some(v)) => v,
-                _ => return None,
-            };
+        let replicas: Vec<Container> = pages
+            .iter()
+            .filter(|p| {
+                let h = p.header();
+                h.kind().is_page()
+                    && h.flags().contains(Flags::SECONDARY)
+                    && h.application_id() == 0
+                    && h.kind() == PageKind::Replica.into()
+            })
+            .filter_map(|p| {
+                let _peer_id = match p.info().map(|i| i.peer_id()) {
+                    Ok(Some(v)) => v,
+                    _ => return None,
+                };
 
-            Some((peer_id.clone(), p))
-        })
-        .collect();
-    
+                Some(p.to_owned())
+            })
+            .collect();
+
         debug!("found {} replicas", replicas.len());
 
         // Update listed replicas
-        for (peer_id, page) in &replicas {
-            // TODO: handle this error condition properly
-            if let Err(e) = self.create_or_update_replica(&id, peer_id, page) {
-                error!("Failed to store replica information: {:?}", e);
-            }
-
-            // TODO: should we store replica pages or re-load on restart?
+        // TODO: handle this error condition properly
+        if let Err(e) = self.create_or_update_replicas(&id, replicas) {
+            error!("Failed to updatereplica information: {:?}", e);
         }
 
         debug!("Service registered: {:?}", info);
@@ -167,29 +174,69 @@ impl Core {
         Ok(info)
     }
 
+    /// Update a service instance (if found)
+    pub async fn service_update<F>(&mut self, id: &Id, mut f: F) -> CoreRes
+    where
+        F: FnMut(&mut Service, &mut ServiceInfo) -> CoreRes,
+    {
+        // Look for matching peer
+        let s = match self.services.get_mut(id) {
+            Some(s) => s,
+            None => return CoreRes::NotFound,
+        };
+
+        // Run update function
+        let r = f(&mut s.service, &mut s.info);
+
+        // Sync updated info to db
+        // TODO: this is fragile as it requires update functions to sync this...
+        // is there a better way?
+        if let Err(e) = self.store.service_update(&s.info).await {
+            error!("Failed to store service information: {e:?}");
+            return CoreRes::Error(DsfError::Store);
+        }
+
+        // Return update result
+        r
+    }
+
+    /// Fetch service information
     pub async fn service_get(&self, ident: &ServiceIdentifier) -> Option<ServiceInfo> {
         // Service are cached so can be fetched from in-memory storage
         // TODO: improve searching for non-id queries?
         if let Some(id) = &ident.id {
-            return self.services.get(&id).map(|s| s.info.clone() )
+            return self.services.get(&id).map(|s| s.info.clone());
         }
 
         if let Some(short_id) = &ident.short_id {
-            return self.services.iter().find(|(_id, s)| s.info.short_id == *short_id).map(|(_id, s)| s.info.clone() )
+            return self
+                .services
+                .iter()
+                .find(|(_id, s)| s.info.short_id == *short_id)
+                .map(|(_id, s)| s.info.clone());
         }
 
         if let Some(index) = &ident.index {
-            return self.services.iter().find(|(_id, s)| s.info.index == *index).map(|(_id, s)| s.info.clone() )
+            return self
+                .services
+                .iter()
+                .find(|(_id, s)| s.info.index == *index)
+                .map(|(_id, s)| s.info.clone());
         }
 
         None
     }
 
+    /// List available services
     pub async fn service_list(&self, bounds: PageBounds) -> Result<Vec<ServiceInfo>, Error> {
         // Service are cached so can be fetched from in-memory storage
 
         // TODO: apply bounds / filtering
-        Ok(self.services.iter().map(|(_id, s)| s.info.clone() ).collect())
+        Ok(self
+            .services
+            .iter()
+            .map(|(_id, s)| s.info.clone())
+            .collect())
     }
 
     /// Helper to load services from the [AsyncStore], called at start
@@ -213,7 +260,7 @@ impl Core {
                     continue;
                 }
             };
-            
+
             // Load page to create service instance
             let mut service = match Service::load(&primary_page) {
                 Ok(v) => v,
@@ -228,16 +275,18 @@ impl Core {
             service.set_secret_key(info.secret_key.clone());
 
             // Fetch latest object to sync last signature
-            match store.object_get(&info.id, ObjectIdentifier::Latest, &keys).await {
+            match store
+                .object_get(&info.id, ObjectIdentifier::Latest, &keys)
+                .await
+            {
                 Ok(o) => service.set_last(o.header().index() + 1, o.signature()),
                 Err(_) => (),
             }
 
             // TODO: Load replica page if available
 
-
             // Add loaded service to list
-            services.push(ServiceInst{
+            services.push(ServiceInst {
                 service,
                 info,
                 primary_page,
@@ -255,11 +304,15 @@ impl ServiceInst {
     }
 }
 
-pub(crate) fn build_service_info(service: &Service, state: ServiceState, primary_page: &Container) -> ServiceInfo {
+pub(crate) fn build_service_info(
+    service: &Service,
+    state: ServiceState,
+    primary_page: &Container,
+) -> ServiceInfo {
     let id = service.id();
     let short_id = ShortId::from(&id);
 
-    ServiceInfo{
+    ServiceInfo {
         id,
         short_id,
         index: service.index() as usize,

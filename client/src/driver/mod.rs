@@ -13,6 +13,7 @@ pub use unix::UnixDriver;
 use crate::Error;
 
 /// Drivers implement a classic request/response call
+#[allow(async_fn_in_trait)]
 pub trait Driver {
     // Execute a request and return a response
     async fn exec(&self, req: RequestKind, timeout: Duration) -> Result<ResponseKind, Error>;

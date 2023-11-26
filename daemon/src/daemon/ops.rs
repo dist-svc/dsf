@@ -3,7 +3,7 @@ use std::{
     time::SystemTime,
 };
 
-use dsf_rpc::{ServiceIdentifier, ServiceState};
+use dsf_rpc::{ServiceIdentifier, ServiceInfo, ServiceState};
 use futures::channel::mpsc;
 use futures::prelude::*;
 use kad::{
@@ -19,16 +19,16 @@ use dsf_core::{
     types::{Flags, Id, ServiceKind},
     wire::Container,
 };
-use dsf_rpc::{PeerInfo, PeerAddress, SubscriptionInfo, PeerState};
+use dsf_rpc::{PeerAddress, PeerInfo, PeerState, SubscriptionInfo};
 
 use crate::{
     core::{
-        Core,
         store::{DataStore, StoreOp, StoreRes},
+        Core, CoreRes,
     },
     daemon::{net::NetIf, Dsf},
     error::Error,
-    rpc::{Engine, OpKind, Res},
+    rpc::{Engine, OpKind},
 };
 
 use super::net::NetFuture;
@@ -55,7 +55,7 @@ where
         if let Poll::Ready(Some(op)) = self.op_rx.poll_next_unpin(ctx) {
             debug!("New op request: {:?}", op);
 
-            let core = self.core.clone();
+            let mut core = self.core.clone();
 
             let Op {
                 req_id: _,
@@ -65,10 +65,10 @@ where
 
             match kind {
                 OpKind::Primary => {
-                    let r = self
-                        .primary(false)
-                        .map(|p| Res::Pages(vec![p], None))
-                        .map_err(|_| CoreError::Unknown);
+                    let r = match self.primary(false) {
+                        Ok(p) => CoreRes::Pages(vec![p], None),
+                        Err(e) => CoreRes::Error(e),
+                    };
 
                     if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
@@ -76,9 +76,10 @@ where
                 }
                 OpKind::ServiceGet(ident) => {
                     tokio::task::spawn(async move {
-                        let r = core.service_get(ident.clone()).await
-                            .map(|s| Ok(Res::ServiceInfo(s)))
-                            .unwrap_or(Err(CoreError::NotFound));
+                        let r = match core.service_get(ident.clone()).await {
+                            Ok(s) => CoreRes::Service(s),
+                            Err(e) => CoreRes::Error(e),
+                        };
 
                         if let Err(e) = done.try_send(r) {
                             error!("Failed to send operation response: {:?}", e);
@@ -87,12 +88,10 @@ where
                 }
                 OpKind::ServiceCreate(service, primary_page) => {
                     tokio::task::spawn(async move {
-                        let r = core
-                            .service_create(service, vec![primary_page])
-                            .await
-                            .map(|i| Res::ServiceInfo(i))
-                            // TODO: fix this error type
-                            .map_err(|e| CoreError::Unknown);
+                        let r = match core.service_create(service, vec![primary_page]).await {
+                            Ok(s) => CoreRes::Service(s),
+                            Err(e) => CoreRes::Error(e),
+                        };
 
                         if let Err(e) = done.try_send(r) {
                             error!("Failed to send operation response: {:?}", e);
@@ -101,12 +100,10 @@ where
                 }
                 OpKind::ServiceRegister(id, pages) => {
                     tokio::task::spawn(async move {
-                        let r = core
-                            .service_register(id.clone(), pages)
-                            .await
-                            .map(|i| Res::ServiceInfo(i))
-                            // TODO: fix this error type
-                            .map_err(|e| CoreError::Unknown);
+                        let r = match core.service_register(id.clone(), pages).await {
+                            Ok(s) => CoreRes::Service(s),
+                            Err(e) => CoreRes::Error(e),
+                        };
 
                         if let Err(e) = done.try_send(r) {
                             error!("Failed to send operation response: {:?}", e);
@@ -115,8 +112,8 @@ where
                 }
                 // Handle special-case update of our own / peer service
                 OpKind::ServiceUpdate(id, f) if id == self.id() => {
-                    let mut state = ServiceState::Created;
-                    let r = f(&mut self.service, &mut state);
+                    let mut info = ServiceInfo::from(&self.service);
+                    let r = f(&mut self.service, &mut info);
 
                     if let Err(e) = done.try_send(r) {
                         error!("Failed to send operation response: {:?}", e);
@@ -124,30 +121,28 @@ where
                 }
                 OpKind::ServiceUpdate(id, f) => {
                     tokio::task::spawn(async move {
-                    let r = core
-                        .service_update(id, f).await
-                        .map(Res::ServiceInfo)
-                        .map_err(|_| CoreError::Unknown);
+                        let r = match core.service_update(id, f).await {
+                            Ok(s) => CoreRes::Service(s),
+                            Err(e) => CoreRes::Error(e),
+                        };
 
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    }
-                });
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        }
+                    });
                 }
-                OpKind::ServiceList(opts) => {
-
-                }
+                OpKind::ServiceList(opts) => {}
                 OpKind::SubscribersGet(id) => {
                     tokio::task::spawn(async move {
-                    let r = core
-                        .subscriber_list(id.clone()).await
-                        .map(Res::Subscribers)
-                        .map_err(|_e| CoreError::Unknown);
+                        let r = match core.subscriber_list(id.clone()).await {
+                            Ok(s) => CoreRes::Subscribers(s),
+                            Err(e) => CoreRes::Error(e),
+                        };
 
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    }
-                });
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        }
+                    });
                 }
                 OpKind::Publish(_id, _info) => {
                     todo!("Implement publish RPC op")
@@ -203,13 +198,13 @@ where
                             .connect(vec![DhtEntry::new(from.clone(), peer)], Default::default())
                             .await
                         {
-                            Ok((p, i)) => Ok(Res::Peers(
+                            Ok((p, i)) => CoreRes::Peers(
                                 p.iter().map(|p| p.info().clone()).collect(),
                                 Some(i),
-                            )),
+                            ),
                             Err(e) => {
                                 error!("DHT connect error: {e:?}");
-                                Err(CoreError::Unknown)
+                                CoreRes::Error(CoreError::Unknown)
                             }
                         };
 
@@ -223,10 +218,10 @@ where
 
                     tokio::task::spawn(async move {
                         let r = match dht.lookup(id.clone(), Default::default()).await {
-                            Ok((p, i)) => Ok(Res::Peers(vec![p.info().clone()], Some(i))),
+                            Ok((p, i)) => CoreRes::Peers(vec![p.info().clone()], Some(i)),
                             Err(e) => {
                                 error!("DHT lookup error: {e:?}");
-                                Err(dht_to_core_error(e))
+                                CoreRes::Error(dht_to_core_error(e))
                             }
                         };
 
@@ -240,10 +235,10 @@ where
 
                     tokio::task::spawn(async move {
                         let r = match dht.search(id.clone(), Default::default()).await {
-                            Ok((p, i)) => Ok(Res::Pages(p, Some(i))),
+                            Ok((p, i)) => CoreRes::Pages(p, Some(i)),
                             Err(e) => {
                                 error!("DHT search error: {e:?}");
-                                Err(dht_to_core_error(e))
+                                CoreRes::Error(dht_to_core_error(e))
                             }
                         };
 
@@ -260,13 +255,13 @@ where
                             .store(id.clone(), pages.clone(), Default::default())
                             .await
                         {
-                            Ok((p, i)) => Ok(Res::Peers(
+                            Ok((p, i)) => CoreRes::Peers(
                                 p.iter().map(|p| p.info().clone()).collect(),
                                 Some(i),
-                            )),
+                            ),
                             Err(e) => {
                                 error!("DHT store error: {e:?}");
-                                Err(dht_to_core_error(e))
+                                CoreRes::Error(dht_to_core_error(e))
                             }
                         };
 
@@ -281,10 +276,10 @@ where
                         debug!("Start DHT update");
 
                         let r = match dht.update(true).await {
-                            Ok(_p) => Ok(Res::Ok),
+                            Ok(_p) => CoreRes::Ok,
                             Err(e) => {
                                 error!("DHT update error: {e:?}");
-                                Err(dht_to_core_error(e))
+                                CoreRes::Error(dht_to_core_error(e))
                             }
                         };
 
@@ -302,9 +297,10 @@ where
 
                         let mut peer_info = PeerInfo::new(id, address, peer_state, 0, None);
                         peer_info.flags = flags;
-                        let r = core.peer_create_or_update(peer_info).await
-                            .map(|p| Res::Peers(vec![p], None))
-                            .map_err(|_| CoreError::NotFound);
+                        let r = match core.peer_create_or_update(peer_info).await {
+                            Ok(p) => CoreRes::Peers(vec![p], None),
+                            Err(e) => CoreRes::Error(e),
+                        };
 
                         if let Err(e) = done.try_send(r) {
                             error!("Failed to send operation response: {:?}", e);
@@ -313,27 +309,27 @@ where
                 }
                 OpKind::PeerGet(id) => {
                     tokio::task::spawn(async move {
-                    let r = core
-                        .peer_get(&id)
-                        .await
-                        .map(|p| Res::Peers(vec![p], None))
-                        .map_err(|_| CoreError::NotFound);
+                        let r = match core.peer_get(&id).await {
+                            Ok(p) => CoreRes::Peers(vec![p], None),
+                            Err(e) => CoreRes::Error(e),
+                        };
 
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    };
-                });
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
                 }
                 OpKind::PeerList => {
                     tokio::task::spawn(async move {
-                    let r = core.peer_list(Default::default()).await
-                        .map(|v| Res::Peers(v, None))
-                        .map_err(|_| CoreError::NotFound);
+                        let r = match core.peer_list(Default::default()).await {
+                            Ok(p) => CoreRes::Peers(p, None),
+                            Err(e) => CoreRes::Error(e),
+                        };
 
-                    if let Err(e) = done.try_send(r) {
-                        error!("Failed to send operation response: {:?}", e);
-                    };
-                });
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
                 }
                 OpKind::ObjectGet(id, sig) => {
                     tokio::task::spawn(async move {
@@ -342,8 +338,8 @@ where
 
                         // And return the response object if found
                         let r = match page {
-                            Ok(Some(p)) => Ok(Res::Pages(vec![p], None)),
-                            _ => Err(CoreError::NotFound),
+                            Ok(Some(p)) => CoreRes::Pages(vec![p], None),
+                            _ => CoreRes::Error(CoreError::NotFound),
                         };
                         if let Err(e) = done.try_send(r) {
                             error!("Failed to send operation response: {:?}", e);
@@ -358,13 +354,13 @@ where
 
                     tokio::task::spawn(async move {
                         // Write data to local store
-                        let res = store.object_put(data).await;
+                        let res = store.object_put(data.clone()).await;
 
                         // Map results and forward to caller
                         let resp = match res {
-                            Ok(_) => Ok(Res::Sig(data.signature())),
+                            Ok(_) => CoreRes::Sig(data.signature()),
                             // TODO: fix store error returns
-                            Err(_e) => Err(CoreError::Unknown),
+                            Err(_e) => CoreRes::Error(CoreError::Unknown),
                         };
                         if let Err(e) = done.try_send(resp) {
                             error!("Failed to forward net response: {:?}", e);
@@ -374,10 +370,10 @@ where
                 OpKind::ReplicaGet(id) => {
                     tokio::task::spawn(async move {
                         let r = match core.replica_list(id.clone()).await {
-                            Ok(v) => Ok(Res::Replicas(v)),
+                            Ok(v) => CoreRes::Replicas(v),
                             Err(e) => {
                                 error!("Failed to locate replicas for service: {:?}", id);
-                                Err(CoreError::Unknown)
+                                CoreRes::Error(CoreError::Unknown)
                             }
                         };
                         if let Err(e) = done.try_send(r) {
@@ -385,21 +381,17 @@ where
                         };
                     });
                 }
-                OpKind::ReplicaUpdate(ref id, replicas) => {
+                OpKind::ReplicaUpdate(id, replicas) => {
                     tokio::task::spawn(async move {
-                        let resp = Ok(Res::Id(id.clone()));
-                        for r in replicas {
-                            match core
-                                .replica_create_or_update(id.clone(), r.info.peer_id.clone(), r.page.clone()).await
-                            {
-                                // TODO: return updated replica info?
-                                Ok(v) => (),
-                                Err(e) => {
-                                    // TODO: propagate error?
-                                    error!("Failed to update replica: {:?}", e);
-                                }
+                        let resp = match core.replica_create_or_update(id.clone(), replicas).await {
+                            // TODO: return updated replica info?
+                            Ok(r) => CoreRes::Replicas(r),
+                            Err(e) => {
+                                // TODO: propagate error?
+                                error!("Failed to update replica: {:?}", e);
+                                CoreRes::Error(e)
                             }
-                        }
+                        };
                         if let Err(e) = done.try_send(resp) {
                             error!("Failed to send operation response: {:?}", e);
                         };
@@ -413,7 +405,7 @@ where
                     tokio::task::spawn(async move {
                         let r = s.await;
 
-                        if let Err(e) = done.send(Ok(Res::Responses(r))).await {
+                        if let Err(e) = done.send(CoreRes::Responses(r)).await {
                             error!("Failed to forward net response: {:?}", e);
                         }
                     });
@@ -432,7 +424,7 @@ where
                     tokio::task::spawn(async move {
                         let r = s.await;
 
-                        if let Err(e) = done.send(Ok(Res::Responses(r))).await {
+                        if let Err(e) = done.send(CoreRes::Responses(r)).await {
                             error!("Failed to forward net response: {:?}", e);
                         }
                     });
@@ -444,7 +436,6 @@ where
 
         Ok(())
     }
-
 }
 
 /// Handle for executing basic operations via daemon
@@ -461,7 +452,7 @@ impl Engine for ExecHandle {
         self.peer_id.clone()
     }
 
-    async fn exec(&self, kind: OpKind) -> Result<Res, CoreError> {
+    async fn exec(&self, kind: OpKind) -> CoreRes {
         let (done_tx, mut done_rx) = mpsc::channel(1);
         let mut tx = self.tx.clone();
 
@@ -475,7 +466,7 @@ impl Engine for ExecHandle {
         if let Err(_e) = tx.send(req).await {
             // TODO: Cancelled
             error!("RPC exec channel closed");
-            return Err(CoreError::Unknown);
+            return CoreRes::Error(CoreError::IO);
         }
 
         // Trigger waker if available (not sure why this isn't happening automatically..?)
@@ -485,12 +476,11 @@ impl Engine for ExecHandle {
 
         // Await response message
         match done_rx.next().await {
-            Some(Ok(r)) => Ok(r),
-            Some(Err(e)) => Err(e),
+            Some(r) => r,
             // TODO: Cancelled
             None => {
                 warn!("RPC response channel closed");
-                Err(CoreError::Unknown)
+                CoreRes::Error(CoreError::Unknown)
             }
         }
     }
@@ -500,7 +490,7 @@ impl Engine for ExecHandle {
 pub struct Op {
     req_id: u64,
     kind: OpKind,
-    done: mpsc::Sender<Result<Res, CoreError>>,
+    done: mpsc::Sender<CoreRes>,
 }
 
 impl core::fmt::Debug for Op {

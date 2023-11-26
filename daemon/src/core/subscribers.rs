@@ -12,9 +12,8 @@ use dsf_core::types::Id;
 pub use dsf_rpc::{SubscriptionInfo, SubscriptionKind};
 
 // TODO: isolate unixmessage from core subscriber somehow
-use crate::io::unix::UnixMessage;
 use super::{Core, Error};
-
+use crate::io::unix::UnixMessage;
 
 #[derive(Clone, Debug)]
 pub struct UnixSubscriber {
@@ -22,9 +21,7 @@ pub struct UnixSubscriber {
     pub sender: mpsc::Sender<UnixMessage>,
 }
 
-
 impl Core {
-
     /// Fetch subscribers for a given service
     pub fn find_subscribers(&self, service_id: &Id) -> Result<Vec<SubscriptionInfo>, Error> {
         match self.subscribers.get(service_id) {

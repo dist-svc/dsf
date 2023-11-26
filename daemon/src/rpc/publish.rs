@@ -19,15 +19,19 @@ use dsf_core::prelude::*;
 
 use dsf_core::net;
 use dsf_core::service::{DataOptions, Publisher};
-use dsf_rpc::{self as rpc, DataInfo, PublishInfo, PublishOptions, PeerInfo};
+use dsf_rpc::{self as rpc, DataInfo, PeerInfo, PublishInfo, PublishOptions};
 
-use crate::daemon::net::{NetFuture, NetIf};
-use crate::daemon::Dsf;
-use crate::error::Error;
-use crate::rpc::push::push_data;
+use crate::{
+    core::CoreRes,
+    daemon::net::{NetFuture, NetIf},
+    daemon::Dsf,
+    error::Error,
+    rpc::push::push_data,
+};
 
 use super::ops::*;
 
+#[allow(async_fn_in_trait)]
 pub trait PublishData {
     /// Publish data using a known / local service
     async fn publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError>;
@@ -85,16 +89,18 @@ pub(super) async fn publish_data<E: Engine, B: DataBody>(
     let r = e
         .svc_update(
             info.id.clone(),
-            Box::new(move |svc, _state| {
-                let (_n, c) = svc.publish_data_buff(data_options.clone())?;
-                Ok(Res::Pages(vec![c.to_owned()], None))
-            }),
+            Box::new(
+                move |svc, _state| match svc.publish_data_buff(data_options.clone()) {
+                    Ok((_n, c)) => CoreRes::Pages(vec![c.to_owned()], None),
+                    Err(e) => CoreRes::Error(e.into()),
+                },
+            ),
         )
         .await;
 
     // Handle build results
     let block = match r {
-        Ok(Res::Pages(p, _)) if p.len() == 1 => p[0].clone(),
+        Ok(CoreRes::Pages(p, _)) if p.len() == 1 => p[0].clone(),
         Err(e) => {
             error!("Failed to build data object: {:?}", e);
             return Err(e);

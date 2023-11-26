@@ -17,33 +17,59 @@ pub struct ReplicaInst {
 }
 
 impl Core {
-
     /// Find replicas for a given service
-    pub fn find_replicas(&self, service_id: &Id) -> Result<Vec<ReplicaInst>, DsfError> {
-        let v = self.replicas.get(service_id);
+    pub fn find_replicas(&self, service_id: &Id) -> Result<Vec<ReplicaInfo>, DsfError> {
+        let v = match self.replicas.get(service_id) {
+            Some(v) => v,
+            None => return Ok(vec![]),
+        };
 
-        Ok(v.map(|v| v.clone()).unwrap_or(vec![]))
+        Ok(v.iter().map(|r| r.info.clone()).collect())
     }
 
     /// Create or update a given replica instance
-    pub fn create_or_update_replica(
+    pub fn create_or_update_replicas(
         &mut self,
         service_id: &Id,
-        peer_id: &Id,
-        page: &Container,
-    ) -> Result<(), DsfError> {
-        let replicas = self.replicas.entry(service_id.clone()).or_insert(vec![]);
-        let replica = replicas.iter_mut().find(|r| &r.info.peer_id == peer_id);
+        replicas: Vec<Container>,
+    ) -> Result<Vec<ReplicaInfo>, DsfError> {
+        let mut updated = vec![];
 
-        match replica {
-            Some(r) => *r = ReplicaInst::try_from(page.to_owned())?,
-            None => {
-                let r = ReplicaInst::try_from(page.to_owned())?;
-                replicas.push(r);
+        for replica_page in replicas {
+            // Parse replica information
+            let e = match ReplicaInst::try_from(&replica_page) {
+                Ok(v) => v,
+                Err(e) => {
+                    error!(
+                        "Failed to parse replica page {:?}: {e:?}",
+                        replica_page.signature()
+                    );
+                    continue;
+                }
+            };
+
+            // Find matching replica entry for service and peer
+            let svc_replicas = self.replicas.entry(service_id.clone()).or_insert(vec![]);
+            let matching_replica = svc_replicas
+                .iter_mut()
+                .find(|r| &r.info.peer_id == &e.info.peer_id);
+
+            // Add information to update list
+            updated.push(e.info.clone());
+
+            // Insert or update the replica entry
+            match matching_replica {
+                Some(r) => {
+                    // TODO: compute whether update is required
+                    *r = e;
+                }
+                None => {
+                    svc_replicas.push(e);
+                }
             }
         }
 
-        Ok(())
+        Ok(updated)
     }
 
     /// Update a specified replica
@@ -65,19 +91,19 @@ impl Core {
 
     /// Remove a specified replica
     pub fn remove_replica(&mut self, _service_id: &Id, _peer_id: &Id) -> Result<Self, ()> {
-        todo!()
+        todo!("replica remove not yet implemented")
     }
 }
 
-
-impl TryFrom<Container> for ReplicaInst {
+impl TryFrom<&Container> for ReplicaInst {
     type Error = DsfError;
 
-    fn try_from(page: Container) -> Result<Self, Self::Error> {
+    fn try_from(page: &Container) -> Result<Self, Self::Error> {
+        // TODO: Check replica headers
         // Replica pages are _always_ secondary types
         let peer_id = match page.info()? {
             PageInfo::Secondary(s) => s.peer_id.clone(),
-            _ => unimplemented!(),
+            _ => return Err(DsfError::InvalidPageKind),
         };
 
         let info = ReplicaInfo {
@@ -93,6 +119,9 @@ impl TryFrom<Container> for ReplicaInst {
             active: false,
         };
 
-        Ok(Self { page, info })
+        Ok(Self {
+            page: page.clone(),
+            info,
+        })
     }
 }
