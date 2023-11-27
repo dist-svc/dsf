@@ -59,7 +59,8 @@ impl Core {
         self.store.object_put(primary_page.to_owned()).await?;
         self.store.service_update(&info).await?;
 
-        // TODO: store other non-primary pages?
+        // TODO(low): create / store other non-primary pages?
+        // at the moment these are created and managed by other operations
 
         // Return created service info
         Ok(info)
@@ -73,7 +74,7 @@ impl Core {
     ) -> Result<ServiceInfo, Error> {
         debug!("Registering service {id}");
 
-        // Fetch primary page
+        // Fetch primary page from available list
         let primary_page = match pages.iter().find(|p| {
             let h = p.header();
             h.kind().is_page() && !h.flags().contains(Flags::SECONDARY) && p.id() == id
@@ -82,7 +83,7 @@ impl Core {
             None => return Err(Error::NotFound),
         };
 
-        // TODO: wtf is this emant to be doing..?
+        // TODO: wtf is this meant to be doing..?
         if primary_page.id() != id {
             debug!("Registering service for matching peer");
         }
@@ -166,7 +167,7 @@ impl Core {
         // Update listed replicas
         // TODO: handle this error condition properly
         if let Err(e) = self.create_or_update_replicas(&id, replicas) {
-            error!("Failed to updatereplica information: {:?}", e);
+            error!("Failed to update replica information: {:?}", e);
         }
 
         debug!("Service registered: {:?}", info);
@@ -189,7 +190,7 @@ impl Core {
         let r = f(&mut s.service, &mut s.info);
 
         // Sync updated info to db
-        // TODO: this is fragile as it requires update functions to sync this...
+        // TODO(low): this is fragile as it requires update functions to set info...
         // is there a better way?
         if let Err(e) = self.store.service_update(&s.info).await {
             error!("Failed to store service information: {e:?}");
@@ -203,7 +204,7 @@ impl Core {
     /// Fetch service information
     pub async fn service_get(&self, ident: &ServiceIdentifier) -> Option<ServiceInfo> {
         // Service are cached so can be fetched from in-memory storage
-        // TODO: improve searching for non-id queries?
+        // TODO(low): improve searching for non-id queries?
         if let Some(id) = &ident.id {
             return self.services.get(&id).map(|s| s.info.clone());
         }
@@ -231,7 +232,7 @@ impl Core {
     pub async fn service_list(&self, bounds: PageBounds) -> Result<Vec<ServiceInfo>, Error> {
         // Service are cached so can be fetched from in-memory storage
 
-        // TODO: apply bounds / filtering
+        // TODO(low): apply bounds / filtering
         Ok(self
             .services
             .iter()
@@ -274,7 +275,7 @@ impl Core {
             service.set_private_key(info.private_key.clone());
             service.set_secret_key(info.secret_key.clone());
 
-            // Fetch latest object to sync last signature
+            // Fetch latest available object to sync last signature state
             match store
                 .object_get(&info.id, ObjectIdentifier::Latest, &keys)
                 .await
@@ -283,7 +284,10 @@ impl Core {
                 Err(_) => (),
             }
 
-            // TODO: Load replica page if available
+            // TODO(med): Setup replication if enabled
+            if let Some(_rp_sig) = &info.replica_page {
+
+            }
 
             // Add loaded service to list
             services.push(ServiceInst {

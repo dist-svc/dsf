@@ -47,7 +47,7 @@ impl Core {
         // Update and return existing peer
         if let Some(p) = self.peers.get_mut(&info.id) {
             // Update address on change
-            // TODO: support multiple addresses
+            // TODO(med): support multiple peer addresses / peer address prioritisations
             p.update_address(info.address);
 
             if let PeerState::Known(k) = info.state {
@@ -116,22 +116,34 @@ impl Core {
     }
 
     /// Update a peer instance (if found)
-    pub fn peer_update<F>(&mut self, id: &Id, mut f: F) -> Option<PeerInfo>
+    pub async fn peer_update<F>(&mut self, id: &Id, mut f: F) -> Result<Option<PeerInfo>, DsfError>
     where
         F: FnMut(&mut PeerInfo),
     {
         // Look for matching peer
         let p = match self.peers.get_mut(id) {
             Some(p) => p,
-            None => return None,
+            None => return Ok(None),
         };
+
+        // Cache unchanged peer info
+        let old_peer = p.clone();
 
         // Run update function
         f(p);
 
-        // TODO: sync to DB?
+        // Sync meaningful peer info updates to db
+        // We don't want to do this every call as it's a lot of overhead
+        // TODO(low): this should probably also execute periodically otherwise 
+        // we ignore packet counts etc. indefinitely / until state changes
+        if p.state != old_peer.state || p.address != old_peer.address || p.flags != old_peer.flags {
+            if let Err(e) = self.store.peer_update(&p).await {
+                error!("Failed to update peer information: {e:?}");
+                return Err(DsfError::Store);
+            }
+        }
 
         // Return updated info
-        Some(p.clone())
+        Ok(Some(p.clone()))
     }
 }

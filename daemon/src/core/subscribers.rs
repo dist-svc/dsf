@@ -11,7 +11,7 @@ use dsf_core::types::Id;
 
 pub use dsf_rpc::{SubscriptionInfo, SubscriptionKind};
 
-// TODO: isolate unixmessage from core subscriber somehow
+// TODO: isolate UnixMessage from core subscriber somehow
 use super::{Core, Error};
 use crate::io::unix::UnixMessage;
 
@@ -30,8 +30,27 @@ impl Core {
         }
     }
 
+    pub fn subscriber_create_or_update(&mut self, info: SubscriptionInfo) -> Result<SubscriptionInfo, Error> {
+        let service_id = info.service_id.clone();
+        let svc_subs = self.subscribers.entry(service_id.clone()).or_insert(vec![]);
+        let mut subscriber = svc_subs.iter_mut().find(|s| s.kind == info.kind);
+
+        match subscriber {
+            Some(s) => {
+                debug!("Update subscriber for service {service_id}: {info:?}");
+                *s = info.clone();
+            },
+            None => {
+                debug!("Create new subscriber for service {service_id}: {info:?}");
+                svc_subs.push(info.clone());
+            },
+        }
+
+        Ok(info)
+    }
+
     pub fn find_peer_subscribers(&self, service_id: &Id) -> Result<Vec<Id>, Error> {
-        // Fetch all subscribers
+        // Fetch all subscribers for the provided service
         let subs = self.find_subscribers(service_id)?;
 
         // Filter for peer (network) subscribers
@@ -130,19 +149,17 @@ impl Core {
     }
 
     /// Remove a subscription
-    pub fn remove(&mut self, service_id: &Id, peer_id: &Id) -> Result<(), Error> {
-        trace!("remove sub lock");
+    pub fn subscriber_remove(&mut self, service_id: &Id, peer_kind: &SubscriptionKind) -> Result<(), Error> {
         let subscribers = self.subscribers.entry(service_id.clone()).or_insert(vec![]);
 
         let remove = subscribers
             .iter()
             .enumerate()
-            .find_map(|(i, s)| match &s.kind {
-                SubscriptionKind::Peer(id) if id == peer_id => Some(i),
-                _ => None,
-            });
+            .find(|(i, s)| &s.kind == peer_kind)
+            .map(|(i, s)| i);
 
         if let Some(i) = remove {
+            debug!("Remove subscriber: {peer_kind:?} for {service_id}");
             subscribers.remove(i);
         }
 

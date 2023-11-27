@@ -139,7 +139,7 @@ fn systemtime_to_humantime(s: SystemTime) -> String {
     chrono_humanize::HumanTime::from(v).to_string()
 }
 
-fn print_peers(peers: &[(Id, PeerInfo)], no_trunc: bool) {
+fn print_peers(peers: &[PeerInfo], no_trunc: bool) {
     if peers.len() == 0 {
         warn!("No peers found");
         return;
@@ -153,7 +153,7 @@ fn print_peers(peers: &[(Id, PeerInfo)], no_trunc: bool) {
     // Add a row per time
     table.add_row(row![b => "Peer ID", "Index", "State", "Address(es)", "Seen", "Sent", "Received", "Blocked"]);
 
-    for (_id, p) in peers {
+    for p in peers {
         let id = match no_trunc {
             true => format!("{}", p.id),
             false => format!("{:#}", p.id),

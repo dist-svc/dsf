@@ -176,7 +176,7 @@ impl Store<Pool<ConnectionManager<SqliteConnection>>> {
             .build(mgr)
             .unwrap();
 
-        // TODO: check connection is okay?
+        // TODO(low): check connection is okay
         let _c = pool.get().map_err(|_| StoreError::Acquire)?;
 
         // Create object

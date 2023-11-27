@@ -221,7 +221,7 @@ fn parse_peer(v: &PeerFields) -> Result<PeerInfo, StoreError> {
         index: *r_index as usize,
         state: s_state,
         address: s_addr,
-        // TODO: persist flags
+        // TODO(low): persist flags if these become relevant?
         flags: PeerFlags::empty(),
 
         seen: r_seen.as_ref().map(|v| from_dt(v)),

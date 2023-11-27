@@ -9,7 +9,7 @@ use tracing::{debug, error, info};
 use dsf_core::prelude::*;
 use dsf_rpc::{
     DataInfo, PageBounds, PeerInfo, PeerState, ReplicaInfo, ServiceIdentifier, ServiceInfo,
-    ServiceState, SubscriptionInfo, TimeBounds,
+    ServiceState, SubscriptionInfo, TimeBounds, SubscriptionKind,
 };
 
 use crate::{
@@ -34,7 +34,7 @@ pub mod subscribers;
 
 pub mod store;
 
-// TODO: combine separate core modules / logic as the current ones are needlessly complicated
+/// Core logic and storage
 pub struct Core {
     /// Service managed or known by the daemon
     services: HashMap<Id, ServiceInst>,
@@ -87,6 +87,8 @@ pub enum CoreOp {
     SubscriberList(Id),
     /// Update a subscription for a given service
     SubscriberCreateUpdate(SubscriptionInfo),
+    /// Remove a subscription for a given service
+    SubscriberRemove(Id, SubscriptionKind),
 
     GetData(Id, PageBounds),
     StoreData(Id, Vec<Container>),
@@ -100,9 +102,29 @@ pub enum CoreOp {
 impl core::fmt::Debug for CoreOp {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::ServiceGet(id) => f.debug_tuple("ServiceGet").field(id).finish(),
-            // TODO: fill in debug impls
-            _ => f.debug_tuple("Something").finish(),
+            CoreOp::ServiceGet(id) => f.debug_tuple("ServiceGet").field(id).finish(),
+            CoreOp::ServiceCreate(svc, _pages) => f.debug_tuple("ServiceCreate").field(svc).finish(),
+            CoreOp::ServiceRegister(id, _pages) => f.debug_tuple("ServiceRegister").field(id).finish(),
+            CoreOp::ServiceList(bounds) => f.debug_tuple("ServiceList").field(bounds).finish(),
+            CoreOp::ServiceUpdate(id, _) => f.debug_tuple("ServiceUpdate").field(id).finish(),
+            
+            CoreOp::PeerGet(ident) => f.debug_tuple("PeerGet").field(ident).finish(),
+            CoreOp::PeerList(bounds) => f.debug_tuple("PeerList").field(bounds).finish(),
+            CoreOp::PeerCreate(info) => f.debug_tuple("PeerCreate").field(info).finish(),
+            CoreOp::PeerUpdate(id, _) => f.debug_tuple("PeerUpdate").field(id).finish(),
+            
+            CoreOp::ReplicaList(id) => f.debug_tuple("ReplicaList").field(id).finish(),
+            CoreOp::ReplicaCreateUpdate(id, _pages) => f.debug_tuple("ReplicaCreateUpdate").field(id).finish(),
+            
+            CoreOp::SubscriberList(id) => f.debug_tuple("SubscriberList").field(id).finish(),
+            CoreOp::SubscriberCreateUpdate(info) => f.debug_tuple("SubscriberCreateUpdate").field(info).finish(),
+            CoreOp::SubscriberRemove(id, sub_kind) => f.debug_tuple("SubscriberRemove").field(id).field(sub_kind).finish(),
+            
+            CoreOp::GetData(id, _bounds) => f.debug_tuple("GetData").field(id).finish(),
+            CoreOp::StoreData(id, _objects) => f.debug_tuple("StoreData").field(id).finish(),
+            CoreOp::GetObject(id, object) => f.debug_tuple("GetObject").field(id).field(object).finish(),
+            CoreOp::StoreObject(id, object) => f.debug_tuple("StoreObject").field(id).field(object).finish(),
+            CoreOp::GetKeys(id) => f.debug_tuple("GetKeys").field(id).finish(),
         }
     }
 }
@@ -166,7 +188,7 @@ impl Core {
         let mut peers = store.peer_load().await?;
         let peers = HashMap::from_iter(peers.drain(..).map(|s| (s.id.clone(), s)));
 
-        // TODO: load subscribers and replicas?!
+        // TODO(low): persist subscribers and replicas? though we can recover these from elsewhere
 
         Ok(Self {
             services,
@@ -249,7 +271,8 @@ impl Core {
                 .unwrap_or(CoreRes::NotFound),
             CoreOp::PeerUpdate(peer_id, f) => self
                 .peer_update(&peer_id, f)
-                .map(CoreRes::Peer)
+                .await
+                .map(|p| p.map(CoreRes::Peer).unwrap_or(CoreRes::NotFound) )
                 .unwrap_or(CoreRes::NotFound),
 
             CoreOp::ReplicaCreateUpdate(service_id, replicas) => self
@@ -265,7 +288,12 @@ impl Core {
                 .find_subscribers(&service_id)
                 .map(CoreRes::Subscribers)
                 .unwrap_or(CoreRes::NotFound),
-            CoreOp::SubscriberCreateUpdate(info) => todo!(),
+            CoreOp::SubscriberCreateUpdate(info) => self.subscriber_create_or_update(info)
+                .map(|s| CoreRes::Subscribers(vec![s]))
+                .unwrap_or(CoreRes::NotFound),
+            CoreOp::SubscriberRemove(service_id, sub_kind) => self.subscriber_remove(&service_id, &sub_kind)
+                .map(|_s| CoreRes::Ok)
+                .unwrap_or(CoreRes::NotFound),
         }
     }
 
@@ -602,11 +630,30 @@ impl AsyncCore {
     pub async fn subscriber_remove(
         &mut self,
         service_id: Id,
-        peer_id: Id,
-    ) -> Result<ReplicaInfo, DsfError> {
-        todo!("subscriber remove not yet implemented")
+        sub_kind: SubscriptionKind,
+    ) -> Result<(), DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self
+            .tasks
+            .send((CoreOp::SubscriberRemove(service_id, sub_kind), tx))
+        {
+            error!("Failed to enqueue subscriber update operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Ok) => Ok(()),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Err(_) => Err(DsfError::Unknown),
+            _ => unreachable!(),
+        }
     }
 
+    /// Fetch a stored object for a given service and object identifier
     pub async fn object_get<I: Into<ObjectIdentifier>>(
         &self,
         service_id: &Id,
@@ -677,11 +724,14 @@ impl KeySource for AsyncCore {
     fn keys(&self, id: &Id) -> Option<Keys> {
         let id = id.clone();
 
+        #[cfg(broken)]
         futures::executor::block_on(async move {
             match self.keys_get(&id).await {
                 Ok(k) => Some(k),
                 _ => None,
             }
-        })
+        });
+
+        None
     }
 }

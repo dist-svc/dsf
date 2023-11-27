@@ -127,7 +127,7 @@ impl PeerInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, clap::Parser)]
 pub enum PeerCommands {
     /// List known peers
-    List(PeerOptions),
+    List(PeerListOptions),
 
     /// Connects to a known peer
     Connect(ConnectOptions),
@@ -166,7 +166,7 @@ pub struct ConnectOptions {
 
 // Peer list options
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
-pub struct PeerOptions {}
+pub struct PeerListOptions {}
 
 /// ConnectOptions passed to connect function
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]

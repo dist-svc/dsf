@@ -10,7 +10,7 @@ use dsf_core::{options::Options, prelude::{Service, Keys}, wire::Container};
 use dsf_core::types::*;
 
 pub use crate::helpers::{try_load_file, try_parse_key_value};
-use crate::ServiceIdentifier;
+use crate::{ServiceIdentifier, PageBounds};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 //#[cfg_attr(feature = "diesel", derive(diesel::Queryable))]
@@ -170,6 +170,10 @@ pub struct ServiceListOptions {
     #[clap(long)]
     /// Service type for filtering
     pub kind: Option<ServiceKind>,
+
+    #[clap(flatten)]
+    /// Bounds for listing
+    pub bounds: PageBounds,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser, Default)]

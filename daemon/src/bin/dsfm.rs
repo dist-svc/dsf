@@ -76,7 +76,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // Establish peer connections
     let root = opts.daemon_opts.with_suffix(1);
     let mut c = Client::new(Config::new(
-        Some(&root.daemon_socket),
+        Some(&format!("unix://{}", root.daemon_socket)),
         Duration::from_secs(10),
     ))
     .await

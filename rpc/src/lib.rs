@@ -236,7 +236,7 @@ pub enum ResponseKind {
     Connected(ConnectInfo),
 
     Peer(PeerInfo),
-    Peers(Vec<(Id, PeerInfo)>),
+    Peers(Vec<PeerInfo>),
 
     Service(ServiceInfo),
     Services(Vec<ServiceInfo>),

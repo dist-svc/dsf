@@ -71,9 +71,6 @@ pub struct Dsf<Net = NetSink> {
     /// Sink for sending messages via the network
     pub(crate) net_sink: Net,
 
-    pub(crate) net_resp_tx: mpsc::UnboundedSender<(Address, Option<Id>, NetMessage)>,
-    pub(crate) net_resp_rx: mpsc::UnboundedReceiver<(Address, Option<Id>, NetMessage)>,
-
     /// Addresses for peer advertisement
     pub(crate) addresses: Vec<Address>,
 
@@ -109,8 +106,6 @@ where
 
         let (op_tx, op_rx) = mpsc::unbounded();
 
-        let (net_resp_tx, net_resp_rx) = mpsc::unbounded();
-
         // Create DSF object
         let s = Self {
             config,
@@ -130,8 +125,6 @@ where
             net_sink,
             net_requests: HashMap::new(),
             net_ops: HashMap::new(),
-            net_resp_rx,
-            net_resp_tx,
             addresses: Vec::new(),
 
             waker: None,
@@ -248,17 +241,6 @@ where
             ctx.waker().clone().wake();
         }
 
-        // Poll on pending outgoing responses to be forwarded
-        // (we need a channel or _something_ to make async responses viable, but, this is a bit grim)
-        if let Poll::Ready(Some((addr, id, msg))) = self.net_resp_rx.poll_next_unpin(ctx) {
-            if let Err(e) = self.net_send(&[(addr, id)], msg) {
-                error!("Error sending outgoing response message: {:?}", e);
-            }
-
-            // Force re-wake
-            ctx.waker().clone().wake();
-        }
-
         // Poll on internal network operations
         self.poll_net_ops(ctx);
 
@@ -274,7 +256,7 @@ where
         // TODO: propagate this, in a better manner
 
         // Always wake (terrible for CPU use but helps response times)
-        //ctx.waker().clone().wake();
+        ctx.waker().clone().wake();
 
         // Store waker
         self.waker = Some(ctx.waker().clone());

@@ -33,7 +33,7 @@ pub enum StoreOp {
     ObjectGet(Id, ObjectIdentifier, Keys),
     ObjectPut(Container),
     ObjectList(Id, PageBounds, Keys),
-    ObjectDelete,
+    ObjectDelete(Signature),
 }
 
 /// Async datastore results
@@ -110,7 +110,9 @@ impl AsyncStore {
                     bounds.count.unwrap_or(10),
                 )
                 .map(StoreRes::Objects),
-            StoreOp::ObjectDelete => todo!("ObjectDelete not yet implemented"),
+            StoreOp::ObjectDelete(sig) => store
+                .delete_object(&sig)
+                .map(|_| StoreRes::Ok),
         }
     }
 }
@@ -204,8 +206,22 @@ impl DataStore for AsyncStore {
         }
     }
 
-    async fn peer_del(&self, _id: &Id) -> Result<(), StoreError> {
-        todo!("peer_del not yet implemented")
+    async fn peer_del(&self, peer_id: &Id) -> Result<(), StoreError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((StoreOp::PeerDelete(peer_id.clone()), tx)) {
+            error!("Failed to enqueue peer delete operation: {e:?}");
+            return Err(StoreError::Unknown);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(StoreRes::Ok) => Ok(()),
+            Ok(StoreRes::Err(e)) => Err(e),
+            Err(_) => Err(StoreError::Unknown),
+            _ => unreachable!(),
+        }
     }
 
     async fn peer_load(&self) -> Result<Vec<PeerInfo>, StoreError> {
@@ -262,8 +278,22 @@ impl DataStore for AsyncStore {
         }
     }
 
-    async fn service_del(&self, _id: &Id) -> Result<(), StoreError> {
-        todo!("service_del not yet implemented")
+    async fn service_del(&self, service_id: &Id) -> Result<(), StoreError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((StoreOp::ServiceDelete(service_id.clone()), tx)) {
+            error!("Failed to enqueue service delete operation: {e:?}");
+            return Err(StoreError::Unknown);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(StoreRes::Ok) => Ok(()),
+            Ok(StoreRes::Err(e)) => Err(e),
+            Err(_) => Err(StoreError::Unknown),
+            _ => unreachable!(),
+        }
     }
 
     async fn service_load(&self) -> Result<Vec<ServiceInfo>, StoreError> {
@@ -355,7 +385,21 @@ impl DataStore for AsyncStore {
         }
     }
 
-    async fn object_del(&self, _sig: &Signature) -> Result<(), StoreError> {
-        todo!("object_del not yet implemented")
+    async fn object_del(&self, sig: &Signature) -> Result<(), StoreError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((StoreOp::ObjectDelete(sig.clone()), tx)) {
+            error!("Failed to enqueue object delete operation: {e:?}");
+            return Err(StoreError::Unknown);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(StoreRes::Ok) => Ok(()),
+            Ok(StoreRes::Err(e)) => Err(e),
+            Err(_) => Err(StoreError::Unknown),
+            _ => unreachable!(),
+        }
     }
 }

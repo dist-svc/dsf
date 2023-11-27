@@ -23,6 +23,9 @@ pub type RpcSender = mpsc::Sender<Response>;
 
 /// Basic engine operations, used to construct higher-level async functions
 pub enum OpKind {
+    /// Fetch daemon information
+    Info,
+
     /// Connect to the DHT via unknown peer
     DhtConnect(Address, Option<Id>),
     /// Search for pages at an address in the DHT
@@ -76,6 +79,7 @@ pub enum OpKind {
 impl core::fmt::Debug for OpKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Info => f.debug_tuple("Info").finish(),
             Self::DhtConnect(addr, id) => {
                 f.debug_tuple("DhtConnect").field(addr).field(id).finish()
             }

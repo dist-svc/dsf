@@ -64,6 +64,7 @@ where
             } = op;
 
             match kind {
+                OpKind::Info => todo!("Info op not yet implemented"),
                 OpKind::Primary => {
                     let r = match self.primary(false) {
                         Ok(p) => CoreRes::Pages(vec![p], None),
@@ -131,7 +132,19 @@ where
                         }
                     });
                 }
-                OpKind::ServiceList(opts) => {}
+                OpKind::ServiceList(opts) => {
+                    // TODO(med): apply service kind filters
+                    tokio::task::spawn(async move {
+                        let r = match core.service_list(opts.bounds).await {
+                            Ok(s) => CoreRes::Services(s),
+                            Err(e) => CoreRes::Error(e),
+                        };
+
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        }
+                    });
+                }
                 OpKind::SubscribersGet(id) => {
                     tokio::task::spawn(async move {
                         let r = match core.subscriber_list(id.clone()).await {

@@ -60,7 +60,7 @@ impl Core {
             // Insert or update the replica entry
             match matching_replica {
                 Some(r) => {
-                    // TODO: compute whether update is required
+                    // TODO(low): compute whether the new data is actually an update and select whether to apply
                     *r = e;
                 }
                 None => {
@@ -99,7 +99,7 @@ impl TryFrom<&Container> for ReplicaInst {
     type Error = DsfError;
 
     fn try_from(page: &Container) -> Result<Self, Self::Error> {
-        // TODO: Check replica headers
+        // TODO(low): Check replica headers (this is pre-checked in the daemon)
         // Replica pages are _always_ secondary types
         let peer_id = match page.info()? {
             PageInfo::Secondary(s) => s.peer_id.clone(),

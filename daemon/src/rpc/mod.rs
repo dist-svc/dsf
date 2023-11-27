@@ -59,6 +59,19 @@ impl<T: Engine> Rpc for T {
         let req_id = req.req_id();
 
         match req.kind() {
+            RequestKind::Status => {
+                debug!("Status request");
+
+                // TODO(med): fill in status information
+                let info = StatusInfo{
+                    id: self.id(),
+                    peers: 0,
+                    services: 0,
+                    version: crate::VERSION.to_string(),
+                };
+
+                return Response::new(req_id, ResponseKind::Status(info))
+            }
             RequestKind::Peer(c) => {
                 debug!("Starting async peer op");
 
@@ -71,7 +84,9 @@ impl<T: Engine> Rpc for T {
                     }
                     PeerCommands::Block(_) => todo!("Block command not yet implemented"),
                     PeerCommands::Unblock(_) => todo!("Unblock command not yet implemented"),
-                    PeerCommands::List(_) => todo!("List command not yet implemented"),
+                    PeerCommands::List(_) => {
+                        self.peer_list().await.map(ResponseKind::Peers)
+                    },
                     PeerCommands::Info(_) => todo!("Info command not yet implemented"),
                     PeerCommands::Remove(_) => todo!("Remove command not yet implemented"),
                 };

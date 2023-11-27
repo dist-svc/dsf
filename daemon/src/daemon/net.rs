@@ -45,12 +45,13 @@ use crate::rpc::Engine;
 use crate::store::object::ObjectIdentifier;
 
 /// Network interface abstraction, allows [`Dsf`] instance to be generic over interfaces
+#[allow(async_fn_in_trait)]
 pub trait NetIf {
     /// Interface for sending
     type Interface;
 
     /// Send a message to the specified targets
-    fn net_send(
+    async fn net_send(
         &mut self,
         targets: &[(Address, Option<Id>)],
         msg: NetMessage,
@@ -65,7 +66,7 @@ pub type ByteSink = mpsc::Sender<(Address, Vec<u8>)>;
 impl NetIf for Dsf<NetSink> {
     type Interface = NetSink;
 
-    fn net_send(
+    async fn net_send(
         &mut self,
         targets: &[(Address, Option<Id>)],
         msg: NetMessage,
@@ -84,7 +85,7 @@ impl NetIf for Dsf<NetSink> {
 impl NetIf for Dsf<ByteSink> {
     type Interface = ByteSink;
 
-    fn net_send(
+    async fn net_send(
         &mut self,
         targets: &[(Address, Option<Id>)],
         msg: NetMessage,
@@ -98,11 +99,11 @@ impl NetIf for Dsf<ByteSink> {
             // If we have one target, use symmetric or asymmetric mode as suits
             1 => {
                 let t = &targets[0];
-                self.net_encode(t.1.as_ref(), msg)?
+                self.net_encode(t.1.as_ref(), msg).await?
             }
             // If we have multiple targets, use asymmetric encoding to share objects
             // (note this improves performance but drops p2p message privacy)
-            _ => self.net_encode(None, msg)?,
+            _ => self.net_encode(None, msg).await?,
         };
 
         // Fan-out encoded message to each target
@@ -227,7 +228,7 @@ where
 
         let mut data = msg.data.to_vec();
 
-        trace!("RX: {:?}", container);
+        debug!("RX: {:?}", container);
 
         // Handle unwrapped objects (eg. from constrained services)
         if !header.kind().is_message() {
@@ -290,14 +291,14 @@ where
 
                     // Respond to origin
                     let a = msg.address.into();
-                    let mut o = self.net_resp_tx.clone();
                     let r = NetResponse::new(
                         self.id(),
                         header.index() as u16,
                         NetResponseBody::Status(resp),
                         Flags::empty(),
                     );
-                    let _ = o.send((a, None, NetMessage::response(r))).await;
+                    // TODO: catch errors
+                    let _ = self.net_send(&[(a, Some(id))], NetMessage::response(r)).await;
 
                     // TODO: forward to subscribers
                     match self.core.subscriber_list(id.clone()).await {
@@ -351,6 +352,8 @@ where
                 return Ok(());
             }
         };
+        
+        debug!("Handling message: {message:?}");
 
         // TODO: handle crypto mode errors
         // (eg. message encoded with SYMMETRIC but no pubkey for derivation)
@@ -388,21 +391,15 @@ where
                 let a = msg.address.into();
                 let mut o = self.net_resp_tx.clone();
 
-                // Spawn a task to forward completed response to outgoing messages
-                // TODO: this _should_ use the response channel in the io::NetMessage, however,
-                // we need to re-encode the message prior to doing this which requires the daemon...
-                tokio::task::spawn(async move {
-                    if let Some(r) = rx.next().await {
-                        let _ = o.send((a, None, NetMessage::Response(r))).await;
-                    }
-                });
+                // TODO: handle errors
+                let _ = self.net_send(&[(a, None)], NetMessage::Response(r)).await;
             }
         };
 
         Ok(())
     }
 
-    pub fn net_encode(
+    pub async fn net_encode(
         &mut self,
         id: Option<&Id>,
         mut msg: net::Message,
@@ -416,8 +413,8 @@ where
                 // Fetch peer information
                 // TODO: un async-ify this?
                 let p_id = id.clone();
-                let mut core = self.core.clone();
-                let p = futures::executor::block_on(async move { core.peer_get(p_id).await });
+                let core = self.core.clone();
+                let p = core.peer_get(p_id).await;
 
                 match (self.key_cache.get(id), p) {
                     (Some(k), Ok(p)) => (k.clone(), p.flags.contains(PeerFlags::SYMMETRIC_ENABLED)),
@@ -456,7 +453,7 @@ where
     /// Create a network operation for the given request
     ///
     /// This sends the provided request to the listed peers with retries and timeouts.
-    pub fn net_op(&mut self, peers: Vec<PeerInfo>, req: net::Request) -> NetFuture {
+    pub async fn net_op(&mut self, peers: Vec<PeerInfo>, req: net::Request) -> NetFuture {
         let req_id = req.id;
 
         // Setup response channels
@@ -500,7 +497,7 @@ where
         self.net_ops.insert(req_id, op);
 
         // Issue request
-        if let Err(e) = self.net_send(&targets, net::Message::Request(req)) {
+        if let Err(e) = self.net_send(&targets, net::Message::Request(req)).await {
             error!("FATAL network send error: {:?}", e);
         }
 
@@ -508,7 +505,7 @@ where
         NetFuture { rx }
     }
 
-    pub fn net_broadcast(&mut self, req: net::Request) -> NetFuture {
+    pub async fn net_broadcast(&mut self, req: net::Request) -> NetFuture {
         let req_id = req.id;
 
         // Create net operation
@@ -529,7 +526,7 @@ where
         // Issue request
         // TODO: select broadcast address' based on availabile interfaces?
         let targets = [(IPV4_BROADCAST.into(), None), (IPV6_BROADCAST.into(), None)];
-        if let Err(e) = self.net_send(&targets, net::Message::Request(req)) {
+        if let Err(e) = self.net_send(&targets, net::Message::Request(req)).await {
             error!("FATAL network send error: {:?}", e);
         }
 
@@ -841,7 +838,7 @@ where
                 );
 
                 self.core
-                    .subscriber_remove(service_id.clone(), peer.id.clone())
+                    .subscriber_remove(service_id.clone(), SubscriptionKind::Peer(peer.id.clone()))
                     .await
                     .unwrap();
 

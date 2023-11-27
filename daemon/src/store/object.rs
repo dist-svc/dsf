@@ -46,8 +46,8 @@ pub(super) fn save_object<C: Connection<Backend = Sqlite> + LoadConnection, T: I
     conn: &mut C,
     page: &Container<T>,
 ) -> Result<(), StoreError> {
-    // TODO: is it possible to have an invalid container here?
-    // constructors _should_ make this impossible, but, needs to be checked.
+    // TODO(low): is it possible to have an invalid container here?
+    // constructors _should_ make this impossible, but, should probably be checked prior to storing.
     let sig = signature.eq(page.signature().to_string());
     let idx = object_index.eq(page.header().index() as i32);
     let raw = raw_data.eq(page.raw());

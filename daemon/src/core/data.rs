@@ -25,7 +25,6 @@ pub struct DataInst {
 
 impl Core {
     /// Fetch data for a given service
-    // TODO: add paging?
     pub async fn fetch_data(
         &self,
         service_id: &Id,
@@ -43,10 +42,9 @@ impl Core {
             ..Default::default()
         };
 
-        // TODO: filter by time bounds (where possible)
+        // TODO(low): filter by time bounds (where possible)
 
         // Load data from store
-        // TODO: filter (and sort?) via db rather than in post
         let mut data = self
             .store
             .object_find(service_id, &keys, page_bounds)
@@ -80,7 +78,7 @@ impl Core {
             ..Default::default()
         };
 
-        // TODO: check whether object exists in local cache
+        // TODO(low): check whether object exists in local cache
         // and return early if found
 
         // Fetch object from backing store
@@ -108,9 +106,9 @@ impl Core {
 
         // TODO: verify and decode/encode objects as required for storage
 
-        // TODO: Add data to local cache
+        // TODO(low): Add data to local cache
 
-        // TODO: update associated service information
+        // TODO(med): update associated service information
 
         // Start data store operation
         // This uses a task to dispatch the operation without blocking
@@ -124,7 +122,7 @@ impl Core {
             for p in pages {
                 match s.object_put(p).await {
                     Ok(_) => {
-                        //TODO: signal object is allowed to be dropped from cache
+                        //TODO (low): signal object is allowed to be dropped from cache
                     }
                     Err(e) => {
                         error!("Failed to write object to store: {e:?}");
