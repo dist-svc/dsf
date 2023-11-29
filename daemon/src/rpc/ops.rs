@@ -50,7 +50,7 @@ pub enum OpKind {
     SubscribersGet(Id),
 
     /// Create or update peer information
-    PeerCreateUpdate(Id, PeerAddress, Option<PublicKey>, PeerFlags),
+    PeerCreateUpdate(PeerInfo),
     /// Fetch peer information by peer ID
     PeerGet(Id),
     /// List known peers
@@ -99,12 +99,9 @@ impl core::fmt::Debug for OpKind {
 
             Self::Publish(id, info) => f.debug_tuple("Publish").field(id).field(info).finish(),
 
-            Self::PeerCreateUpdate(id, addr, pub_key, flags) => f
+            Self::PeerCreateUpdate(info) => f
                 .debug_tuple("PeerCreateUpdate")
-                .field(id)
-                .field(addr)
-                .field(pub_key)
-                .field(flags)
+                .field(info)
                 .finish(),
 
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
@@ -199,13 +196,10 @@ pub trait Engine: Sync + Send {
     /// Create or update a peer
     async fn peer_create_update(
         &self,
-        id: Id,
-        addr: PeerAddress,
-        pub_key: Option<PublicKey>,
-        flags: PeerFlags,
+        info: PeerInfo,
     ) -> Result<PeerInfo, DsfError> {
         match self
-            .exec(OpKind::PeerCreateUpdate(id, addr, pub_key, flags))
+            .exec(OpKind::PeerCreateUpdate(info))
             .await
         {
             CoreRes::Peers(p, _) if p.len() == 1 => Ok(p[0].clone()),

@@ -301,15 +301,8 @@ where
                         }
                     });
                 }
-                OpKind::PeerCreateUpdate(id, address, pub_key, flags) => {
+                OpKind::PeerCreateUpdate(peer_info) => {
                     tokio::task::spawn(async move {
-                        let peer_state = match pub_key {
-                            Some(k) => PeerState::Known(k),
-                            None => PeerState::Unknown,
-                        };
-
-                        let mut peer_info = PeerInfo::new(id, address, peer_state, 0, None);
-                        peer_info.flags = flags;
                         let r = match core.peer_create_or_update(peer_info).await {
                             Ok(p) => CoreRes::Peers(vec![p], None),
                             Err(e) => CoreRes::Error(e),

@@ -49,14 +49,14 @@ pub struct Dsf<Net = NetSink> {
     /// Core management of services, peers, etc.
     pub(super) core: AsyncCore,
 
+    /// Local (database) storage
+    pub(crate) store: AsyncStore,
+
     /// Distributed Database
     dht: DsfDht,
 
     /// Source for outgoing DHT requests
     dht_source: kad::dht::RequestReceiver<Id, PeerInfo, Container>,
-
-    /// Local (database) storage
-    pub(crate) store: AsyncStore,
 
     /// RPC request channel
     pub(crate) op_rx: mpsc::UnboundedReceiver<Op>,

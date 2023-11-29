@@ -34,6 +34,8 @@ pub enum StoreOp {
     ObjectPut(Container),
     ObjectList(Id, PageBounds, Keys),
     ObjectDelete(Signature),
+
+    Exit,
 }
 
 /// Async datastore results
@@ -61,6 +63,11 @@ impl AsyncStore {
         std::thread::spawn(move || {
             // Wait for store commands
             while let Some((op, done)) = rx.blocking_recv() {
+                if let StoreOp::Exit = op {
+                    debug!("Exiting AsyncStore");
+                    break;
+                }
+
                 // Handle store operations
                 let tx = match Self::handle_op(&mut store, op) {
                     Ok(r) => r,
@@ -113,6 +120,7 @@ impl AsyncStore {
             StoreOp::ObjectDelete(sig) => store
                 .delete_object(&sig)
                 .map(|_| StoreRes::Ok),
+            StoreOp::Exit => unimplemented!(),
         }
     }
 }

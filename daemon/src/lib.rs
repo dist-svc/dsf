@@ -34,6 +34,8 @@ pub mod daemon;
 
 pub mod rpc;
 
+pub mod net;
+
 pub mod io;
 
 pub mod store;

@@ -2,6 +2,7 @@ use std::collections::hash_map::{Entry, RandomState};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::num;
+use std::time::SystemTime;
 
 use kad::prelude::*;
 use tracing::{error, trace};
@@ -143,12 +144,13 @@ where
                 for (id, addr, key) in nodes {
                     // Add peer to local tracking
                     let node = e
-                        .peer_create_update(
+                        .peer_create_update(PeerInfo::new(
                             id.clone(),
                             PeerAddress::Implicit(addr.clone()),
-                            Some(key.clone()),
-                            PeerFlags::empty(),
-                        )
+                            PeerState::Known(key.clone()),
+                            0,
+                            Some(SystemTime::now())
+                        ))
                         .await
                         .unwrap();
 

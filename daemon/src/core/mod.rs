@@ -97,6 +97,9 @@ pub enum CoreOp {
     StoreObject(Id, Container),
 
     GetKeys(Id),
+
+    /// Exit core task
+    Exit,
 }
 
 impl core::fmt::Debug for CoreOp {
@@ -125,6 +128,8 @@ impl core::fmt::Debug for CoreOp {
             CoreOp::GetObject(id, object) => f.debug_tuple("GetObject").field(id).field(object).finish(),
             CoreOp::StoreObject(id, object) => f.debug_tuple("StoreObject").field(id).field(object).finish(),
             CoreOp::GetKeys(id) => f.debug_tuple("GetKeys").field(id).finish(),
+
+            CoreOp::Exit => f.debug_tuple("Exit").finish(),
         }
     }
 }
@@ -294,6 +299,7 @@ impl Core {
             CoreOp::SubscriberRemove(service_id, sub_kind) => self.subscriber_remove(&service_id, &sub_kind)
                 .map(|_s| CoreRes::Ok)
                 .unwrap_or(CoreRes::NotFound),
+            CoreOp::Exit => unimplemented!(),
         }
     }
 
@@ -326,6 +332,11 @@ impl AsyncCore {
         tokio::task::spawn(async move {
             // Wait for core operations
             while let Some((op, done)) = rx.recv().await {
+                if let CoreOp::Exit = op {
+                    debug!("Exiting AsyncCore");
+                    break;
+                }
+
                 // Handle core operations
                 let tx = core.handle_op(op).await;
 

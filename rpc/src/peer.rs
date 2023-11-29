@@ -87,6 +87,11 @@ impl PeerInfo {
         }
     }
 
+    pub fn with_flags(mut self, flags: PeerFlags) -> Self {
+        self.flags = flags;
+        self
+    }
+
     /// Fetch the address of a peer
     pub fn address(&self) -> &Address {
         match &self.address {

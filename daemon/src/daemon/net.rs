@@ -220,7 +220,7 @@ impl<Net> Dsf<Net>
 where
     Dsf<Net>: NetIf<Interface = Net>,
 {
-    pub async fn handle_net_raw(&mut self, msg: crate::io::NetMessage) -> Result<(), DaemonError> {
+    pub async fn handle_net(&mut self, msg: crate::io::NetMessage) -> Result<(), DaemonError> {
         // Decode message
         let (container, _n) = Container::from(&msg.data);
         let header = container.header();
@@ -230,117 +230,15 @@ where
 
         debug!("RX: {:?}", container);
 
-        // Handle unwrapped objects (eg. from constrained services)
+        // DELEGATION: Handle unwrapped objects for constrained / delegated services
         if !header.kind().is_message() {
-            debug!(
-                "Handling raw {:?} object from service: {:#}",
-                id,
-                header.kind()
-            );
-
-            // Look for matching service
-            match self.core.service_get(id.clone()).await {
-                Ok(info)
-                    if info.state == ServiceState::Subscribed
-                        || info.flags.contains(ServiceFlags::SUBSCRIBED) =>
-                {
-                    // Update local service
-                    let resp = match header.kind() {
-                        Kind::Page { .. } => {
-                            debug!(
-                                "Receive service page {:#} index {}",
-                                id,
-                                container.header().index()
-                            );
-                            match self
-                                .core
-                                .service_register(id.clone(), vec![container.to_owned()])
-                                .await
-                            {
-                                Ok(_) => Status::Ok,
-                                Err(e) => {
-                                    error!("Failed to update service: {:?}", e);
-                                    Status::Failed
-                                }
-                            }
-                        }
-                        Kind::Data { .. } => {
-                            debug!(
-                                "Receive service data {:#} index {}",
-                                id,
-                                container.header().index()
-                            );
-
-                            // Start async store operation
-                            // so that ACK is not dependent on db performance
-                            // TODO: move db ops to async database task to
-                            // avoid blocking whenever possible
-                            let exec = self.exec();
-                            let c = container.to_owned();
-
-                            tokio::task::spawn(async move {
-                                if let Err(e) = exec.object_put(c).await {
-                                    error!("Failed to store object: {e:?}")
-                                }
-                            });
-
-                            Status::Ok
-                        }
-                        _ => Status::InvalidRequest,
-                    };
-
-                    // Respond to origin
-                    let a = msg.address.into();
-                    let r = NetResponse::new(
-                        self.id(),
-                        header.index() as u16,
-                        NetResponseBody::Status(resp),
-                        Flags::empty(),
-                    );
-                    // TODO: catch errors
-                    let _ = self.net_send(&[(a, Some(id))], NetMessage::response(r)).await;
-
-                    // TODO: forward to subscribers
-                    match self.core.subscriber_list(id.clone()).await {
-                        Ok(subscribers) if subscribers.len() > 0 => {
-                            let mut peer_subs = Vec::new();
-                            for s in subscribers {
-                                let peer_id = match &s.kind {
-                                    SubscriptionKind::Peer(id) => id,
-                                    _ => continue,
-                                };
-
-                                match self.core.peer_get(peer_id).await {
-                                    Ok(p) => peer_subs.push(p),
-                                    _ => (),
-                                }
-                            }
-
-                            debug!("Forwarding data to: {:?}", peer_subs);
-
-                            // TODO: allow these to be forwarded unwrapped if desirable
-                            let req =
-                                net::RequestBody::PushData(id.clone(), vec![container.to_owned()]);
-
-                            let exec = self.exec();
-                            tokio::task::spawn(async move {
-                                match exec.net_req(req, peer_subs).await {
-                                    Ok(_) => info!("Data push ok"),
-                                    Err(e) => warn!("Data push error: {:?}", e),
-                                }
-                            });
-                        }
-                        Ok(_) => (),
-                        Err(e) => {
-                            error!("Failed to fetch subscribers for service {:#}: {:?}", id, e)
-                        }
-                    }
-                }
-                Err(DsfError::NotFound) => debug!("No matching service for ID: {:#}", id),
-                _ => debug!("Not subscribed to service ID: {:#}", id),
-            }
-
-            return Ok(());
+            let resp = match crate::net::handle_net_raw(self.exec(), self.core.clone(), &id, container.to_owned()).await {
+               Ok(v) => v,
+               Err(e) => {
+                    error!("handle_net_raw error: {e:?}");
+                    return Ok(())
+               }
+            };
         }
 
         // Parse out message object
@@ -362,6 +260,8 @@ where
         // TODO: there needs to be another transition for this in p2p comms
         let from = message.from();
         if message.flags().contains(Flags::SYMMETRIC_MODE) {
+            // TODO: compute and cache symmetric keys here?
+
             let _ = self
                 .core
                 .peer_update(
@@ -389,10 +289,19 @@ where
                 self.handle_net_req(msg.address, req, tx).await?;
 
                 let a = msg.address.into();
-                let mut o = self.net_resp_tx.clone();
 
                 // TODO: handle errors
                 let _ = self.net_send(&[(a, None)], NetMessage::Response(r)).await;
+
+                // Spawn a task to forward completed response to outgoing messages
+                // TODO: this _should_ use the response channel in the io::NetMessage, however,
+                // we need to re-encode the message prior to doing this which requires the daemon...
+                tokio::task::spawn(async move {
+                    if let Some(r) = rx.next().await {
+                        debug!("Net response: {r:?}");
+                        let _ = o.send((a, None, NetMessage::Response(r))).await;
+                    }
+                });
             }
         };
 
@@ -563,9 +472,7 @@ where
         debug!("response: {:?}", resp);
 
         // Generic net message processing here
-        // TODO: we could forward peer object with the incoming request...
-        let _peer = match self
-            .handle_base(&from, &addr.into(), &resp.common, Some(SystemTime::now()))
+        let _peer = match crate::net::handle_base(self.exec(), &from, &addr.into(), &resp.common)
             .await
         {
             Some(p) => p,
@@ -629,13 +536,15 @@ where
             &req
         );
 
-        // Generic net message processing here
-        let peer = match self
-            .handle_base(&from, &addr.into(), &req.common, Some(SystemTime::now()))
+        // Common message handing, fetches and updates peer information
+        let peer = match crate::net::handle_base(self.exec(), &from, &addr.into(), &req.common)
             .await
         {
             Some(p) => p,
-            None => return Ok(()),
+            None => {
+                debug!("Dropped message from {from}: {req:?}");
+                return Ok(())
+            },
         };
 
         // Handle specific DHT messages
@@ -650,17 +559,9 @@ where
                 Flags::default(),
             ))
 
-        // Handle delegated messages
-        } else if req.flags.contains(Flags::CONSTRAINED)
-            && self
-                .handle_dsf_delegated(&peer, req_id, &req, tx.clone())
-                .await?
-        {
-            None
-
-        // Handle normal DSF messages
+        // Handle DSF requests
         } else {
-            let dsf_resp = self.handle_dsf(from.clone(), peer, req.data).await?;
+            let dsf_resp = crate::net::handle_dsf_req(self.exec(), self.core.clone(), peer, req.data.clone(), req.flags.clone()).await?;
             Some(net::Response::new(
                 own_id,
                 req_id,
@@ -695,425 +596,6 @@ where
         }
 
         Ok(())
-    }
-
-    /// Handles a base message, updating internal state for the sender
-    pub(crate) async fn handle_base(
-        &mut self,
-        id: &Id,
-        address: &Address,
-        c: &net::Common,
-        _seen: Option<SystemTime>,
-    ) -> Option<PeerInfo> {
-        trace!(
-            "[DSF ({:?})] Handling base message from: {:?} address: {:?} public_key: {:?}",
-            self.id(),
-            id,
-            address,
-            c.public_key
-        );
-
-        // Skip RX of messages / loops
-        // TODO: may need this to check tunnels for STUN or equivalents... a problem for later
-        if *id == self.id() {
-            warn!("handle_base called for self...");
-            return None;
-        }
-
-        let mut peer_flags = PeerFlags::empty();
-        if c.flags.contains(Flags::CONSTRAINED) {
-            peer_flags |= PeerFlags::CONSTRAINED;
-        }
-        if c.flags.contains(Flags::NO_PERSIST) {
-            peer_flags |= PeerFlags::TRANSIENT;
-        }
-
-        // Find or create (and push) peer
-        let peer = self
-            .core
-            .peer_create_or_update(PeerInfo {
-                id: id.clone(),
-                short_id: ShortId::from(id),
-                // Attach keys
-                state: c
-                    .public_key
-                    .clone()
-                    .map(PeerState::Known)
-                    .unwrap_or(PeerState::Unknown),
-                // Set address
-                address: match c.remote_address {
-                    Some(a) => PeerAddress::Explicit(a),
-                    None => PeerAddress::Implicit(address.clone()),
-                },
-                flags: peer_flags,
-                seen: Some(SystemTime::now()),
-                received: 1,
-                index: 0,
-                sent: 0,
-                blocked: false,
-            })
-            .await
-            .unwrap();
-
-        // Update key cache
-        match (self.key_cache.contains_key(id), &c.public_key) {
-            (false, Some(pk)) => {
-                if let Ok(k) = self.service().keys().derive_peer(pk.clone()) {
-                    self.key_cache.insert(id.clone(), k.clone());
-                }
-            }
-            _ => (),
-        }
-
-        trace!(
-            "[DSF ({:?})] Peer id: {:?} state: {:?} seen: {:?}",
-            self.id(),
-            id,
-            peer.state(),
-            peer.seen()
-        );
-
-        Some(peer)
-    }
-
-    /// Handle a DSF type message
-    async fn handle_dsf(
-        &mut self,
-        from: Id,
-        peer: PeerInfo,
-        req: net::RequestBody,
-    ) -> Result<net::ResponseBody, DaemonError> {
-        match req {
-            net::RequestBody::Hello => Ok(net::ResponseBody::Status(net::Status::Ok)),
-            net::RequestBody::Subscribe(service_id) => {
-                info!(
-                    "Subscribe request from: {} for service: {}",
-                    from, service_id
-                );
-                // Fetch service information, checking service exists / is known
-                let service = match self.core.service_get(service_id.clone()).await {
-                    Ok(s) if s.primary_page.is_some() => s,
-                    _ => {
-                        // Only known services can be subscribed
-                        error!("no service found (id: {})", service_id);
-                        return Ok(net::ResponseBody::Status(net::Status::InvalidRequest));
-                    }
-                };
-
-                // Fetch primary page for service
-                let pages = {
-                    match &self
-                        .core
-                        .object_get(&service_id, &service.primary_page.unwrap())
-                        .await
-                        .unwrap()
-                    {
-                        Some(p) => vec![p.clone()],
-                        None => vec![],
-                    }
-                };
-
-                // TODO: verify this is coming from an active upstream subscriber
-
-                // TODO: update subscriber count?
-
-                // TODO: update peer subscription information here
-                self.core
-                    .subscriber_create_or_update(SubscriptionInfo {
-                        service_id: service_id.clone(),
-                        kind: SubscriptionKind::Peer(peer.id.clone()),
-                        updated: Some(SystemTime::now()),
-                        expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
-                        qos: QosPriority::None,
-                    })
-                    .await
-                    .unwrap();
-
-                Ok(net::ResponseBody::ValuesFound(service_id, pages))
-            }
-            net::RequestBody::Unsubscribe(service_id) => {
-                info!(
-                    "Unsubscribe request from: {:#} for service: {:#}",
-                    from, service_id
-                );
-
-                self.core
-                    .subscriber_remove(service_id.clone(), SubscriptionKind::Peer(peer.id.clone()))
-                    .await
-                    .unwrap();
-
-                Ok(net::ResponseBody::Status(net::Status::Ok))
-            }
-            net::RequestBody::Query(id, index) => {
-                info!("Query request from: {:#} for service: {:#}", from, id);
-                // TODO: Check we have a replica of this service
-                let _service = match self.core.service_get(id.clone()).await {
-                    Ok(s) => s,
-                    Err(_) => {
-                        // Only known services can be queried
-                        error!("no service found (id: {})", id);
-                        return Ok(net::ResponseBody::Status(net::Status::InvalidRequest));
-                    }
-                };
-
-                // Fetch data for service
-                let q = match index {
-                    Some(n) => ObjectIdentifier::Index(n),
-                    None => ObjectIdentifier::Latest,
-                };
-                let r = match self.core.object_get(&id, q.clone()).await {
-                    Ok(Some(i)) => Ok(net::ResponseBody::PullData(id, vec![i])),
-                    Ok(None) => Ok(net::ResponseBody::NoResult),
-                    Err(e) => {
-                        error!("Failed to fetch object {:?}: {:?}", q, e);
-                        Err(e.into())
-                    }
-                };
-
-                info!("Query request complete");
-
-                r
-            }
-            net::RequestBody::Register(id, pages) => {
-                info!("Register request from: {:#} for service: {:#}", from, id);
-                // TODO: determine whether we should allow this service to be registered
-
-                // Add to local service registry
-                self.core.service_register(id.clone(), pages).await?;
-
-                info!("Register request for service: {:#} complete", id);
-
-                Ok(net::ResponseBody::Status(net::Status::Ok))
-            }
-            net::RequestBody::Unregister(id) => {
-                info!("Unegister request from: {} for service: {}", from, id);
-                // TODO: determine whether we should allow this service to be unregistered
-
-                todo!("unregister not yet implemented")
-            }
-            net::RequestBody::PushData(id, data) => {
-                info!("Data push from: {:#} for service: {:#}", from, id);
-
-                // TODO: why find _then_ validate_pages, duplicated ops?!
-                let _service = match self.core.service_get(id.clone()).await {
-                    Ok(s) => s,
-                    Err(_e) => {
-                        // Only known services can be registered
-                        error!("no service found (id: {})", id);
-                        return Ok(net::ResponseBody::Status(net::Status::InvalidRequest));
-                    }
-                };
-
-                // TODO: validate incoming data prior to processing
-                #[cfg(nyet)]
-                if let Err(e) = self.services().validate_pages(&id, &data) {
-                    error!("Invalid data for service: {} ({:?})", id, e);
-                    return Ok(net::ResponseBody::Status(net::Status::InvalidRequest));
-                }
-
-                // Register or update service if a primary page is provided
-                // TODO: improve behaviour for multiple page push
-                if let Some(primary_page) = data.iter().find(|p| {
-                    p.header().kind().is_page() && !p.header().flags().contains(Flags::SECONDARY)
-                }) {
-                    if let Err(e) = self
-                        .core
-                        .service_register(id.clone(), vec![primary_page.clone()])
-                        .await
-                    {
-                        error!("Failed to update service {id}: {e:?}");
-                    }
-                }
-
-                // Store pages and data
-                self.core.data_store(&id, data.clone()).await?;
-
-                // Generate data push message for subscribers
-                let req = net::RequestBody::PushData(id.clone(), data);
-
-                // Generate peer list for data push
-                // TODO: we should be cleverer about this to avoid
-                // loops etc. (and prolly add a TTL if it can be repeated?)
-                let subscribers = self.core.subscriber_list(id.clone()).await?;
-                let mut peer_subs = Vec::new();
-                for s in subscribers {
-                    let peer_id = match s.kind {
-                        SubscriptionKind::Peer(id) => id,
-                        // TODO: include RPC peers in data push
-                        _ => continue,
-                    };
-                    match self.core.peer_get(peer_id).await {
-                        Ok(p) => peer_subs.push(p),
-                        _ => (),
-                    }
-                }
-
-                info!("Sending data push message to: {:?}", peer_subs);
-
-                // Issue data push requests
-                // TODO: we should probably wire the return here to send a delayed PublishInfo to the requester?
-                let exec = self.exec();
-                tokio::task::spawn(async move {
-                    match exec.net_req(req, peer_subs).await {
-                        Ok(_) => info!("Data push complete"),
-                        Err(e) => warn!("Data push error: {:?}", e),
-                    }
-                });
-
-                Ok(net::ResponseBody::Status(net::Status::Ok))
-            }
-            _ => Err(DaemonError::Unimplemented),
-        }
-    }
-
-    async fn handle_dsf_delegated<T: 'static + Sink<NetResponse> + Unpin + Send>(
-        &mut self,
-        peer: &PeerInfo,
-        req_id: RequestId,
-        req: &net::Request,
-        mut tx: T,
-    ) -> Result<bool, DaemonError> {
-        // TODO: elect whether to accept delegated request
-
-        let own_id = self.id();
-        let own_pk = self.pub_key();
-        let needs_pk = req.flags.contains(Flags::PUB_KEY_REQUEST);
-
-        match &req.data {
-            net::RequestBody::Locate(service_id) => {
-                info!(
-                    "Delegated locate request from: {} for service: {}",
-                    peer.id, service_id
-                );
-
-                let opts = LocateOptions {
-                    id: service_id.clone(),
-                    local_only: false,
-                    no_persist: false,
-                };
-                let service_id = service_id.clone();
-                let exec = self.exec();
-
-                tokio::task::spawn(async move {
-                    let resp = match exec.service_locate(opts).await {
-                        Ok(ref v) => {
-                            if let Some(p) = &v.page {
-                                info!("Locate ok (index: {})", p.header().index());
-                                net::ResponseBody::ValuesFound(service_id, vec![p.to_owned()])
-                            } else {
-                                error!("Locate failed, no page found");
-                                net::ResponseBody::Status(Status::Failed)
-                            }
-                        }
-                        Err(e) => {
-                            error!("Locate failed: {:?}", e);
-                            net::ResponseBody::Status(Status::Failed)
-                        }
-                    };
-
-                    let mut resp = net::Response::new(own_id, req_id, resp, Flags::default());
-
-                    if needs_pk {
-                        resp.common.public_key = Some(own_pk);
-                    }
-
-                    if let Err(_e) = tx.send(resp).await {
-                        error!("Locate delegate TX error");
-                    }
-                });
-
-                Ok(true)
-            }
-            net::RequestBody::Subscribe(service_id) => {
-                info!(
-                    "Delegated subscribe request from: {} for service: {}",
-                    peer.id, service_id
-                );
-
-                // Add subscriber to tracking
-                self.core
-                    .subscriber_create_or_update(SubscriptionInfo {
-                        service_id: service_id.clone(),
-                        kind: SubscriptionKind::Peer(peer.id.clone()),
-                        updated: Some(SystemTime::now()),
-                        expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
-                        qos: match req.flags.contains(Flags::QOS_PRIO_LATENCY) {
-                            true => QosPriority::Latency,
-                            false => QosPriority::None,
-                        },
-                    })
-                    .await?;
-
-                // Issue subscribe request to replicas
-                let opts = SubscribeOptions {
-                    service: ServiceIdentifier::id(service_id.clone()),
-                };
-                let exec = self.exec();
-
-                // Await subscription response
-                tokio::task::spawn(async move {
-                    let resp = match exec.subscribe(opts).await {
-                        Ok(_v) => net::ResponseBody::Status(Status::Ok),
-                        Err(e) => {
-                            error!("Subscription failed: {:?}", e);
-                            net::ResponseBody::Status(Status::Failed)
-                        }
-                    };
-
-                    let mut resp = net::Response::new(own_id, req_id, resp, Flags::default());
-                    if needs_pk {
-                        resp.common.public_key = Some(own_pk);
-                    }
-
-                    if let Err(_e) = tx.send(resp).await {
-                        error!("Subscribe delegate TX error");
-                    }
-                });
-
-                Ok(true)
-            }
-            net::RequestBody::Register(service_id, pages) => {
-                info!(
-                    "Delegated register request from: {} for service: {}",
-                    peer.id, service_id
-                );
-
-                // Add to local service registry
-                self.core
-                    .service_register(service_id.clone(), pages.clone())
-                    .await?;
-
-                // Perform global registration
-                let opts = RegisterOptions {
-                    service: ServiceIdentifier::id(service_id.clone()),
-                    no_replica: false,
-                };
-
-                let exec = self.exec();
-                // Task to await registration completion
-                tokio::task::spawn(async move {
-                    let resp = match exec.service_register(opts).await {
-                        Ok(_v) => net::ResponseBody::Status(Status::Ok),
-                        Err(e) => {
-                            error!("Registration failed: {:?}", e);
-                            net::ResponseBody::Status(Status::Failed)
-                        }
-                    };
-
-                    let mut resp = net::Response::new(own_id, req_id, resp, Flags::default());
-                    if needs_pk {
-                        resp.common.public_key = Some(own_pk);
-                    }
-
-                    if let Err(_e) = tx.send(resp).await {
-                        error!("Register delegate TX error");
-                    }
-                });
-
-                Ok(true)
-            }
-            _ => Ok(false),
-        }
     }
 }
 
