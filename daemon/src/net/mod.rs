@@ -8,6 +8,15 @@ use dsf_rpc::{PeerInfo, PeerFlags, PeerAddress, PeerState, SubscriptionKind, Sub
 
 use crate::{error::Error, rpc::{Engine, register::RegisterService, locate::ServiceRegistry as _, subscribe::PubSub}, core::AsyncCore, store::object::ObjectIdentifier};
 
+mod push_data;
+use push_data::push_data;
+
+mod register;
+use register::register;
+
+mod subscribe;
+use subscribe::subscribe;
+
 /// Async network handler abstraction
 #[allow(async_fn_in_trait)]
 pub trait Net {
@@ -30,76 +39,7 @@ pub(crate) async fn handle_dsf_req<T: Engine + 'static>(engine: T, mut core: Asy
             info!(
                 "Subscribe request from peer: {from} for service: {service_id}"
             );
-            // Fetch service information, checking service exists / is known
-            let service = match core.service_get(service_id.clone()).await {
-                Ok(s) if s.primary_page.is_some() => s,
-                _ => {
-                    // Only known services can be subscribed
-                    error!("no service found (id: {})", service_id);
-                    return Ok(ResponseBody::Status(net::Status::InvalidRequest));
-                }
-            };
-
-            // Only allow subscriptions to known and public services            
-            // TODO(low): check peer criteria before allowing delegation
-            // (eg. should only be allowed for devices with locally scoped addresses)
-            if service.state != ServiceState::Registered && service.state != ServiceState::Subscribed && !flags.contains(Flags::CONSTRAINED) {
-                error!("Peer {from} attempted subscription to non-origin service: {service_id} (state: {})", service.state);
-                return Ok(ResponseBody::Status(net::Status::InvalidRequest));
-            }
-
-            // Fetch primary page for service
-            let pages = {
-                match core
-                    .object_get(&service_id, &service.primary_page.unwrap())
-                    .await
-                    .unwrap()
-                {
-                    Some(p) => vec![p.clone()],
-                    None => vec![],
-                }
-            };
-
-            // TODO: verify this is coming from an active upstream subscriber
-
-            // TODO: also update peer subscription information here
-            core
-                .subscriber_create_or_update(SubscriptionInfo {
-                    service_id: service_id.clone(),
-                    kind: SubscriptionKind::Peer(from.id.clone()),
-                    updated: Some(SystemTime::now()),
-                    expiry: Some(SystemTime::now().add(Duration::from_secs(3600))),
-                    qos: match flags.contains(Flags::QOS_PRIO_LATENCY) {
-                        true => QosPriority::Latency,
-                        false => QosPriority::None,
-                    }
-                })
-                .await?;
-
-            // Return early for normal subscribe requests
-            if !flags.contains(Flags::CONSTRAINED) {
-                info!("Subscribe request complete");
-                return Ok(ResponseBody::ValuesFound(service_id, pages))
-            }
-
-            // DELEGATION: initiate subscription to upstream replicas
-            let resp = match engine.subscribe(SubscribeOptions {
-                service: ServiceIdentifier::id(service_id.clone()),
-            }).await {
-                Ok(_v) => {
-                    info!("Delegated subscription ok!");
-                    net::ResponseBody::Status(net::Status::Ok)
-                },
-                Err(e) => {
-                    error!("Delegated subscription failed: {:?}", e);
-                    net::ResponseBody::Status(net::Status::Failed)
-                }
-            };
-
-            // TODO(low): attach delegation information to subscriptions
-            // so these can be cleaned up when no longer required
-
-            Ok(resp)
+            subscribe(engine, core, from, &service_id, flags).await
         }
         RequestBody::Unsubscribe(service_id) => {
             info!(
@@ -186,7 +126,6 @@ pub(crate) async fn handle_dsf_req<T: Engine + 'static>(engine: T, mut core: Asy
         RequestBody::Unregister(id) => {
             info!("Unegister request from: {} for service: {}", from, id);
             // TODO: determine whether we should allow this service to be unregistered
-
             todo!("unregister not yet implemented")
         }
         RequestBody::PushData(id, data) => {
@@ -200,132 +139,8 @@ pub(crate) async fn handle_dsf_req<T: Engine + 'static>(engine: T, mut core: Asy
     }
 }
 
-async fn register<T: Engine + 'static>(engine: T, core: AsyncCore, id: &Id, flags: Flags, pages: Vec<Container>) -> Result<ResponseBody, Error> {
-    
-    // TODO(low): determine whether we should allow this service to be 
-    // registered by this peer
 
-    // Add to local service registry
-    core.service_register(id.clone(), pages).await?;
-
-    // TODO(low): forward pages to subscribers if we have any
-
-    // Return early for standard registrations
-    if !flags.contains(Flags::CONSTRAINED) {
-        info!("Register request for service: {:#} complete", id);
-        return Ok(ResponseBody::Status(net::Status::Ok))
-    }
-
-    // DELEGATION: Execute network registration
-    // TODO(low): check peer criteria before allowing delegation
-    // (eg. should only be allowed for devices with locally scoped addresses)
-    info!("starting delegated registration for {id:#}");
-
-    let resp = match engine.service_register(RegisterOptions {
-        service: ServiceIdentifier::id(id.clone()),
-        no_replica: false,
-    }).await {
-        Ok(v) => {
-            info!("Registration complete: {v:?}");
-            net::ResponseBody::Status(net::Status::Ok)
-        },
-        Err(e) => {
-            error!("Registration failed: {:?}", e);
-            net::ResponseBody::Status(net::Status::Failed)
-        }
-    };
-
-    Ok(resp)
-}
-
-async fn push_data<T: Engine + 'static>(engine: T, mut core: AsyncCore, id: &Id, flags: Flags, data: Vec<Container>) -> Result<ResponseBody, Error> {
-
-    // Find matching service and make sure we're subscribed
-    // TODO(med): make sure we're subscribed or ignore pushes / respond with unsubscribe
-    let service_info = match core.service_get(id.clone()).await {
-        Ok(s) => s,
-        Err(_e) => {
-            // Only known services can be registered
-            error!("no service found (id: {})", id);
-            return Ok(ResponseBody::Status(net::Status::InvalidRequest));
-        }
-    };
-
-    // Check we're subscribed to the service otherwise ignore the data push
-    if service_info.state != ServiceState::Subscribed
-            && !service_info.flags.contains(ServiceFlags::SUBSCRIBED) {
-        warn!("Data push for non-subscribed service: {id:#}");
-        return Ok(ResponseBody::Status(net::Status::InvalidRequest));
-    }
-
-    // TODO: validate incoming data prior to processing
-    #[cfg(nyet)]
-    if let Err(e) = self.services().validate_pages(&id, &data) {
-        error!("Invalid data for service: {} ({:?})", id, e);
-        return Ok(ResponseBody::Status(net::Status::InvalidRequest));
-    }
-
-    // Register or update service if a primary page is provided
-    // TODO: improve behaviour for multiple page push
-    if let Some(primary_page) = data.iter().find(|p| {
-        p.header().kind().is_page() && !p.header().flags().contains(Flags::SECONDARY)
-    }) {
-        if let Err(e) = core
-            .service_register(id.clone(), vec![primary_page.clone()])
-            .await
-        {
-            error!("Failed to update service {id}: {e:?}");
-        }
-    }
-
-    // Store pages and data, spawning a task to ensure data throughput
-    // does not depend on database performance
-    // TODO(med): this should only need to be data objects as page should be stored in service_register
-    {
-        let core = core.clone();
-        let id = id.clone();
-        let data = data.clone();
-        tokio::task::spawn(async move {
-            if let Err(e) = core.data_store(&id, data.clone()).await {
-                error!("Failed to store data: {e:?}");
-            }
-        });
-    }
-
-    // Generate data push message for subscribers
-    let req = RequestBody::PushData(id.clone(), data);
-
-    // Generate peer list for data push
-    // TODO(med): we should be cleverer about this to avoid
-    // loops etc. (and prolly add a TTL if it can be repeated?)
-    let subscribers = core.subscriber_list(id.clone()).await?;
-    let mut peer_subs = Vec::new();
-    for s in subscribers {
-        let peer_id = match s.kind {
-            SubscriptionKind::Peer(id) => id,
-            // TODO: include RPC peers in data push
-            _ => continue,
-        };
-        match core.peer_get(peer_id).await {
-            Ok(p) => peer_subs.push(p),
-            _ => (),
-        }
-    }
-
-    info!("Sending data push message to: {:?}", peer_subs);
-
-    // Issue data push requests
-    // TODO(low): we should probably wire the return here to send a delayed PublishInfo to the requester?
-    tokio::task::spawn(async move {
-        match engine.net_req(req, peer_subs).await {
-            Ok(_) => info!("Data push complete"),
-            Err(e) => warn!("Data push error: {:?}", e),
-        }
-    });
-
-    Ok(ResponseBody::Status(net::Status::Ok))
-}
-
+/// DELEGATION: Handle raw page or data objects
 pub(crate) async fn handle_net_raw<T: Engine + 'static>(engine: T, core: AsyncCore, id: &Id, container: Container) -> Result<ResponseBody, Error> {
     let header = container.header();
 
@@ -374,8 +189,7 @@ pub(crate) async fn handle_net_raw<T: Engine + 'static>(engine: T, core: AsyncCo
     }
 }
 
-
-/// Generic handling for all incoming messages
+/// Generic peer-related handling common to all incoming messages
 pub(crate) async fn handle_base<T: Engine>(engine: T, peer_id: &Id, address: &Address, common: &Common) -> Option<PeerInfo> {
     trace!(
         "[DSF ({:?})] Handling base message from: {:?} address: {:?} public_key: {:?}",
@@ -446,3 +260,4 @@ pub(crate) async fn handle_base<T: Engine>(engine: T, peer_id: &Id, address: &Ad
     // Return peer object
     Some(peer)
 }
+

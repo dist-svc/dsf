@@ -46,6 +46,13 @@ impl Message {
         Self::Response(resp)
     }
 
+    pub fn common(&self) -> &Common {
+        match self {
+            Self::Request(req) => &req.common,
+            Self::Response(resp) => &resp.common,
+        }
+    }
+
     pub fn request_id(&self) -> RequestId {
         match self {
             Message::Request(req) => req.id,

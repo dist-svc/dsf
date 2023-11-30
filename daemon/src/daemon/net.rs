@@ -117,103 +117,6 @@ impl NetIf for Dsf<ByteSink> {
     }
 }
 
-/// Network operation for management by network module
-pub struct NetOp {
-    /// Network request (required for retries)
-    req: net::Request,
-
-    /// Pending network requests by peer ID
-    reqs: HashMap<Id, mpsc::Receiver<net::Response>>,
-
-    /// Received responses by peer ID
-    resps: HashMap<Id, net::Response>,
-
-    /// Completion channel
-    done: mpsc::Sender<HashMap<Id, net::Response>>,
-
-    /// Operation timeout / maximum duration
-    timeout: Duration,
-
-    /// Operation start timestamp
-    ts: Instant,
-
-    /// Broadcast flag
-    broadcast: bool,
-}
-
-impl Future for NetOp {
-    type Output = Result<(), ()>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Poll incoming response channels
-        let resps: Vec<_> = self
-            .reqs
-            .iter_mut()
-            .filter_map(|(id, r)| match r.poll_next_unpin(ctx) {
-                Poll::Ready(Some(r)) => Some((id.clone(), r)),
-                _ => None,
-            })
-            .collect();
-
-        // Update received responses and remove resolved requests
-        for (id, resp) in resps {
-            self.reqs.remove(&id);
-            self.resps.insert(id, resp);
-        }
-
-        // Check for completion (no pending requests)
-        let done = if self.reqs.len() == 0 && !self.broadcast {
-            debug!("Net operation {} complete", self.req.id);
-            true
-
-        // Check for timeouts
-        // TODO: propagate this timeout value from global config? network latency should _never_ be this high,
-        // but the time for a peer to compute the response may also be non-zero
-        } else if Instant::now().saturating_duration_since(self.ts) > self.timeout {
-            debug!("Net operation {} timeout", self.req.id);
-            true
-        } else {
-            false
-        };
-
-        // Issue completion and resolve when done
-        if done {
-            // TODO: gracefully drop request channels when closed
-            // probably this is the case statement in the network handler
-
-            let resps = self.resps.clone();
-            if let Err(e) = self.done.try_send(resps) {
-                trace!(
-                    "Error sending net done (rx channel may have been dropped): {:?}",
-                    e
-                );
-            }
-            return Poll::Ready(Ok(()));
-        }
-
-        // Always arm waker because we can't really do anything else
-        // TODO: investigate embedding wakers / propagating via DSF wake/poll
-        let w = ctx.waker().clone();
-        w.wake();
-
-        Poll::Pending
-    }
-}
-
-pub struct NetFuture {
-    rx: mpsc::Receiver<HashMap<Id, net::Response>>,
-}
-
-impl Future for NetFuture {
-    type Output = HashMap<Id, net::Response>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.rx.poll_next_unpin(ctx) {
-            Poll::Ready(Some(v)) => Poll::Ready(v),
-            _ => Poll::Pending,
-        }
-    }
-}
 
 /// Generic network helper for [`Dsf`] implementation
 impl<Net> Dsf<Net>
@@ -227,11 +130,13 @@ where
         let id: Id = container.id().into();
 
         let mut data = msg.data.to_vec();
+        let addr = Address::from(msg.address.clone());
 
         debug!("RX: {:?}", container);
 
         // DELEGATION: Handle unwrapped objects for constrained / delegated services
         if !header.kind().is_message() {
+            // Handle raw object
             let resp = match crate::net::handle_net_raw(self.exec(), self.core.clone(), &id, container.to_owned()).await {
                Ok(v) => v,
                Err(e) => {
@@ -239,9 +144,11 @@ where
                     return Ok(())
                }
             };
+
+            // TODO: Send response
         }
 
-        // Parse out message object
+        // Convert container to message object
         // TODO: pass secret keys for encode / decode here
         let (message, _n) = match net::Message::parse(&mut data, self) {
             Ok(v) => v,
@@ -278,30 +185,27 @@ where
 
         trace!("Net message: {:?}", message);
 
-        // Route responses as required internally
+        // Generic net message processing, fetch and update peer information
+        let peer = match crate::net::handle_base(self.exec(), &from, &addr.into(), &message.common().clone())
+            .await
+        {
+            Some(p) => p,
+            None => return Ok(()),
+        };
+
+        // Route requests and responses to appropriate handlers
         match message {
             NetMessage::Response(resp) => {
-                self.handle_net_resp(msg.address, resp).await?;
+                // Forward responses via AsyncNet router
+                self.net.handle_resp(addr, from, resp).await?
             }
             NetMessage::Request(req) => {
-                let (tx, mut rx) = mpsc::channel(1);
+                // Handle requests
+                // TODO(HIGH): this must be in an async task to avoid blocking all other ops
+                let resp = self.handle_net_req(peer, msg.address, req).await?;
 
-                self.handle_net_req(msg.address, req, tx).await?;
-
-                let a = msg.address.into();
-
-                // TODO: handle errors
-                let _ = self.net_send(&[(a, None)], NetMessage::Response(r)).await;
-
-                // Spawn a task to forward completed response to outgoing messages
-                // TODO: this _should_ use the response channel in the io::NetMessage, however,
-                // we need to re-encode the message prior to doing this which requires the daemon...
-                tokio::task::spawn(async move {
-                    if let Some(r) = rx.next().await {
-                        debug!("Net response: {r:?}");
-                        let _ = o.send((a, None, NetMessage::Response(r))).await;
-                    }
-                });
+                // Send response
+                self.net.net_send(vec![(addr, Some(from))], resp.into()).await?;
             }
         };
 
@@ -359,166 +263,25 @@ where
         Ok(Bytes::from(c.raw().to_vec()))
     }
 
-    /// Create a network operation for the given request
+    /// Execute a network operation for the given request
     ///
     /// This sends the provided request to the listed peers with retries and timeouts.
-    pub async fn net_op(&mut self, peers: Vec<PeerInfo>, req: net::Request) -> NetFuture {
-        let req_id = req.id;
-
-        // Setup response channels
-        let mut reqs = HashMap::with_capacity(peers.len());
-        let mut targets = Vec::with_capacity(peers.len());
-
-        // Add individual requests to tracking
-        for p in peers {
-            // Create response channel
-            let (tx, rx) = mpsc::channel(1);
-            self.net_requests
-                .insert(((*p.address()).clone(), req_id), tx);
-
-            // Add to operation object
-            reqs.insert(p.id.clone(), rx);
-
-            // Add as target for sending
-            targets.push(((*p.address()).clone(), Some(p.id.clone())));
-
-            // Update send counter
-            let p_id = p.id.clone();
-            let mut core = self.core.clone();
-            tokio::task::spawn(async move {
-                let _ = core.peer_update(&p_id, Box::new(|p| p.sent += 1)).await;
-            });
-        }
-
-        // Create net operation
-        let (tx, rx) = mpsc::channel(1);
-        let op = NetOp {
-            req: req.clone(),
-            reqs,
-            resps: HashMap::new(),
-            done: tx,
-            ts: Instant::now(),
-            timeout: self.config.net_timeout,
-            broadcast: false,
-        };
-
-        // Register operation
-        self.net_ops.insert(req_id, op);
-
-        // Issue request
-        if let Err(e) = self.net_send(&targets, net::Message::Request(req)).await {
-            error!("FATAL network send error: {:?}", e);
-        }
-
-        // Return future
-        NetFuture { rx }
+    pub async fn net_op(&mut self, mut peers: Vec<PeerInfo>, req: net::Request) -> HashMap<Id, (Address, net::Response)> {
+        let targets: Vec<_> = peers.drain(..).map(|p| (p.address().clone(), Some(p.id)) ).collect();
+        self.net.net_request(targets, req, Default::default()).await.unwrap()
     }
 
-    pub async fn net_broadcast(&mut self, req: net::Request) -> NetFuture {
-        let req_id = req.id;
-
-        // Create net operation
-        let (tx, rx) = mpsc::channel(1);
-        let op = NetOp {
-            req: req.clone(),
-            reqs: HashMap::new(),
-            resps: HashMap::new(),
-            done: tx,
-            timeout: self.config.net_timeout,
-            ts: Instant::now(),
-            broadcast: true,
-        };
-
-        // Register operation
-        self.net_ops.insert(req_id, op);
-
-        // Issue request
-        // TODO: select broadcast address' based on availabile interfaces?
-        let targets = [(IPV4_BROADCAST.into(), None), (IPV6_BROADCAST.into(), None)];
-        if let Err(e) = self.net_send(&targets, net::Message::Request(req)).await {
-            error!("FATAL network send error: {:?}", e);
-        }
-
-        // Return future
-        NetFuture { rx }
-    }
-
-    pub(crate) fn poll_net_ops(&mut self, ctx: &mut Context<'_>) {
-        // Poll on all pending net operations
-        let completed: Vec<_> = self
-            .net_ops
-            .iter_mut()
-            .filter_map(|(req_id, op)| match op.poll_unpin(ctx) {
-                Poll::Ready(_) => Some(*req_id),
-                _ => None,
-            })
-            .collect();
-
-        // Remove completed operations
-        for req_id in completed {
-            self.net_ops.remove(&req_id);
-        }
-    }
-
-    /// Handle a received response message and generate an (optional) response
-    pub async fn handle_net_resp(
-        &mut self,
-        addr: SocketAddr,
-        resp: net::Response,
-    ) -> Result<(), DaemonError> {
-        let from = resp.from.clone();
-        let req_id = resp.id;
-
-        debug!("response: {:?}", resp);
-
-        // Generic net message processing here
-        let _peer = match crate::net::handle_base(self.exec(), &from, &addr.into(), &resp.common)
-            .await
-        {
-            Some(p) => p,
-            None => return Ok(()),
-        };
-
-        // Look for matching point-to-point requests
-        if let Some(mut a) = self.net_requests.remove(&(addr.into(), req_id)) {
-            trace!("Found pending request for id {} address: {}", req_id, addr);
-            if let Err(e) = a.try_send(resp) {
-                error!(
-                    "Error forwarding message for id {} from {}: {:?}",
-                    req_id, addr, e
-                );
-            }
-
-            return Ok(());
-        };
-
-        // Look for matching broadcast requests
-        if let Some(a) = self.net_ops.get_mut(&req_id) {
-            if a.broadcast {
-                trace!("Found pending broadcast request for id {}", req_id);
-                a.resps.insert(from, resp);
-
-                return Ok(());
-            }
-
-            return Ok(());
-        }
-
-        error!("Received response id {} with no pending request", req_id);
-
-        // TODO: what is required here for three-way-ack support?
-        // (useful when establishing symmetric peer encryption)
-
-        Ok(())
+    pub async fn net_broadcast(&mut self, req: net::Request) -> HashMap<Id, (Address, net::Response)> {
+        self.net.net_broadcast(req, Default::default()).await.unwrap()
     }
 
     /// Handle a received request message and generate a response
-    pub async fn handle_net_req<T: Sink<net::Response> + Clone + Send + Unpin + 'static>(
+    pub async fn handle_net_req(
         &mut self,
+        peer: PeerInfo,
         addr: SocketAddr,
         req: net::Request,
-        mut tx: T,
-    ) -> Result<(), DaemonError> {
+    ) -> Result<net::Response, DaemonError> {
         let own_id = self.id();
 
         let span = span!(Level::DEBUG, "id", "{}", own_id);
@@ -536,44 +299,28 @@ where
             &req
         );
 
-        // Common message handing, fetches and updates peer information
-        let peer = match crate::net::handle_base(self.exec(), &from, &addr.into(), &req.common)
-            .await
-        {
-            Some(p) => p,
-            None => {
-                debug!("Dropped message from {from}: {req:?}");
-                return Ok(())
-            },
-        };
-
         // Handle specific DHT messages
         let resp = if let Some(dht_req) = Self::net_to_dht_request(&req.data) {
             let dht_resp = self.handle_dht_req(from.clone(), peer, dht_req)?;
             let net_resp = Self::dht_to_net_response(dht_resp);
 
-            Some(net::Response::new(
+            net::Response::new(
                 own_id,
                 req_id,
                 net_resp,
                 Flags::default(),
-            ))
+            )
 
         // Handle DSF requests
         } else {
             let dsf_resp = crate::net::handle_dsf_req(self.exec(), self.core.clone(), peer, req.data.clone(), req.flags.clone()).await?;
-            Some(net::Response::new(
+
+            net::Response::new(
                 own_id,
                 req_id,
                 dsf_resp,
                 Flags::default(),
-            ))
-        };
-
-        // Skip processing if we've already got a response
-        let mut resp = match resp {
-            Some(r) => r,
-            None => return Ok(()),
+            )
         };
 
         // Generic response processing here
@@ -591,11 +338,7 @@ where
 
         trace!("returning response (to: {:?})\n {:?}", from, &resp);
 
-        if let Err(_e) = tx.send(resp).await {
-            error!("Error forwarding net response: {:?}", ());
-        }
-
-        Ok(())
+        Ok(resp)
     }
 }
 

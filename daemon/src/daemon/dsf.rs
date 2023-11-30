@@ -30,8 +30,9 @@ use crate::error::Error;
 use crate::store::Store;
 
 use super::dht::{dht_reducer, DsfDhtMessage};
-use super::net::{ByteSink, NetIf, NetOp, NetSink};
+use super::net::{ByteSink, NetIf, NetSink};
 use super::DsfOptions;
+use super::net2::AsyncNet;
 
 /// Re-export of Dht type used for DSF
 pub type DsfDht = Dht<Id, PeerInfo, Data>;
@@ -52,6 +53,11 @@ pub struct Dsf<Net = NetSink> {
     /// Local (database) storage
     pub(crate) store: AsyncStore,
 
+    /// Network request router
+    pub(crate) net: AsyncNet,
+
+    net_out_rx: mpsc::UnboundedReceiver<(Vec<(Address, Option<Id>)>, NetMessage)>,
+
     /// Distributed Database
     dht: DsfDht,
 
@@ -61,12 +67,6 @@ pub struct Dsf<Net = NetSink> {
     /// RPC request channel
     pub(crate) op_rx: mpsc::UnboundedReceiver<Op>,
     pub(crate) op_tx: mpsc::UnboundedSender<Op>,
-
-    /// Tracking for network operations (collections of requests with retries etc.)
-    pub(crate) net_ops: HashMap<RequestId, NetOp>,
-
-    /// Tracking for individual network requests
-    pub(crate) net_requests: HashMap<(Address, RequestId), mpsc::Sender<NetResponse>>,
 
     /// Sink for sending messages via the network
     pub(crate) net_sink: Net,
@@ -106,6 +106,8 @@ where
 
         let (op_tx, op_rx) = mpsc::unbounded();
 
+        let (net_out_tx, net_out_rx) = mpsc::unbounded();
+
         // Create DSF object
         let s = Self {
             config,
@@ -123,8 +125,9 @@ where
             op_rx,
 
             net_sink,
-            net_requests: HashMap::new(),
-            net_ops: HashMap::new(),
+            net: AsyncNet::new(net_out_tx),
+            net_out_rx,
+            
             addresses: Vec::new(),
 
             waker: None,
@@ -223,7 +226,7 @@ where
 
                 // TODO: Convert these to DHT messages
                 let mut converted = HashMap::new();
-                for (id, resp) in resps.iter() {
+                for (id, (_addr, resp)) in resps.iter() {
                     if let Some(r) = Self::net_to_dht_response(&exec, &resp.data).await {
                         converted.insert(id.clone(), r);
                     } else {

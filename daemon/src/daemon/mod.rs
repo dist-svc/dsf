@@ -7,6 +7,7 @@ use kad::prelude::*;
 pub mod dht;
 
 pub mod net;
+mod net2;
 
 pub mod ops;
 
