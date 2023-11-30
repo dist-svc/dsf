@@ -17,13 +17,9 @@ use log::{debug, error, info, warn};
 use rpc::{PeerInfo, ServiceInfo, SyncInfo};
 use tracing::{span, Level};
 
-use dsf_core::prelude::*;
-
-use dsf_core::net;
-use dsf_core::service::{DataOptions, Publisher};
+use dsf_core::{prelude::*, net, service::{DataOptions, Publisher}};
 use dsf_rpc::{self as rpc, DataInfo, SyncOptions};
 
-use crate::daemon::net::{NetFuture, NetIf};
 use crate::daemon::Dsf;
 use crate::error::Error;
 use crate::rpc::push::push_data;

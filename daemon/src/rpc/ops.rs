@@ -14,7 +14,6 @@ use dsf_core::{
 };
 use dsf_rpc::*;
 
-use super::discover::{DiscoverOp, DiscoverState};
 use crate::core::replicas::ReplicaInst;
 use crate::core::{CoreRes, SearchInfo, ServiceUpdateFn};
 use crate::error::Error;

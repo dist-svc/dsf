@@ -207,22 +207,26 @@ where
             let mut req = NetRequest::new(self.id(), req_id, body, Flags::PUB_KEY_REQUEST);
             req.common.public_key = Some(self.pub_key());
 
-            let peers: Vec<_> = peers.iter().map(|p| p.info().clone()).collect();
-
-            let disp: Vec<_> = peers.iter().map(|p| (p.id.clone(), p.address())).collect();
+            let targets: Vec<_> = peers.iter().map(|p| (p.info().address().clone(), Some(p.info().id)) ).collect();
 
             debug!(
                 "Issuing DHT {} request ({}) to {:?}",
-                req.data, req_id, disp,
+                req.data, req_id, targets,
             );
 
             let exec = self.exec();
-            let net = self.net_op(peers, req);
+            let net = self.net.clone();
 
             // Spawn task to handle net response
             tokio::task::spawn(async move {
                 // Await net response collection
-                let resps = net.await;
+                let resps = match net.net_request(targets, req, Default::default()).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        error!("Network request error: {e:?}");
+                        return;
+                    }
+                };
 
                 // TODO: Convert these to DHT messages
                 let mut converted = HashMap::new();
@@ -245,7 +249,9 @@ where
         }
 
         // Poll on internal network operations
-        self.poll_net_ops(ctx);
+        if let Poll::Ready(Some((targets, msg))) = self.net_out_rx.poll_next_unpin(ctx) {
+            
+        }
 
         // Poll on internal base operations
         let _ = self.poll_exec(ctx);

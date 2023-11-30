@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use futures::{channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded as unbounded_channel}, StreamExt, SinkExt as _};
+use futures::{channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded as unbounded_channel}, StreamExt as _, SinkExt as _};
 use tokio::{
     select,
     sync::{
@@ -23,6 +23,7 @@ use crate::error::Error;
 /// This handles routing for network requests and responses using a decoupled async
 /// task so these can be executed from an async context without blocking other
 /// network operations.
+#[derive(Clone)]
 pub struct AsyncNet {
     /// Channel for sending executing network requests
     ctl: UnboundedSender<NetCtl>,

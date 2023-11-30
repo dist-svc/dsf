@@ -17,7 +17,7 @@ use dsf_rpc::*;
 use crate::{
     core::services::ServiceInst,
     daemon::{
-        net::{NetFuture, NetIf},
+        net::NetIf,
         Dsf,
     },
     error::{CoreError, Error},

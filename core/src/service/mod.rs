@@ -24,7 +24,7 @@ pub use subscriber::Subscriber;
 mod registry;
 pub use registry::{Registry, TertiaryData, TertiaryLink, TertiaryOptions};
 
-mod net;
+pub(crate) mod net;
 pub use net::Net;
 
 mod builder;

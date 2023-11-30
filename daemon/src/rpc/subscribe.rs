@@ -22,7 +22,6 @@ use dsf_rpc::{self as rpc, ServiceState, SubscribeOptions, SubscriptionInfo, Sub
 
 use crate::{
     core::{replicas::ReplicaInst, CoreRes},
-    daemon::net::{NetFuture, NetIf},
     daemon::Dsf,
     error::Error,
 };

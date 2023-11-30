@@ -22,7 +22,6 @@ use dsf_core::service::DataOptions;
 use dsf_rpc::{self as rpc, DataInfo, PublishInfo, PushOptions};
 
 use super::ops::*;
-use crate::daemon::net::{NetFuture, NetIf};
 use crate::daemon::Dsf;
 use crate::error::Error;
 

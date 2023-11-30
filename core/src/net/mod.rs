@@ -13,6 +13,8 @@ pub use request::{Request, RequestBody};
 pub mod response;
 pub use response::{Response, ResponseBody, Status};
 
+pub use crate::service::net::{encode_response, encode_request};
+
 pub const BUFF_SIZE: usize = 10 * 1024;
 
 use crate::keys::KeySource;

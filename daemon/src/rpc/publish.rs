@@ -23,7 +23,6 @@ use dsf_rpc::{self as rpc, DataInfo, PeerInfo, PublishInfo, PublishOptions};
 
 use crate::{
     core::CoreRes,
-    daemon::net::{NetFuture, NetIf},
     daemon::Dsf,
     error::Error,
     rpc::push::push_data,

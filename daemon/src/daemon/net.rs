@@ -175,7 +175,7 @@ where
                     &message.from(),
                     Box::new(move |p| {
                         if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
-                            warn!("Enabling symmetric message crypto for peer: {from}");
+                            warn!("Enabling symmetric message crypto for peer: {}", p.id);
                             p.flags |= PeerFlags::SYMMETRIC_ENABLED;
                         }
                     }),
@@ -256,8 +256,8 @@ where
         trace!("Keys: {:?}", enc_key);
 
         let c = match &msg {
-            net::Message::Request(req) => self.service().encode_request(req, &enc_key, buff)?,
-            net::Message::Response(resp) => self.service().encode_response(resp, &enc_key, buff)?,
+            net::Message::Request(req) => dsf_core::net::encode_request(&self.id(), req, &enc_key, buff)?,
+            net::Message::Response(resp) => dsf_core::net::encode_response(&self.id(), resp, &enc_key, buff)?,
         };
 
         Ok(Bytes::from(c.raw().to_vec()))
@@ -300,7 +300,7 @@ where
         );
 
         // Handle specific DHT messages
-        let resp = if let Some(dht_req) = Self::net_to_dht_request(&req.data) {
+        let mut resp = if let Some(dht_req) = Self::net_to_dht_request(&req.data) {
             let dht_resp = self.handle_dht_req(from.clone(), peer, dht_req)?;
             let net_resp = Self::dht_to_net_response(dht_resp);
 
