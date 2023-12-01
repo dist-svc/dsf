@@ -190,10 +190,10 @@ pub(crate) async fn handle_net_raw<T: Engine + 'static>(engine: T, core: AsyncCo
 }
 
 /// Generic peer-related handling common to all incoming messages
-pub(crate) async fn handle_base<T: Engine>(engine: T, peer_id: &Id, address: &Address, common: &Common) -> Option<PeerInfo> {
+pub(crate) async fn handle_base(our_id: &Id, mut core: AsyncCore, peer_id: &Id, address: &Address, common: &Common) -> Option<PeerInfo> {
     trace!(
         "[DSF ({:?})] Handling base message from: {:?} address: {:?} public_key: {:?}",
-        engine.id(),
+        our_id,
         peer_id,
         address,
         common.public_key
@@ -201,7 +201,7 @@ pub(crate) async fn handle_base<T: Engine>(engine: T, peer_id: &Id, address: &Ad
 
     // Skip RX of messages / loops
     // TODO(low): may need to this to check tunnels for STUN or equivalents... a problem for later
-    if *peer_id == engine.id() {
+    if peer_id == our_id {
         warn!("handle_base called for self...");
         return None;
     }
@@ -215,7 +215,7 @@ pub(crate) async fn handle_base<T: Engine>(engine: T, peer_id: &Id, address: &Ad
     }
 
     // Find or create (and push) peer
-    let peer = engine.peer_create_update(PeerInfo {
+    let peer = core.peer_create_or_update(PeerInfo {
             id: peer_id.clone(),
             short_id: ShortId::from(peer_id),
             // Attach keys
@@ -249,7 +249,7 @@ pub(crate) async fn handle_base<T: Engine>(engine: T, peer_id: &Id, address: &Ad
     
     trace!(
         "[DSF ({:?})] Peer id: {:?} state: {:?} seen: {:?}",
-        engine.id(),
+        our_id,
         peer_id,
         peer.state(),
         peer.seen()

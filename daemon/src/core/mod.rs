@@ -4,7 +4,7 @@ use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedSender},
     oneshot::{self, Sender as OneshotSender},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn, trace};
 
 use dsf_core::prelude::*;
 use dsf_rpc::{
@@ -206,7 +206,9 @@ impl Core {
 
     /// Async handler for [Core] operations
     async fn handle_op(&mut self, op: CoreOp) -> CoreRes {
-        match op {
+        trace!("op: {op:?}");
+
+        let res = match op {
             CoreOp::ServiceGet(ident) => self
                 .service_get(&ident)
                 .await
@@ -300,7 +302,11 @@ impl Core {
                 .map(|_s| CoreRes::Ok)
                 .unwrap_or(CoreRes::NotFound),
             CoreOp::Exit => unimplemented!(),
-        }
+        };
+
+        trace!("res: {res:?}");
+
+        res
     }
 
     fn get_keys(&self, id: &Id) -> Option<Keys> {
@@ -365,8 +371,7 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Service(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -389,7 +394,7 @@ impl AsyncCore {
             Ok(CoreRes::Service(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
             Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -411,8 +416,8 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Service(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -434,8 +439,8 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Service(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -453,8 +458,8 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Services(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -475,8 +480,8 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Peer(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -494,8 +499,8 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Peers(info, _)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -513,8 +518,8 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Peer(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -536,11 +541,14 @@ impl AsyncCore {
         }
 
         // Await operation completion
-        match rx.await {
+        let r = rx.await;
+        warn!("rx: {r:?}");
+
+        match r {
             Ok(CoreRes::Peer(info)) => Ok(info),
+            Ok(CoreRes::Peers(p, _)) if p.len() == 1 => Ok(p[0].clone()),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -558,8 +566,7 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Replicas(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -584,8 +591,7 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Replicas(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -606,8 +612,7 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Subscribers(info)) => Ok(info),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -632,8 +637,7 @@ impl AsyncCore {
             Ok(CoreRes::Subscribers(info)) if info.len() == 1 => Ok(info[0].clone()),
             Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -659,8 +663,7 @@ impl AsyncCore {
             Ok(CoreRes::Ok) => Ok(()),
             Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -686,8 +689,7 @@ impl AsyncCore {
             Ok(CoreRes::Object(info)) => Ok(Some(info)),
             Ok(CoreRes::NotFound) => Ok(None),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -707,8 +709,7 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Ok) => Ok(()),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            _ => Err(DsfError::Unknown),
         }
     }
 
@@ -725,8 +726,8 @@ impl AsyncCore {
         match rx.await {
             Ok(CoreRes::Keys(k)) => Ok(k),
             Ok(CoreRes::Error(e)) => Err(e),
-            Err(_) => Err(DsfError::Unknown),
-            _ => unreachable!(),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            _ => Err(DsfError::Unknown),
         }
     }
 }

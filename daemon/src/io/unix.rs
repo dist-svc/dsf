@@ -103,7 +103,7 @@ impl Unix {
 
                 Ok(())
             }
-            .instrument(span!(Level::TRACE, "UNIX", path)),
+            //.instrument(span!(Level::TRACE, "UNIX", path)),
         );
 
         Ok(Self {
@@ -214,7 +214,8 @@ impl Connection {
             debug!("task UNIX closed {}", index);
 
             Ok(())
-        }.instrument(span!(Level::TRACE, "UNIX", index)) );
+        });
+        //.instrument(span!(Level::TRACE, "UNIX", index)) );
 
         Connection {
             index,

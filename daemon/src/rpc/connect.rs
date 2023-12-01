@@ -53,7 +53,7 @@ impl<T: Engine> Connect for T {
         debug!("Starting DHT connect");
 
         // Issue DHT connect request to provided address
-        let (peers, _info) = match self.dht_connect(options.address.into(), None).await {
+        let (mut peers, _info) = match self.dht_connect(options.address.into(), None).await {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -63,6 +63,8 @@ impl<T: Engine> Connect for T {
                 return Err(DsfError::NotFound);
             }
         };
+
+        peers.retain(|p| p.id != self.id());
         debug!("Located {} peers", peers.len());
 
         // Establish comms with located peers

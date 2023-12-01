@@ -1,11 +1,9 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, time::Duration, pin::pin};
 
 use futures::{channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded as unbounded_channel}, StreamExt as _, SinkExt as _};
 use tokio::{
     select,
-    sync::{
-        oneshot::Sender as OneshotSender,
-    },
+    sync::oneshot::{Sender as OneshotSender},
 };
 use tracing::{debug, error, info, instrument, trace, warn};
 
@@ -60,7 +58,7 @@ impl AsyncNet {
     /// Create a new async network routing task
     /// 
     /// This creates the singleton manager task and returns `.clone()`able handles for sharing
-    pub fn new(sender: UnboundedSender<(Vec<(Address, Option<Id>)>, Message)>) -> Self {
+    pub fn new(mut sender: UnboundedSender<(Vec<(Address, Option<Id>)>, Message)>) -> Self {
         // Setup control channel
         let (tx, mut rx) = unbounded_channel();
 
@@ -89,10 +87,13 @@ impl AsyncNet {
                         }
                     }
                     NetCtl::Handle(addr, id, resp) => {
-                        trace!("Routing response for {} from {addr:?}", resp.id);
-                        match handles.get(&resp.id) {
+                        let resp_id =resp.id;
+                        trace!("Routing response for {resp_id} from {addr:?}");
+                        match handles.get_mut(&resp.id) {
                             Some(h) => {
-                                h.send((addr, id, resp));
+                                if let Err(e) = h.send((addr, id, resp)).await {
+                                    warn!("Network forward failed for {resp_id}: {e:?}");
+                                }
                             }
                             None => {
                                 warn!("No handler for response {}", resp.id);
@@ -131,8 +132,8 @@ impl AsyncNet {
 
         let mut responses = HashMap::new();
 
-        for i in 0..opts.retries {
-            debug!("retry {i} to {} targets", targets.len());
+        'retries: for i in 0..opts.retries {
+            debug!("request ({i}/{}) to {} targets", opts.retries, targets.len());
 
             // Send request to targets
             if let Err(e) = ctl.send(NetCtl::Send(targets.clone(), req.clone().into())).await {
@@ -143,6 +144,10 @@ impl AsyncNet {
 
                 return Err(Error::Closed);
             }
+
+            // Setup request timeout
+            let timeout = tokio::time::sleep(opts.timeout);
+            tokio::pin!(timeout);
 
             // Await responses from router
             loop {
@@ -156,11 +161,11 @@ impl AsyncNet {
 
                         // Break when all targets have responded
                         if targets.len() == 0 {
-                            break;
+                            break 'retries;
                         }
                     }
                     // Handle timeouts
-                    _ = tokio::time::sleep(opts.timeout) => {
+                    _ = &mut timeout => {
                         break;
                     }
                 }
@@ -209,6 +214,10 @@ impl AsyncNet {
                 return Err(Error::Closed);
             }
 
+            // Setup request timeout
+            let timeout = tokio::time::sleep(opts.timeout);
+            tokio::pin!(timeout);
+
             // Await responses from router
             loop {
                 select! {
@@ -218,7 +227,7 @@ impl AsyncNet {
                         responses.insert(id, (addr, resp));
                     }
                     // Handle timeouts
-                    _ = tokio::time::sleep(opts.timeout) => {
+                    _ = &mut timeout => {
                         break;
                     }
                 }

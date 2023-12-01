@@ -1,6 +1,6 @@
 use std::{
     task::{Context, Poll},
-    time::SystemTime,
+    time::SystemTime, collections::HashMap, iter::FromIterator,
 };
 
 use dsf_rpc::{ServiceIdentifier, ServiceInfo, ServiceState};
@@ -30,8 +30,6 @@ use crate::{
     error::Error,
     rpc::{Engine, OpKind},
 };
-
-use super::net::NetFuture;
 
 impl<Net> Dsf<Net>
 where
@@ -164,6 +162,7 @@ where
                 OpKind::DhtConnect(addr, id) => {
                     let dht = self.dht_mut().get_handle();
                     let exec = self.exec();
+                    let net = self.net.clone();
 
                     debug!("Start connect to: {addr:?}");
 
@@ -177,17 +176,20 @@ where
                     );
                     req.common.public_key = Some(self.service().public_key());
 
-                    let (tx, mut rx) = mpsc::channel(1);
-                    self.net_requests.insert((addr.clone(), req_id), tx);
-
-                    if let Err(e) = self.net_send(&[(addr.clone(), id.clone())], req.into()) {
-                        error!("Failed to send connect message: {:?}", e);
-                        // TODO: remove net request / bail out?
-                    }
+                    let targets = [(addr.clone(), id.clone())].to_vec();
 
                     tokio::task::spawn(async move {
+                        
                         // Wait for net response
-                        let resp = match rx.next().await {
+                        let mut r = match net.net_request(targets, req, Default::default()).await {
+                            Ok(v) if v.len() > 0 => v,
+                            _ => {
+                                error!("No response from peer: {:?}", addr);
+                                return;
+                            }
+                        };
+
+                        let (_peer_id, (_addr, resp)) = match r.drain().next() {
                             Some(v) => v,
                             None => {
                                 error!("No response from peer: {:?}", addr);
@@ -404,19 +406,29 @@ where
                     });
                 }
                 OpKind::Net(ref body, ref peers) => {
+                    let net = self.net.clone();
+
                     let req =
                         NetRequest::new(self.id(), rand::random(), body.clone(), Flags::default());
-                    let s = self.net_op(peers.clone(), req);
+                    let targets: Vec<_> = peers.iter().map(|p| (p.address().clone(), Some(p.id.clone())) ).collect();
 
                     tokio::task::spawn(async move {
-                        let r = s.await;
+                        let r = match net.net_request(targets, req, Default::default()).await {
+                            Ok(v) => {
+                                let v = HashMap::from_iter(v.iter().map(|(k, v)| (k.clone(), v.1.clone())));
+                                CoreRes::Responses(v)
+                            },
+                            Err(e) => CoreRes::Error(CoreError::Unknown),
+                        };
 
-                        if let Err(e) = done.send(CoreRes::Responses(r)).await {
+                        if let Err(e) = done.send(r).await {
                             error!("Failed to forward net response: {:?}", e);
                         }
                     });
                 }
                 OpKind::NetBcast(ref body) => {
+                    let net = self.net.clone();
+
                     let mut req = NetRequest::new(
                         self.id(),
                         rand::random(),
@@ -425,12 +437,16 @@ where
                     );
                     req.set_public_key(self.service().public_key());
 
-                    let s = self.net_broadcast(req);
-
                     tokio::task::spawn(async move {
-                        let r = s.await;
+                        let r = match net.net_broadcast(req, Default::default()).await {
+                            Ok(v) => {
+                                let v = HashMap::from_iter(v.iter().map(|(k, v)| (k.clone(), v.1.clone())));
+                                CoreRes::Responses(v)
+                            },
+                            Err(e) => CoreRes::Error(CoreError::Unknown),
+                        };
 
-                        if let Err(e) = done.send(CoreRes::Responses(r)).await {
+                        if let Err(e) = done.send(r).await {
                             error!("Failed to forward net response: {:?}", e);
                         }
                     });

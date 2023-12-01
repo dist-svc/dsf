@@ -86,12 +86,10 @@ pub(super) async fn push_data<T: Engine + 'static>(engine: T, mut core: AsyncCor
 
     // Issue data push requests
     // TODO(low): we should probably wire the return here to send a delayed PublishInfo to the requester?
-    tokio::task::spawn(async move {
-        match engine.net_req(req, peer_subs).await {
-            Ok(_) => info!("Data push complete"),
-            Err(e) => warn!("Data push error: {:?}", e),
-        }
-    });
+    match engine.net_req(req, peer_subs).await {
+        Ok(_) => info!("Data push complete"),
+        Err(e) => warn!("Data push error: {:?}", e),
+    }
 
     Ok(ResponseBody::Status(net::Status::Ok))
 }

@@ -19,7 +19,7 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::stream::StreamExt;
 
-use tracing::{span, Level};
+use tracing::{span, Level, instrument};
 
 use dsf_core::net::{self, Status};
 use dsf_core::prelude::*;
@@ -51,7 +51,7 @@ pub trait NetIf {
     type Interface;
 
     /// Send a message to the specified targets
-    async fn net_send(
+    fn net_send(
         &mut self,
         targets: &[(Address, Option<Id>)],
         msg: NetMessage,
@@ -66,7 +66,7 @@ pub type ByteSink = mpsc::Sender<(Address, Vec<u8>)>;
 impl NetIf for Dsf<NetSink> {
     type Interface = NetSink;
 
-    async fn net_send(
+    fn net_send(
         &mut self,
         targets: &[(Address, Option<Id>)],
         msg: NetMessage,
@@ -85,33 +85,99 @@ impl NetIf for Dsf<NetSink> {
 impl NetIf for Dsf<ByteSink> {
     type Interface = ByteSink;
 
-    async fn net_send(
+    fn net_send(
         &mut self,
         targets: &[(Address, Option<Id>)],
-        msg: NetMessage,
+        mut msg: NetMessage,
     ) -> Result<(), DaemonError> {
-        // Encode message
+        let core = self.core.clone();
+        let signing_id = self.id();
+        let signing_key = self.service.private_key().unwrap();
+        let public_key = self.service.public_key();
+        let mut net_sink = self.net_sink.clone();
 
-        // TODO: this _should_ probably depend on message types / flags
-        // (and only use asymmetric mode on request..?)
-        let encoded = match targets.len() {
-            0 => return Ok(()),
-            // If we have one target, use symmetric or asymmetric mode as suits
-            1 => {
-                let t = &targets[0];
-                self.net_encode(t.1.as_ref(), msg).await?
-            }
-            // If we have multiple targets, use asymmetric encoding to share objects
-            // (note this improves performance but drops p2p message privacy)
-            _ => self.net_encode(None, msg).await?,
-        };
+        let targets = targets.to_vec();
 
-        // Fan-out encoded message to each target
-        for t in targets {
-            if let Err(e) = self.net_sink.try_send((t.0, encoded.to_vec())) {
-                error!("Failed to send message to sink: {:?}", e);
+        // Fetch peer keys from cache
+        let mut keys = HashMap::new();
+        for (_addr, id) in &targets {
+            if let Some(id) = id {
+                if let Some(k) = self.key_cache.get(id) {
+                    keys.insert(id.clone(), k.clone());
+                }
             }
         }
+
+        // Spawn task to handle net encoding and sending
+        tokio::task::spawn(async move {
+
+            for (a, id) in targets {
+                // Resolve target IDs to peers
+                
+                // Lookup keys in cache
+                let peer_keys = id.as_ref().map(|id| keys.get(id)).flatten();
+
+                // Lookup peer info so we can use this for symmetric mode determination
+                // TODO(med): we should cache this state / pass these down to improve efficiency
+                let peer_info = match id.as_ref() {
+                    Some(id) => core.peer_get(id).await.ok(),
+                    None => None,
+                };
+
+                // Resolve public key from cache or info
+                let pub_key = match (peer_info.as_ref().map(|i| i.state()), peer_keys.map(|k| k.pub_key.clone())) {
+                    (Some(PeerState::Known(pub_key)), _) => Some(pub_key.clone()),
+                    (_, Some(pub_key)) => pub_key.clone(),
+                    _ => None,
+                };
+                
+                // Setup keys for message encoding
+                let enc_keys = Keys {
+                    // daemon private key for signing
+                    pri_key: Some(signing_key.clone()),
+                    // target public key for asymmetric encryption
+                    pub_key: pub_key,
+                    // Symmetric key must be in key cache
+                    sec_key: peer_keys.map(|k| k.sec_key.clone() ).flatten(),
+                    ..Default::default()
+                };
+
+                // Enable symmetric mode if supported
+                let sym = peer_info.map(|p| p.flags.contains(PeerFlags::SYMMETRIC_ENABLED)).unwrap_or(false);
+                if sym {
+                    *msg.flags_mut() |= Flags::SYMMETRIC_MODE;
+                }
+
+                // Temporary patch to always include public key in messages...
+                // this should only be required for constrained services that may
+                // not have capacity for caching peer keys etc.
+                if !sym {
+                    msg.set_public_key(public_key.clone());
+                }
+
+                // Encode message
+                let buff = vec![0u8; 10 * 1024];
+
+                let c = match &msg {
+                    NetMessage::Request(req) => dsf_core::net::encode_request(&signing_id, req, &enc_keys, buff),
+                    NetMessage::Response(resp) => dsf_core::net::encode_response(&signing_id, resp, &enc_keys, buff),
+                };
+
+                let encoded = match c {
+                    Ok(c) => c.raw().to_vec(),
+                    Err(e) => {
+                        error!("Message encode failed: {e:?}");
+                        continue;
+                    }
+                };
+
+                // Forward to network sink
+                if let Err(e) = net_sink.try_send((a, encoded.to_vec())) {
+                    error!("Failed to send message to sink: {:?}", e);
+                }
+            }
+
+        });
 
         Ok(())
     }
@@ -133,6 +199,8 @@ where
         let addr = Address::from(msg.address.clone());
 
         debug!("RX: {:?}", container);
+
+        // TODO(high): verify object prior to performing any operations
 
         // DELEGATION: Handle unwrapped objects for constrained / delegated services
         if !header.kind().is_message() {
@@ -160,6 +228,8 @@ where
         
         debug!("Handling message: {message:?}");
 
+        // TODO: cache keys
+
         // TODO: handle crypto mode errors
         // (eg. message encoded with SYMMETRIC but no pubkey for derivation)
 
@@ -183,15 +253,17 @@ where
                 .await;
         }
 
-        trace!("Net message: {:?}", message);
+        debug!("Handle base");
 
         // Generic net message processing, fetch and update peer information
-        let peer = match crate::net::handle_base(self.exec(), &from, &addr.into(), &message.common().clone())
+        let peer = match crate::net::handle_base(&self.id(), self.core.clone(), &from, &addr.into(), &message.common().clone())
             .await
         {
             Some(p) => p,
             None => return Ok(()),
         };
+
+        debug!("Peer: {peer:?}");
 
         // Route requests and responses to appropriate handlers
         match message {
@@ -212,70 +284,8 @@ where
         Ok(())
     }
 
-    pub async fn net_encode(
-        &mut self,
-        id: Option<&Id>,
-        mut msg: net::Message,
-    ) -> Result<Bytes, DaemonError> {
-        // Encode response
-        let buff = vec![0u8; 10 * 1024];
-
-        // Fetch cached keys if available, otherwise use service keys
-        let (enc_key, sym) = match id {
-            Some(id) => {
-                // Fetch peer information
-                // TODO: un async-ify this?
-                let p_id = id.clone();
-                let core = self.core.clone();
-                let p = core.peer_get(p_id).await;
-
-                match (self.key_cache.get(id), p) {
-                    (Some(k), Ok(p)) => (k.clone(), p.flags.contains(PeerFlags::SYMMETRIC_ENABLED)),
-                    // TODO: disabled to avoid attempting to encode using peer private key when symmetric mode is disabled
-                    // Not _entirely_ sure why this needed to be there at all...
-                    // Some((Some(k), _)) => (k, false),
-                    _ => (self.service().keys(), false),
-                }
-            }
-            None => (self.service().keys(), false),
-        };
-
-        // Set symmetric flag if enabled
-        if sym {
-            *msg.flags_mut() |= Flags::SYMMETRIC_MODE;
-        }
-
-        // Temporary patch to always include public key in messages...
-        // this should only be required for constrained services that may
-        // not have capacity for caching peer keys etc.
-        if !sym {
-            msg.set_public_key(self.pub_key());
-        }
-
-        trace!("Encoding message: {:?}", msg);
-        trace!("Keys: {:?}", enc_key);
-
-        let c = match &msg {
-            net::Message::Request(req) => dsf_core::net::encode_request(&self.id(), req, &enc_key, buff)?,
-            net::Message::Response(resp) => dsf_core::net::encode_response(&self.id(), resp, &enc_key, buff)?,
-        };
-
-        Ok(Bytes::from(c.raw().to_vec()))
-    }
-
-    /// Execute a network operation for the given request
-    ///
-    /// This sends the provided request to the listed peers with retries and timeouts.
-    pub async fn net_op(&mut self, mut peers: Vec<PeerInfo>, req: net::Request) -> HashMap<Id, (Address, net::Response)> {
-        let targets: Vec<_> = peers.drain(..).map(|p| (p.address().clone(), Some(p.id)) ).collect();
-        self.net.net_request(targets, req, Default::default()).await.unwrap()
-    }
-
-    pub async fn net_broadcast(&mut self, req: net::Request) -> HashMap<Id, (Address, net::Response)> {
-        self.net.net_broadcast(req, Default::default()).await.unwrap()
-    }
-
     /// Handle a received request message and generate a response
+    #[instrument(skip_all, fields(req_id = req.common.id))]
     pub async fn handle_net_req(
         &mut self,
         peer: PeerInfo,
@@ -283,9 +293,6 @@ where
         req: net::Request,
     ) -> Result<net::Response, DaemonError> {
         let own_id = self.id();
-
-        let span = span!(Level::DEBUG, "id", "{}", own_id);
-        let _enter = span.enter();
 
         let req_id = req.id;
         let flags = req.flags.clone();
@@ -322,6 +329,8 @@ where
                 Flags::default(),
             )
         };
+
+        debug!("Response: {resp:?}");
 
         // Generic response processing here
         // TODO: this should probably be in the dsf tx path rather than here?

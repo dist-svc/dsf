@@ -11,7 +11,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
 
 use dsf_core::wire::Container;
-use dsf_rpc::{PeerInfo, ServiceInfo};
+use dsf_rpc::{PeerInfo, ServiceInfo, PeerState, PeerFlags};
 use log::{debug, error, info, trace, warn};
 use tracing::{span, Level};
 
@@ -207,7 +207,7 @@ where
             let mut req = NetRequest::new(self.id(), req_id, body, Flags::PUB_KEY_REQUEST);
             req.common.public_key = Some(self.pub_key());
 
-            let targets: Vec<_> = peers.iter().map(|p| (p.info().address().clone(), Some(p.info().id)) ).collect();
+            let targets: Vec<_> = peers.iter().map(|p| (p.info().address().clone(), Some(p.info().id.clone())) ).collect();
 
             debug!(
                 "Issuing DHT {} request ({}) to {:?}",
@@ -250,7 +250,12 @@ where
 
         // Poll on internal network operations
         if let Poll::Ready(Some((targets, msg))) = self.net_out_rx.poll_next_unpin(ctx) {
-            
+            if let Err(e) = self.net_send(&targets, msg) {
+                error!("Failed to send message: {e:?}");
+            }
+
+            // Force re-wake
+            ctx.waker().clone().wake();
         }
 
         // Poll on internal base operations

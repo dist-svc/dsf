@@ -336,7 +336,7 @@ impl Engine {
                     // Incoming network messages
                     net_rx = net.next() => {
                         if let Some(m) = net_rx {
-                            debug!("engine::net_rx {:?}", m);
+                            trace!("engine::net::rx {:?}", m);
                             let mut net_in_tx = net_in_tx.clone();
 
                             // TODO: prefer not to spawn a task every rx but,
@@ -354,12 +354,12 @@ impl Engine {
                                 }
                             });
                         } else {
-                            error!("engine::net_rx returned None");
+                            error!("engine::net::rx returned None");
                         }
                     },
                     net_tx = net_out_rx.next().fuse() => {
                         if let Some((address, data)) = net_tx {
-                            debug!("engine::net_tx {:?} {:?}", address, data);
+                            trace!("engine::net::tx {:?} {:?}", address, data);
 
                             if let Err(e) = net.send(address, None, data).await {
                                 error!("error sending ougoing network message: {:?}", e);
@@ -383,11 +383,11 @@ impl Engine {
                 select! {
                     // Incoming network _requests_ to the daemon
                     net_rx = net_in_rx.next().fuse() => {
-                        debug!("engine::net_rx: {net_rx:?}");
+                        trace!("engine::net_rx: {net_rx:?}");
 
                         if let Some(m) = net_rx {
                             // Handle request via DSF
-                            match dsf.handle_net_raw(m).await {
+                            match dsf.handle_net(m).await {
                                 Ok(v) => v,
                                 Err(e) => {
                                     error!("error handling DSF message: {:?}", e);
@@ -398,7 +398,7 @@ impl Engine {
                     },
                     // Outgoing network _requests_ from the daemon
                     net_tx = net_tx_source.next().fuse() => {
-                        debug!("engine::net_tx: {net_tx:?}");
+                        trace!("engine::net_tx: {net_tx:?}");
 
                         if let Some((addr, data)) = net_tx {
                             if let Err(e) = net_out_tx.send((addr.into(), Bytes::from(data))).await {
@@ -409,7 +409,7 @@ impl Engine {
                     },
                     // Incoming RPC messages
                     rpc_rx = rpc_source.next().fuse() => {
-                        debug!("engine::rpc_rx: {rpc_rx:?}");
+                        trace!("engine::rpc_rx: {rpc_rx:?}");
 
                         let (req, mut tx) = match rpc_rx {
                             Some(v) => v,
