@@ -132,7 +132,7 @@ impl core::fmt::Debug for OpKind {
 pub trait Engine: Sync + Send {
     //type Output: Future<Output=Result<Res, DsfError>> + Send;
 
-    /// Fetch own / peer ID
+    /// Fetch own (peer) ID
     fn id(&self) -> Id;
 
     /// Base execute function, non-blocking, returns a future result
@@ -341,3 +341,14 @@ pub trait Engine: Sync + Send {
     }
 }
 
+impl <T: Engine> Engine for &T {
+    /// Fetch own (peer) ID
+    fn id(&self) -> Id {
+        T::id(self)
+    }
+
+    /// Base execute function, non-blocking, returns a future result
+    async fn exec(&self, op: OpKind) -> CoreRes {
+        T::exec(self, op).await
+    }    
+}

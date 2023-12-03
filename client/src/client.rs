@@ -80,9 +80,6 @@ impl Client {
 
         let daemon_socket = c.daemon_socket();
 
-        let span = span!(Level::DEBUG, "client", "{}", daemon_socket);
-        let _enter = span.enter();
-
         debug!("Client connecting (address: {})", daemon_socket);
 
         // Connect to driver
@@ -98,7 +95,7 @@ impl Client {
     /// Issue a request to the daemon using a client instance, returning a response
     // TODO: #[instrument] when futures 0.3 support is viable
     pub async fn request(&mut self, rk: RequestKind) -> Result<ResponseKind, Error> {
-        let span = span!(Level::DEBUG, "client", "{}", self.addr);
+        let span = span!(Level::TRACE, "client", "{}", self.addr);
         let _enter = span.enter();
 
         debug!("Issuing request: {:?}", rk);

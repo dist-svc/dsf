@@ -160,7 +160,8 @@ where
                 }
                 // TODO: improve OpKind so this logic can move to connect RPC
                 OpKind::DhtConnect(addr, id) => {
-                    let dht = self.dht_mut().get_handle();
+                    let dht = self.dht.clone();
+
                     let exec = self.exec();
                     let net = self.net.clone();
 
@@ -180,7 +181,7 @@ where
 
                     tokio::task::spawn(async move {
                         
-                        // Wait for net response
+                        // Issue network hello request
                         let mut r = match net.net_request(targets, req, Default::default()).await {
                             Ok(v) if v.len() > 0 => v,
                             _ => {
@@ -209,6 +210,8 @@ where
                             }
                         };
 
+                        // Perform DHT connect
+                        let dht = dht.get_handle().await.unwrap();
                         let r = match dht
                             .connect(vec![DhtEntry::new(from.clone(), peer)], Default::default())
                             .await
@@ -229,9 +232,11 @@ where
                     });
                 }
                 OpKind::DhtLocate(id) => {
-                    let dht = self.dht_mut().get_handle();
+                    let dht = self.dht.clone();
 
                     tokio::task::spawn(async move {
+                        let dht = dht.get_handle().await.unwrap();
+
                         let r = match dht.lookup(id.clone(), Default::default()).await {
                             Ok((p, i)) => CoreRes::Peers(vec![p.info().clone()], Some(i)),
                             Err(e) => {
@@ -246,9 +251,11 @@ where
                     });
                 }
                 OpKind::DhtSearch(id) => {
-                    let dht = self.dht_mut().get_handle();
+                    let dht = self.dht.clone();
 
                     tokio::task::spawn(async move {
+                        let dht = dht.get_handle().await.unwrap();
+
                         let r = match dht.search(id.clone(), Default::default()).await {
                             Ok((p, i)) => CoreRes::Pages(p, Some(i)),
                             Err(e) => {
@@ -263,9 +270,11 @@ where
                     });
                 }
                 OpKind::DhtPut(id, pages) => {
-                    let dht = self.dht_mut().get_handle();
+                    let dht = self.dht.clone();
 
                     tokio::task::spawn(async move {
+                        let dht = dht.get_handle().await.unwrap();
+
                         let r = match dht
                             .store(id.clone(), pages.clone(), Default::default())
                             .await
@@ -286,9 +295,11 @@ where
                     });
                 }
                 OpKind::DhtUpdate => {
-                    let dht = self.dht_mut().get_handle();
+                    let dht = self.dht.clone();
+
                     tokio::task::spawn(async move {
                         debug!("Start DHT update");
+                        let dht = dht.get_handle().await.unwrap();
 
                         let r = match dht.update(true).await {
                             Ok(_p) => CoreRes::Ok,

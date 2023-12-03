@@ -29,7 +29,7 @@ use kad::table::NodeTable;
 use crate::error::Error;
 use crate::store::Store;
 
-use super::dht::{dht_reducer, DsfDhtMessage};
+use super::dht::{dht_reducer, DsfDhtMessage, AsyncDht};
 use super::net::{ByteSink, NetIf, NetSink};
 use super::DsfOptions;
 use super::net2::AsyncNet;
@@ -59,7 +59,7 @@ pub struct Dsf<Net = NetSink> {
     net_out_rx: mpsc::UnboundedReceiver<(Vec<(Address, Option<Id>)>, NetMessage)>,
 
     /// Distributed Database
-    dht: DsfDht,
+    pub(crate) dht: AsyncDht,
 
     /// Source for outgoing DHT requests
     dht_source: kad::dht::RequestReceiver<Id, PeerInfo, Container>,
@@ -103,10 +103,12 @@ where
         let (dht_sink, dht_source) = mpsc::channel(100);
         let mut dht = Dht::<Id, PeerInfo, Data>::standard(id, config.dht.clone(), dht_sink);
         dht.set_reducer(Box::new(dht_reducer));
+        let dht = AsyncDht::new(dht);
 
         let (op_tx, op_rx) = mpsc::unbounded();
 
         let (net_out_tx, net_out_rx) = mpsc::unbounded();
+        let net = AsyncNet::new(net_out_tx);
 
         // Create DSF object
         let s = Self {
@@ -125,7 +127,7 @@ where
             op_rx,
 
             net_sink,
-            net: AsyncNet::new(net_out_tx),
+            net,
             net_out_rx,
             
             addresses: Vec::new(),
@@ -145,10 +147,6 @@ where
     /// Fetch a reference to the daemon service
     pub fn service(&mut self) -> &mut Service {
         &mut self.service
-    }
-
-    pub(crate) fn dht_mut(&mut self) -> &mut DsfDht {
-        &mut self.dht
     }
 
     pub(crate) fn pub_key(&self) -> PublicKey {
@@ -199,11 +197,12 @@ where
 {
     fn poll_base(&mut self, ctx: &mut Context<'_>) -> Poll<Result<(), DsfError>> {
         // Poll for outgoing DHT messages
+        // TODO(med): move this to daemon/dht.rs
         if let Poll::Ready(Some((peers, body, mut tx))) = self.dht_source.poll_next_unpin(ctx) {
             let req_id = rand::random();
 
             // Convert from DHT to network request
-            let body = Self::dht_to_net_request(body);
+            let body = super::dht::dht_to_net_request(body);
             let mut req = NetRequest::new(self.id(), req_id, body, Flags::PUB_KEY_REQUEST);
             req.common.public_key = Some(self.pub_key());
 
@@ -214,7 +213,6 @@ where
                 req.data, req_id, targets,
             );
 
-            let exec = self.exec();
             let net = self.net.clone();
 
             // Spawn task to handle net response
@@ -231,7 +229,7 @@ where
                 // TODO: Convert these to DHT messages
                 let mut converted = HashMap::new();
                 for (id, (_addr, resp)) in resps.iter() {
-                    if let Some(r) = Self::net_to_dht_response(&exec, &resp.data).await {
+                    if let Some(r) = super::dht::net_to_dht_response(&resp.data).await {
                         converted.insert(id.clone(), r);
                     } else {
                         warn!("Unexpected response to DHT request: {:?}", resp);
@@ -260,9 +258,6 @@ where
 
         // Poll on internal base operations
         let _ = self.poll_exec(ctx);
-
-        // Poll on internal DHT
-        let _ = self.dht_mut().poll_unpin(ctx);
 
         // TODO: poll on internal state / messages
 

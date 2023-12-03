@@ -8,7 +8,7 @@ use dsf_rpc::{PeerInfo, PeerFlags, PeerAddress, PeerState, SubscriptionKind, Sub
 use crate::{error::Error, rpc::{Engine, register::RegisterService, locate::ServiceRegistry as _, subscribe::PubSub}, core::AsyncCore, store::object::ObjectIdentifier};
 
 /// Register a service from pages
-pub(super) async fn subscribe<T: Engine + 'static>(engine: T, mut core: AsyncCore, from: PeerInfo, service_id: &Id, flags: Flags) -> Result<ResponseBody, Error> {
+pub(super) async fn subscribe<T: Engine>(engine: T, mut core: AsyncCore, from: PeerInfo, service_id: &Id, flags: Flags) -> Result<ResponseBody, Error> {
     // Fetch service information, checking service exists / is known
     let service = match core.service_get(service_id.clone()).await {
         Ok(s) if s.primary_page.is_some() => s,

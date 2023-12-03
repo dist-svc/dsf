@@ -1,12 +1,13 @@
+//! Network request handling
 
-use std::{time::{SystemTime, Duration}, ops::Add};
+use std::{time::{SystemTime, Duration}, ops::Add, net::SocketAddr};
 
-use tracing::{trace, debug, info, warn, error};
+use tracing::{trace, debug, info, warn, error, instrument};
 
 use dsf_core::{prelude::*, net::{self, Request, RequestBody, Response, ResponseBody, Common}, types::ShortId};
 use dsf_rpc::{PeerInfo, PeerFlags, PeerAddress, PeerState, SubscriptionKind, SubscriptionInfo, QosPriority, RegisterOptions, ServiceIdentifier, LocateOptions, SubscribeOptions, ServiceState, ServiceFlags};
 
-use crate::{error::Error, rpc::{Engine, register::RegisterService, locate::ServiceRegistry as _, subscribe::PubSub}, core::AsyncCore, store::object::ObjectIdentifier};
+use crate::{error::Error, rpc::{Engine, register::RegisterService, locate::ServiceRegistry as _, subscribe::PubSub}, core::AsyncCore, store::object::ObjectIdentifier, daemon::dht::AsyncDht};
 
 mod push_data;
 use push_data::push_data;
@@ -141,7 +142,7 @@ pub(crate) async fn handle_dsf_req<T: Engine + 'static>(engine: T, mut core: Asy
 
 
 /// DELEGATION: Handle raw page or data objects
-pub(crate) async fn handle_net_raw<T: Engine + 'static>(engine: T, core: AsyncCore, id: &Id, container: Container) -> Result<ResponseBody, Error> {
+pub(crate) async fn handle_net_raw<T: Engine>(engine: T, core: AsyncCore, id: &Id, container: Container) -> Result<ResponseBody, Error> {
     let header = container.header();
 
     debug!(

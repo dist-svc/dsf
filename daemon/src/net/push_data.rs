@@ -8,7 +8,7 @@ use dsf_rpc::{PeerInfo, PeerFlags, PeerAddress, PeerState, SubscriptionKind, Sub
 use crate::{error::Error, rpc::{Engine, register::RegisterService, locate::ServiceRegistry as _, subscribe::PubSub}, core::AsyncCore, store::object::ObjectIdentifier};
 
 /// Push service data
-pub(super) async fn push_data<T: Engine + 'static>(engine: T, mut core: AsyncCore, id: &Id, flags: Flags, data: Vec<Container>) -> Result<ResponseBody, Error> {
+pub(super) async fn push_data<T: Engine>(engine: T, mut core: AsyncCore, id: &Id, flags: Flags, data: Vec<Container>) -> Result<ResponseBody, Error> {
 
     // Find matching service and make sure we're subscribed
     // TODO(med): make sure we're subscribed or ignore pushes / respond with unsubscribe

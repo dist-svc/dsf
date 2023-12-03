@@ -35,6 +35,7 @@ use dsf_rpc::{
     SubscriptionInfo, SubscriptionKind,
 };
 
+use crate::core::AsyncCore;
 use crate::daemon::Dsf;
 use crate::error::Error as DaemonError;
 
@@ -43,6 +44,8 @@ use crate::rpc::register::RegisterService;
 use crate::rpc::subscribe::PubSub;
 use crate::rpc::Engine;
 use crate::store::object::ObjectIdentifier;
+
+use super::dht::AsyncDht;
 
 /// Network interface abstraction, allows [`Dsf`] instance to be generic over interfaces
 #[allow(async_fn_in_trait)]
@@ -190,165 +193,233 @@ where
     Dsf<Net>: NetIf<Interface = Net>,
 {
     pub async fn handle_net(&mut self, msg: crate::io::NetMessage) -> Result<(), DaemonError> {
-        // Decode message
-        let (container, _n) = Container::from(&msg.data);
-        let header = container.header();
-        let id: Id = container.id().into();
+        // Setup context for async-ified handling
+        let engine = self.exec();
+        let mut core = self.core.clone();
+        let net = self.net.clone();
+        let dht = self.dht.clone();
 
-        let mut data = msg.data.to_vec();
-        let addr = Address::from(msg.address.clone());
+        let our_id = self.id();
+        let our_pub_key = self.service().public_key();
 
-        debug!("RX: {:?}", container);
-
-        // TODO(high): verify object prior to performing any operations
-
-        // DELEGATION: Handle unwrapped objects for constrained / delegated services
-        if !header.kind().is_message() {
-            // Handle raw object
-            let resp = match crate::net::handle_net_raw(self.exec(), self.core.clone(), &id, container.to_owned()).await {
-               Ok(v) => v,
-               Err(e) => {
-                    error!("handle_net_raw error: {e:?}");
-                    return Ok(())
-               }
-            };
-
-            // TODO: Send response
+        // Generate symmetric keys if required / enabled
+        let (c, _) = Container::from(&msg.data);
+        if c.header().flags().contains(Flags::SYMMETRIC_MODE) {
+            match self.key_cache.get_mut(&c.id()) {
+                Some(keys) => match (keys.pub_key.clone(), keys.pri_key.is_none()) {
+                    (Some(pub_key), true) => {
+                        debug!("Derive secret keys for peer: {:#}", c.id());
+                        keys.sec_key = self.service.keys().derive_peer(pub_key).ok().map(|k| k.sec_key).flatten();
+                    },
+                    _ => ()
+                },
+                _ => ()
+            }
         }
 
-        // Convert container to message object
-        // TODO: pass secret keys for encode / decode here
-        let (message, _n) = match net::Message::parse(&mut data, self) {
+        // Decode and verify / decrypt message
+        let container = match Container::parse(msg.data.to_vec(), self) {
             Ok(v) => v,
             Err(e) => {
-                error!("Error decoding base message: {:?}", e);
-                return Ok(());
+                error!("Container parsing error: {e:?}");
+                return Ok(())
             }
         };
+
+        let id: Id = container.id().into();
+        let addr = Address::from(msg.address.clone());
+
+        let data = msg.data.to_vec();
         
-        debug!("Handling message: {message:?}");
-
-        // TODO: cache keys
-
-        // TODO: handle crypto mode errors
-        // (eg. message encoded with SYMMETRIC but no pubkey for derivation)
-
-        // Upgrade to symmetric mode on incoming symmetric message
-        // TODO: there needs to be another transition for this in p2p comms
-        let from = message.from();
-        if message.flags().contains(Flags::SYMMETRIC_MODE) {
-            // TODO: compute and cache symmetric keys here?
-
-            let _ = self
-                .core
-                .peer_update(
-                    &message.from(),
-                    Box::new(move |p| {
-                        if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
-                            warn!("Enabling symmetric message crypto for peer: {}", p.id);
-                            p.flags |= PeerFlags::SYMMETRIC_ENABLED;
-                        }
-                    }),
-                )
-                .await;
+        // Convert container to message object if applicable
+        // TODO: pass secret keys for encode / decode here
+        let mut message = None;
+        if container.header().kind().is_message() {
+            match net::Message::parse(data, self) {
+                Ok(v) => message = Some(v.0),
+                Err(e) => {
+                    error!("Error decoding base message: {:?}", e);
+                    return Ok(());
+                }
+            }
         }
 
-        debug!("Handle base");
+        // Spawn task to handle network operations in parallel
+        tokio::task::spawn(async move {
+            trace!("RX: {:?}", container);
 
-        // Generic net message processing, fetch and update peer information
-        let peer = match crate::net::handle_base(&self.id(), self.core.clone(), &from, &addr.into(), &message.common().clone())
-            .await
-        {
-            Some(p) => p,
-            None => return Ok(()),
-        };
 
-        debug!("Peer: {peer:?}");
+            // DELEGATION: Handle unwrapped objects for constrained / delegated services
+            if !container.header().kind().is_message() {
+                // Handle raw object
+                let resp = match crate::net::handle_net_raw(&engine, core.clone(), &id, container.to_owned()).await {
+                Ok(v) => v,
+                Err(e) => {
+                        error!("handle_net_raw error: {e:?}");
+                        return;
+                }
+                };
 
-        // Route requests and responses to appropriate handlers
-        match message {
-            NetMessage::Response(resp) => {
-                // Forward responses via AsyncNet router
-                self.net.handle_resp(addr, from, resp).await?
+                // TODO(high): Send response
+                
             }
-            NetMessage::Request(req) => {
-                // Handle requests
-                // TODO(HIGH): this must be in an async task to avoid blocking all other ops
-                let resp = self.handle_net_req(peer, msg.address, req).await?;
 
-                // Send response
-                self.net.net_send(vec![(addr, Some(from))], resp.into()).await?;
+            let message = match message {
+                Some(m) => m,
+                None => {
+                    error!("No message");
+                    return;
+                }
+            };
+            
+            debug!("Handling message: {message:?}");
+
+            // TODO: cache keys
+
+            // TODO: handle crypto mode errors
+            // (eg. message encoded with SYMMETRIC but no pubkey for derivation)
+
+            // Upgrade to symmetric mode on incoming symmetric message
+            // TODO: there needs to be another transition for this in p2p comms
+            let from = message.from();
+            if message.flags().contains(Flags::SYMMETRIC_MODE) {
+                // TODO: compute and cache symmetric keys here?
+
+                let _ = core
+                    .peer_update(
+                        &message.from(),
+                        Box::new(move |p| {
+                            if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
+                                warn!("Enabling symmetric message crypto for peer: {}", p.id);
+                                p.flags |= PeerFlags::SYMMETRIC_ENABLED;
+                            }
+                        }),
+                    )
+                    .await;
             }
-        };
+
+            debug!("Handle base");
+
+            // Generic net message processing, fetch and update peer information
+            let peer = match crate::net::handle_base(&our_id, core.clone(), &from, &addr.into(), &message.common().clone())
+                .await
+            {
+                Some(p) => p,
+                None => return,
+            };
+
+            debug!("Peer: {peer:?}");
+
+            // Route requests and responses to appropriate handlers
+            match message {
+                NetMessage::Response(resp) => {
+                    // Forward responses via AsyncNet router
+                    if let Err(e) = net.handle_resp(addr, from, resp).await {
+                        error!("Failed to forward response to mux: {e:?}");
+                    }
+                }
+                NetMessage::Request(req) => {
+                    // Handle requests
+                    // TODO(HIGH): this must be in an async task to avoid blocking all other ops
+                    let resp = match handle_net_req2(engine, core, dht, our_pub_key, peer, msg.address, req).await {
+                        Ok(resp) => resp,
+                        Err(e) => {
+                            error!("Error handling net request: {e:?}");
+                            return;
+                        }
+                    };
+
+                    // Send response
+                    if let Err(e) = net.net_send(vec![(addr, Some(from))], resp.into()).await {
+                        error!("Failed to forward net response: {e:?}");
+                    }
+                }
+            };
+        });
 
         Ok(())
     }
 
-    /// Handle a received request message and generate a response
-    #[instrument(skip_all, fields(req_id = req.common.id))]
     pub async fn handle_net_req(
         &mut self,
         peer: PeerInfo,
         addr: SocketAddr,
         req: net::Request,
     ) -> Result<net::Response, DaemonError> {
-        let own_id = self.id();
-
-        let req_id = req.id;
-        let flags = req.flags.clone();
         let our_pub_key = self.service().public_key();
-        let from = req.from.clone();
 
-        trace!(
-            "handling request (from: {:?} / {})\n {:?}",
-            from,
-            addr,
-            &req
-        );
-
-        // Handle specific DHT messages
-        let mut resp = if let Some(dht_req) = Self::net_to_dht_request(&req.data) {
-            let dht_resp = self.handle_dht_req(from.clone(), peer, dht_req)?;
-            let net_resp = Self::dht_to_net_response(dht_resp);
-
-            net::Response::new(
-                own_id,
-                req_id,
-                net_resp,
-                Flags::default(),
-            )
-
-        // Handle DSF requests
-        } else {
-            let dsf_resp = crate::net::handle_dsf_req(self.exec(), self.core.clone(), peer, req.data.clone(), req.flags.clone()).await?;
-
-            net::Response::new(
-                own_id,
-                req_id,
-                dsf_resp,
-                Flags::default(),
-            )
-        };
-
-        debug!("Response: {resp:?}");
-
-        // Generic response processing here
-        // TODO: this should probably be in the dsf tx path rather than here?
-
-        if flags.contains(Flags::PUB_KEY_REQUEST) {
-            resp.common.public_key = Some(our_pub_key);
-        }
-
-        // Update peer info
-        let _ = self
-            .core
-            .peer_update(&from, Box::new(|p| p.sent += 1))
-            .await;
-
-        trace!("returning response (to: {:?})\n {:?}", from, &resp);
-
-        Ok(resp)
+        handle_net_req2(self.exec(), self.core.clone(), self.dht.clone(), our_pub_key, peer, addr, req).await
     }
+
+}
+
+/// Handle a received request message and generate a response
+#[instrument(skip_all, fields(req_id = req.common.id))]
+async fn handle_net_req2<T: Engine + 'static>(
+    engine: T,
+    mut core: AsyncCore,
+    dht: AsyncDht,
+    our_pub_key: PublicKey,
+    peer: PeerInfo,
+    addr: SocketAddr,
+    req: net::Request,
+) -> Result<net::Response, DaemonError> {
+    let own_id = engine.id();
+
+    let req_id = req.id;
+    let flags = req.flags.clone();
+
+    let from = req.from.clone();
+
+    trace!(
+        "handling request (from: {:?} / {})\n {:?}",
+        from,
+        addr,
+        &req
+    );
+
+    // Handle specific DHT messages
+    let mut resp = if let Some(dht_req) = super::dht::net_to_dht_request(&req.data) {
+        let dht_resp = dht.handle_req(peer, dht_req).await?;
+        let net_resp = super::dht::dht_to_net_response(dht_resp);
+
+        net::Response::new(
+            own_id,
+            req_id,
+            net_resp,
+            Flags::default(),
+        )
+
+    // Handle DSF requests
+    } else {
+        let dsf_resp = crate::net::handle_dsf_req(engine, core.clone(), peer, req.data.clone(), req.flags.clone()).await?;
+
+        net::Response::new(
+            own_id,
+            req_id,
+            dsf_resp,
+            Flags::default(),
+        )
+    };
+
+    debug!("Response: {resp:?}");
+
+    // Generic response processing here
+    // TODO: this should probably be in the dsf tx path rather than here?
+
+    // Ensure we're returning a public key if requested
+    if flags.contains(Flags::PUB_KEY_REQUEST) {
+        resp.common.public_key = Some(our_pub_key);
+    }
+
+    // Update peer info
+    let _ = core
+        .peer_update(&from, Box::new(|p| p.sent += 1))
+        .await;
+
+    trace!("returning response (to: {:?})\n {:?}", from, &resp);
+
+    Ok(resp)
 }
 
 impl<Net> KeySource for Dsf<Net>

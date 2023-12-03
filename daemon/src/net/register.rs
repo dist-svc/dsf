@@ -9,7 +9,7 @@ use crate::{error::Error, rpc::{Engine, register::RegisterService, locate::Servi
 
 
 /// Register a service from pages
-pub(super) async fn register<T: Engine + 'static>(engine: T, core: AsyncCore, id: &Id, flags: Flags, pages: Vec<Container>) -> Result<ResponseBody, Error> {
+pub(super) async fn register<T: Engine>(engine: T, core: AsyncCore, id: &Id, flags: Flags, pages: Vec<Container>) -> Result<ResponseBody, Error> {
     
     // TODO(low): determine whether we should allow this service to be 
     // registered by this peer

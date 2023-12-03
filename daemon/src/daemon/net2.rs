@@ -1,3 +1,5 @@
+//! Network mux/router for managing requests and responses
+
 use std::{collections::HashMap, time::Duration, pin::pin};
 
 use futures::{channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded as unbounded_channel}, StreamExt as _, SinkExt as _};
@@ -16,7 +18,7 @@ use dsf_rpc::PeerInfo;
 
 use crate::error::Error;
 
-/// Async network controller
+/// Async network router
 /// 
 /// This handles routing for network requests and responses using a decoupled async
 /// task so these can be executed from an async context without blocking other
@@ -53,6 +55,8 @@ impl Default for NetRequestOpts {
         }
     }
 }
+
+// TODO(low): peer tx/rx counters could be here to avoid async round-trip updates?
 
 impl AsyncNet {
     /// Create a new async network routing task
