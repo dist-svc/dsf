@@ -290,9 +290,11 @@ impl Container {
 
             i += c.len();
 
-            // Cache key for next run
+            // Cache and update key source with newly discovered keys
             if let Ok(Some(key)) = c.info().map(|v| v.pub_key()) {
-                last_key = Some((c.id().clone(), Keys::new(key)));
+                last_key = Some((c.id().clone(), Keys::new(key.clone())));
+
+                key_source.update(&c.id(), |k| k.pub_key = Some(key.clone()) );
             }
 
             // Push page to parsed list

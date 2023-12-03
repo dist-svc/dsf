@@ -95,7 +95,7 @@ impl<D: PageBody> Net for Service<D> {
         keys: &Keys,
         buff: B,
     ) -> Result<Container<B>, Error> {
-        
+
         // Inject service private key for signing / encryption
         let mut keys = keys.clone();
         match &self.private_key {

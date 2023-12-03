@@ -731,27 +731,3 @@ impl AsyncCore {
         }
     }
 }
-
-impl KeySource for AsyncCore {
-    fn keys(&self, id: &Id) -> Option<Keys> {
-        let id = id.clone();
-        let (tx, rx) = oneshot::channel();
-
-        return None;
-
-        // Enqueue put operation
-        if let Err(e) = self.tasks.send((CoreOp::GetKeys(id.clone()), tx)) {
-            error!("Failed to enqueue key get operation: {e:?}");
-            return None;
-        }
-
-        // Await operation completion (blocking)
-        let rt = tokio::runtime::Builder::new_multi_thread().build().unwrap();
-        rt.block_on(async move {
-            match rx.await {
-                Ok(CoreRes::Keys(k)) => Some(k),
-                _ => None,
-            }
-        })
-    }
-}

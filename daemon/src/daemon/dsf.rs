@@ -1,5 +1,6 @@
 use crate::core::store::AsyncStore;
 use crate::core::{AsyncCore, Core};
+use crate::daemon::net::KeyCache;
 use crate::daemon::ops::Op;
 use crate::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -77,7 +78,7 @@ pub struct Dsf<Net = NetSink> {
     //pub(crate) net_source: Arc<Mutex<mpsc::Receiver<(Address, NetMessage)>>>,
     pub(crate) waker: Option<Waker>,
 
-    pub(super) key_cache: HashMap<Id, Keys>,
+    pub(super) key_cache: KeyCache,
 }
 
 impl<Net> Dsf<Net>
@@ -133,7 +134,9 @@ where
             addresses: Vec::new(),
 
             waker: None,
-            key_cache: HashMap::new(),
+
+            // TODO: pre-fill key cache with known services and peers?
+            key_cache: KeyCache::new(),
         };
 
         Ok(s)

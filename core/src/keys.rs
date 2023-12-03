@@ -71,7 +71,7 @@ impl Keys {
 
     /// Derive encryption keys for the specified peer
     pub fn derive_peer(&self, peer_pub_key: PublicKey) -> Result<Keys, ()> {
-        // Derivation requires our public key
+        // Derivation requires our public and private keys
         let (pub_key, pri_key) = match (&self.pub_key, &self.pri_key) {
             (Some(pub_key), Some(pri_key)) => (pub_key, pri_key),
             _ => return Err(()),
@@ -111,7 +111,7 @@ pub trait KeySource: Sized {
     }
 
     /// Update keys for the specified ID (optional)
-    fn update<F: FnMut(&mut Keys)>(&mut self, _id: &Id, _f: F) -> bool {
+    fn update<F: FnMut(&mut Keys)>(&self, _id: &Id, _f: F) -> bool {
         false
     }
 

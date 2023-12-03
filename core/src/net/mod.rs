@@ -104,22 +104,9 @@ impl Message {
     where
         K: KeySource,
     {
-        // Parse container, verifying sigs etc.
+        // Parse container, verifying sigs and decrypting if required
         let c = Container::parse(data, key_source)?;
         let n = c.len();
-
-        // Decrypt symmetric encrypted objects if enabled
-        let _flags = c.header().flags();
-        #[cfg(nope)]
-        if flags.contains(Flags::SYMMETRIC_MODE) && flags.contains(Flags::ENCRYPTED) {
-            debug!("Applying symmetric decrypt to message from: {}", c.id());
-
-            match key_source.keys(&c.id()).map(|k| k.sym_keys).flatten() {
-                Some(sym_keys) if flags.contains(Flags::SYMMETRIC_DIR) => c.decrypt(&sym_keys.0)?,
-                Some(sym_keys) => c.decrypt(&sym_keys.1)?,
-                None => return Err(Error::NoSymmetricKeys),
-            }
-        }
 
         trace!("Converting {:?} to net message", c);
 
@@ -132,7 +119,9 @@ impl Message {
 
 impl Message {
     pub fn convert<T: ImmutableData, K: KeySource>(
+        // Outer message container
         base: Container<T>,
+        // Key source provides keys for validating and decoding objects within the message
         key_source: &K,
     ) -> Result<Message, Error> {
         let header = base.header();
