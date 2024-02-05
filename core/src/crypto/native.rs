@@ -149,7 +149,7 @@ impl SecKey for RustCrypto {
             })?;
 
         let d = tag.deref();
-        debug!("Tag length: {}", d.len());
+        trace!("Tag length: {}", d.len());
 
         // Setup nonce and tag for decode
         let mut meta = SecretMeta::default();
@@ -201,7 +201,7 @@ impl SecKey for RustCrypto {
             })?;
 
         let d = tag.deref();
-        debug!("Tag length: {}", d.len());
+        trace!("Tag length: {}", d.len());
 
         // Setup nonce and tag for decode
         let mut meta = SecretMeta::default();

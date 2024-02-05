@@ -17,7 +17,11 @@ use log::{debug, error, info, warn};
 use rpc::{PeerInfo, ServiceInfo, SyncInfo};
 use tracing::{span, Level};
 
-use dsf_core::{prelude::*, net, service::{DataOptions, Publisher}};
+use dsf_core::{
+    net,
+    prelude::*,
+    service::{DataOptions, Publisher},
+};
 use dsf_rpc::{self as rpc, DataInfo, SyncOptions};
 
 use crate::daemon::Dsf;

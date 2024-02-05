@@ -1,12 +1,12 @@
 //! Network mux/router for managing requests and responses
 
-use std::{collections::HashMap, time::Duration, pin::pin};
+use std::{collections::HashMap, pin::pin, time::Duration};
 
-use futures::{channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded as unbounded_channel}, StreamExt as _, SinkExt as _};
-use tokio::{
-    select,
-    sync::oneshot::{Sender as OneshotSender},
+use futures::{
+    channel::mpsc::{unbounded as unbounded_channel, UnboundedReceiver, UnboundedSender},
+    SinkExt as _, StreamExt as _,
 };
+use tokio::{select, sync::oneshot::Sender as OneshotSender};
 use tracing::{debug, error, info, instrument, trace, warn};
 
 use dsf_core::{
@@ -19,7 +19,7 @@ use dsf_rpc::PeerInfo;
 use crate::error::Error;
 
 /// Async network router
-/// 
+///
 /// This handles routing for network requests and responses using a decoupled async
 /// task so these can be executed from an async context without blocking other
 /// network operations.
@@ -60,7 +60,7 @@ impl Default for NetRequestOpts {
 
 impl AsyncNet {
     /// Create a new async network routing task
-    /// 
+    ///
     /// This creates the singleton manager task and returns `.clone()`able handles for sharing
     pub fn new(mut sender: UnboundedSender<(Vec<(Address, Option<Id>)>, Message)>) -> Self {
         // Setup control channel
@@ -91,7 +91,7 @@ impl AsyncNet {
                         }
                     }
                     NetCtl::Handle(addr, id, resp) => {
-                        let resp_id =resp.id;
+                        let resp_id = resp.id;
                         trace!("Routing response for {resp_id} from {addr:?}");
                         match handles.get_mut(&resp.id) {
                             Some(h) => {
@@ -137,10 +137,17 @@ impl AsyncNet {
         let mut responses = HashMap::new();
 
         'retries: for i in 0..opts.retries {
-            debug!("request ({i}/{}) to {} targets", opts.retries, targets.len());
+            debug!(
+                "request ({i}/{}) to {} targets",
+                opts.retries,
+                targets.len()
+            );
 
             // Send request to targets
-            if let Err(e) = ctl.send(NetCtl::Send(targets.clone(), req.clone().into())).await {
+            if let Err(e) = ctl
+                .send(NetCtl::Send(targets.clone(), req.clone().into()))
+                .await
+            {
                 error!("Failed to send net request: {e:?}");
 
                 // Close router channel
@@ -209,7 +216,10 @@ impl AsyncNet {
             debug!("broadcast retry {i}");
 
             // Send request to targets
-            if let Err(e) = ctl.send(NetCtl::Send(targets.to_vec(), req.clone().into())).await {
+            if let Err(e) = ctl
+                .send(NetCtl::Send(targets.to_vec(), req.clone().into()))
+                .await
+            {
                 error!("Failed to send net request: {e:?}");
 
                 // Close router channel
@@ -258,15 +268,14 @@ impl AsyncNet {
 
         ctl.send(NetCtl::Send(targets, msg))
             .await
-            .map_err(|_| Error::Closed )
+            .map_err(|_| Error::Closed)
     }
 
     /// Handle incoming responses (routed back to request contexts)
     pub async fn handle_resp(&self, addr: Address, id: Id, resp: Response) -> Result<(), Error> {
         let mut ctl = self.ctl.clone();
 
-        ctl
-            .send(NetCtl::Handle(addr, id, resp))
+        ctl.send(NetCtl::Handle(addr, id, resp))
             .await
             .map_err(|_| Error::Closed)
     }

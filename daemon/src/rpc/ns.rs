@@ -24,7 +24,7 @@ use dsf_core::{
     wire::Container,
 };
 use dsf_rpc::{
-    DataInfo, DhtInfo, LocateInfo, LocateOptions, NsCreateOptions, NsRegisterInfo,
+    DataInfo, DhtInfo, LocateInfo, LocateOptions, NsAdoptOptions, NsCreateOptions, NsRegisterInfo,
     NsRegisterOptions, NsSearchInfo, NsSearchOptions, Response, ServiceFlags, ServiceIdentifier,
     ServiceInfo,
 };
@@ -38,6 +38,9 @@ use super::ops::{Engine, OpKind};
 pub trait NameService {
     /// Create a new name service
     async fn ns_create(&self, opts: NsCreateOptions) -> Result<ServiceInfo, DsfError>;
+
+    /// Search for and adopt a name service
+    async fn ns_adopt(&self, opts: NsAdoptOptions) -> Result<ServiceInfo, DsfError>;
 
     /// Search for a service or block by hashed value
     async fn ns_search(&self, opts: NsSearchOptions) -> Result<NsSearchInfo, DsfError>;
@@ -98,6 +101,28 @@ impl<T: Engine> NameService for T {
         let info = self.svc_get(id.into()).await?;
 
         Ok(info)
+    }
+
+    #[instrument(skip(self))]
+    async fn ns_adopt(&self, opts: NsAdoptOptions) -> Result<ServiceInfo, DsfError> {
+        debug!("Searching for nameservice {}", opts.id);
+
+        // Locate name service instance
+        let ns = self
+            .service_locate(LocateOptions {
+                id: opts.id.clone(),
+                local_only: false,
+                no_persist: false,
+            })
+            .await?;
+
+        // TODO: Check we have appropriate credentials to subscribe
+
+        // TODO: Set NS flag to use this for future queries
+
+        let ns_info = self.svc_get(ns.id.into()).await?;
+
+        Ok(ns_info)
     }
 
     /// Search for a matching service using the provided (or relevant) nameserver

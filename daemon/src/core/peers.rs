@@ -134,7 +134,7 @@ impl Core {
 
         // Sync meaningful peer info updates to db
         // We don't want to do this every call as it's a lot of overhead
-        // TODO(low): this should probably also execute periodically otherwise 
+        // TODO(low): this should probably also execute periodically otherwise
         // we ignore packet counts etc. indefinitely / until state changes
         if p.state != old_peer.state || p.address != old_peer.address || p.flags != old_peer.flags {
             if let Err(e) = self.store.peer_update(&p).await {

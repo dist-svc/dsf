@@ -5,12 +5,16 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
 use clap::{Parser, Subcommand};
-use dsf_core::{options::Options, prelude::{Service, Keys}, wire::Container};
+use dsf_core::{
+    options::Options,
+    prelude::{Keys, Service},
+    wire::Container,
+};
 
 use dsf_core::types::*;
 
 pub use crate::helpers::{try_load_file, try_parse_key_value};
-use crate::{ServiceIdentifier, PageBounds};
+use crate::{PageBounds, ServiceIdentifier};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 //#[cfg_attr(feature = "diesel", derive(diesel::Queryable))]
@@ -52,7 +56,7 @@ bitflags::bitflags! {
 
 impl ServiceInfo {
     pub fn keys(&self) -> Keys {
-        Keys{
+        Keys {
             pub_key: Some(self.public_key.clone()),
             pri_key: self.private_key.clone(),
             sec_key: self.secret_key.clone(),

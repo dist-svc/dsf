@@ -1,17 +1,37 @@
-use std::{time::{SystemTime, Duration}, ops::Add};
+use std::{
+    ops::Add,
+    time::{Duration, SystemTime},
+};
 
-use tracing::{trace, debug, info, warn, error};
+use tracing::{debug, error, info, trace, warn};
 
-use dsf_core::{prelude::*, net::{self, Request, RequestBody, Response, ResponseBody, Common}, types::ShortId};
-use dsf_rpc::{PeerInfo, PeerFlags, PeerAddress, PeerState, SubscriptionKind, SubscriptionInfo, QosPriority, RegisterOptions, ServiceIdentifier, LocateOptions, SubscribeOptions, ServiceState, ServiceFlags};
+use dsf_core::{
+    net::{self, Common, Request, RequestBody, Response, ResponseBody},
+    prelude::*,
+    types::ShortId,
+};
+use dsf_rpc::{
+    LocateOptions, PeerAddress, PeerFlags, PeerInfo, PeerState, QosPriority, RegisterOptions,
+    ServiceFlags, ServiceIdentifier, ServiceState, SubscribeOptions, SubscriptionInfo,
+    SubscriptionKind,
+};
 
-use crate::{error::Error, rpc::{Engine, register::RegisterService, locate::ServiceRegistry as _, subscribe::PubSub}, core::AsyncCore, store::object::ObjectIdentifier};
+use crate::{
+    core::AsyncCore,
+    error::Error,
+    rpc::{locate::ServiceRegistry as _, register::RegisterService, subscribe::PubSub, Engine},
+    store::object::ObjectIdentifier,
+};
 
 /// Push service data
-pub(super) async fn push_data<T: Engine>(engine: T, mut core: AsyncCore, id: &Id, flags: Flags, data: Vec<Container>) -> Result<ResponseBody, Error> {
-
+pub(super) async fn push_data<T: Engine>(
+    engine: T,
+    mut core: AsyncCore,
+    id: &Id,
+    flags: Flags,
+    data: Vec<Container>,
+) -> Result<ResponseBody, Error> {
     // Find matching service and make sure we're subscribed
-    // TODO(med): make sure we're subscribed or ignore pushes / respond with unsubscribe
     let service_info = match core.service_get(id.clone()).await {
         Ok(s) => s,
         Err(_e) => {
@@ -23,7 +43,8 @@ pub(super) async fn push_data<T: Engine>(engine: T, mut core: AsyncCore, id: &Id
 
     // Check we're subscribed to the service otherwise ignore the data push
     if service_info.state != ServiceState::Subscribed
-            && !service_info.flags.contains(ServiceFlags::SUBSCRIBED) {
+        && !service_info.flags.contains(ServiceFlags::SUBSCRIBED)
+    {
         warn!("Data push for non-subscribed service: {id:#}");
         return Ok(ResponseBody::Status(net::Status::InvalidRequest));
     }
@@ -37,9 +58,10 @@ pub(super) async fn push_data<T: Engine>(engine: T, mut core: AsyncCore, id: &Id
 
     // Register or update service if a primary page is provided
     // TODO: improve behaviour for multiple page push
-    if let Some(primary_page) = data.iter().find(|p| {
-        p.header().kind().is_page() && !p.header().flags().contains(Flags::SECONDARY)
-    }) {
+    if let Some(primary_page) = data
+        .iter()
+        .find(|p| p.header().kind().is_page() && !p.header().flags().contains(Flags::SECONDARY))
+    {
         if let Err(e) = core
             .service_register(id.clone(), vec![primary_page.clone()])
             .await

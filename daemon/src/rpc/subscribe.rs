@@ -12,7 +12,7 @@ use futures::future::join_all;
 use futures::prelude::*;
 
 use log::{debug, error, info, trace, warn};
-use rpc::{PeerInfo, QosPriority, ReplicaInfo};
+use rpc::{PeerInfo, QosPriority, ReplicaInfo, UnsubscribeOptions};
 use tracing::{span, Level};
 
 use dsf_core::error::Error as CoreError;
@@ -44,7 +44,7 @@ pub trait PubSub {
         -> Result<Vec<SubscriptionInfo>, DsfError>;
 
     /// Unsubscribe from a known service
-    async fn unsubscribe(&self, options: SubscribeOptions) -> Result<(), DsfError>;
+    async fn unsubscribe(&self, options: UnsubscribeOptions) -> Result<(), DsfError>;
 }
 
 impl<T: Engine> PubSub for T {
@@ -122,7 +122,7 @@ impl<T: Engine> PubSub for T {
         Ok(subs)
     }
 
-    async fn unsubscribe(&self, _options: SubscribeOptions) -> Result<(), DsfError> {
+    async fn unsubscribe(&self, _options: UnsubscribeOptions) -> Result<(), DsfError> {
         todo!("unsubscribe not yet implemented")
     }
 }

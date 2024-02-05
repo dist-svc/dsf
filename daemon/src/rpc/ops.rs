@@ -98,10 +98,7 @@ impl core::fmt::Debug for OpKind {
 
             Self::Publish(id, info) => f.debug_tuple("Publish").field(id).field(info).finish(),
 
-            Self::PeerCreateUpdate(info) => f
-                .debug_tuple("PeerCreateUpdate")
-                .field(info)
-                .finish(),
+            Self::PeerCreateUpdate(info) => f.debug_tuple("PeerCreateUpdate").field(info).finish(),
 
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
             Self::PeerList => f.debug_tuple("PeerList").finish(),
@@ -193,14 +190,8 @@ pub trait Engine: Sync + Send {
     }
 
     /// Create or update a peer
-    async fn peer_create_update(
-        &self,
-        info: PeerInfo,
-    ) -> Result<PeerInfo, DsfError> {
-        match self
-            .exec(OpKind::PeerCreateUpdate(info))
-            .await
-        {
+    async fn peer_create_update(&self, info: PeerInfo) -> Result<PeerInfo, DsfError> {
+        match self.exec(OpKind::PeerCreateUpdate(info)).await {
             CoreRes::Peers(p, _) if p.len() == 1 => Ok(p[0].clone()),
             CoreRes::Error(e) => Err(e),
             _ => Err(DsfError::Unknown),
@@ -341,7 +332,7 @@ pub trait Engine: Sync + Send {
     }
 }
 
-impl <T: Engine> Engine for &T {
+impl<T: Engine> Engine for &T {
     /// Fetch own (peer) ID
     fn id(&self) -> Id {
         T::id(self)
@@ -350,5 +341,5 @@ impl <T: Engine> Engine for &T {
     /// Base execute function, non-blocking, returns a future result
     async fn exec(&self, op: OpKind) -> CoreRes {
         T::exec(self, op).await
-    }    
+    }
 }

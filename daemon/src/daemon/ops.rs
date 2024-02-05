@@ -1,6 +1,8 @@
 use std::{
+    collections::HashMap,
+    iter::FromIterator,
     task::{Context, Poll},
-    time::SystemTime, collections::HashMap, iter::FromIterator,
+    time::SystemTime,
 };
 
 use dsf_rpc::{ServiceIdentifier, ServiceInfo, ServiceState};
@@ -180,7 +182,6 @@ where
                     let targets = [(addr.clone(), id.clone())].to_vec();
 
                     tokio::task::spawn(async move {
-                        
                         // Issue network hello request
                         let mut r = match net.net_request(targets, req, Default::default()).await {
                             Ok(v) if v.len() > 0 => v,
@@ -421,14 +422,19 @@ where
 
                     let req =
                         NetRequest::new(self.id(), rand::random(), body.clone(), Flags::default());
-                    let targets: Vec<_> = peers.iter().map(|p| (p.address().clone(), Some(p.id.clone())) ).collect();
+                    let targets: Vec<_> = peers
+                        .iter()
+                        .map(|p| (p.address().clone(), Some(p.id.clone())))
+                        .collect();
 
                     tokio::task::spawn(async move {
                         let r = match net.net_request(targets, req, Default::default()).await {
                             Ok(v) => {
-                                let v = HashMap::from_iter(v.iter().map(|(k, v)| (k.clone(), v.1.clone())));
+                                let v = HashMap::from_iter(
+                                    v.iter().map(|(k, v)| (k.clone(), v.1.clone())),
+                                );
                                 CoreRes::Responses(v)
-                            },
+                            }
                             Err(e) => CoreRes::Error(CoreError::Unknown),
                         };
 
@@ -451,9 +457,11 @@ where
                     tokio::task::spawn(async move {
                         let r = match net.net_broadcast(req, Default::default()).await {
                             Ok(v) => {
-                                let v = HashMap::from_iter(v.iter().map(|(k, v)| (k.clone(), v.1.clone())));
+                                let v = HashMap::from_iter(
+                                    v.iter().map(|(k, v)| (k.clone(), v.1.clone())),
+                                );
                                 CoreRes::Responses(v)
-                            },
+                            }
                             Err(e) => CoreRes::Error(CoreError::Unknown),
                         };
 

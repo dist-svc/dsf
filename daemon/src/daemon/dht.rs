@@ -4,11 +4,14 @@ use std::iter::FromIterator;
 use std::num;
 use std::time::SystemTime;
 
+use futures::{
+    channel::mpsc::{self, unbounded as unbounded_channel, UnboundedReceiver, UnboundedSender},
+    SinkExt as _, StreamExt as _,
+};
 use kad::dht::DhtHandle;
 use kad::prelude::*;
 use tokio::select;
 use tracing::{debug, error, trace};
-use futures::{channel::mpsc::{self, UnboundedReceiver, UnboundedSender, unbounded as unbounded_channel}, StreamExt as _, SinkExt as _};
 
 use dsf_core::net::{RequestBody, ResponseBody};
 use dsf_core::options::Filters;
@@ -43,7 +46,11 @@ pub struct AsyncDht {
 #[derive(Clone)]
 pub enum DhtCtl {
     /// Handle incoming DHT request
-    Handle(PeerInfo, DhtRequest<Id, Data>, UnboundedSender<DhtResponse<Id, PeerInfo, Data>>),
+    Handle(
+        PeerInfo,
+        DhtRequest<Id, Data>,
+        UnboundedSender<DhtResponse<Id, PeerInfo, Data>>,
+    ),
 
     /// Fetch a DHT handle
     GetHandle(UnboundedSender<DhtHandle<Id, PeerInfo, Data>>),
@@ -54,7 +61,6 @@ pub enum DhtCtl {
 
 impl AsyncDht {
     pub fn new(mut dht: DsfDht) -> Self {
-
         // Setup control channel
         let (tx, mut rx) = unbounded_channel();
 
@@ -69,7 +75,7 @@ impl AsyncDht {
                         // Handle DHT requests
                         DhtCtl::Handle(from, req, mut resp_tx) => {
                             let peer = DhtEntry::new(from.id.clone(), from);
-    
+
                             match dht.handle_req(&peer, &req) {
                                 Ok(resp) => {
                                     if let Err(e) = resp_tx.send(resp).await {
@@ -103,19 +109,23 @@ impl AsyncDht {
     }
 
     /// Handle DHT requests
-    pub async fn handle_req(&self, from: PeerInfo, req: DhtRequest<Id, Data>) -> Result<DhtResponse<Id, PeerInfo, Data>, Error> {
+    pub async fn handle_req(
+        &self,
+        from: PeerInfo,
+        req: DhtRequest<Id, Data>,
+    ) -> Result<DhtResponse<Id, PeerInfo, Data>, Error> {
         let (tx, mut rx) = unbounded_channel();
 
         // Send control message
         let mut ctl = self.ctl.clone();
         ctl.send(DhtCtl::Handle(from, req, tx))
             .await
-            .map_err(|_| Error::Closed )?;
+            .map_err(|_| Error::Closed)?;
 
         // Await response
         let resp = match rx.next().await {
             Some(r) => r,
-            None => return Err(Error::Closed)
+            None => return Err(Error::Closed),
         };
 
         // Return response object
@@ -130,12 +140,12 @@ impl AsyncDht {
         let mut ctl = self.ctl.clone();
         ctl.send(DhtCtl::GetHandle(tx))
             .await
-            .map_err(|_| Error::Closed )?;
+            .map_err(|_| Error::Closed)?;
 
         // Await response
         let resp = match rx.next().await {
             Some(r) => r,
-            None => return Err(Error::Closed)
+            None => return Err(Error::Closed),
         };
 
         // Return handle object
@@ -206,9 +216,7 @@ pub(crate) fn dht_to_net_request(req: DhtRequest<Id, Data>) -> NetRequestBody {
         DhtRequest::Ping => RequestBody::Ping,
         DhtRequest::FindNode(id) => RequestBody::FindNode(Id::from(id.clone())),
         DhtRequest::FindValue(id) => RequestBody::FindValue(Id::from(id.clone())),
-        DhtRequest::Store(id, values) => {
-            RequestBody::Store(Id::from(id.clone()), values.to_vec())
-        }
+        DhtRequest::Store(id, values) => RequestBody::Store(Id::from(id.clone()), values.to_vec()),
     }
 }
 
@@ -265,12 +273,12 @@ pub(crate) async fn net_to_dht_response(
             let mut dht_nodes = Vec::with_capacity(nodes.len());
             for (id, addr, key) in nodes {
                 let node = PeerInfo::new(
-                        id.clone(),
-                        PeerAddress::Implicit(addr.clone()),
-                        PeerState::Known(key.clone()),
-                        0,
-                        Some(SystemTime::now())
-                    );
+                    id.clone(),
+                    PeerAddress::Implicit(addr.clone()),
+                    PeerState::Known(key.clone()),
+                    0,
+                    Some(SystemTime::now()),
+                );
 
                 dht_nodes.push((id.clone(), node).into());
             }

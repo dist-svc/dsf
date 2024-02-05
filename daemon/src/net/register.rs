@@ -1,17 +1,37 @@
-use std::{time::{SystemTime, Duration}, ops::Add};
+use std::{
+    ops::Add,
+    time::{Duration, SystemTime},
+};
 
-use tracing::{trace, debug, info, warn, error};
+use tracing::{debug, error, info, trace, warn};
 
-use dsf_core::{prelude::*, net::{self, Request, RequestBody, Response, ResponseBody, Common}, types::ShortId};
-use dsf_rpc::{PeerInfo, PeerFlags, PeerAddress, PeerState, SubscriptionKind, SubscriptionInfo, QosPriority, RegisterOptions, ServiceIdentifier, LocateOptions, SubscribeOptions, ServiceState, ServiceFlags};
+use dsf_core::{
+    net::{self, Common, Request, RequestBody, Response, ResponseBody},
+    prelude::*,
+    types::ShortId,
+};
+use dsf_rpc::{
+    LocateOptions, PeerAddress, PeerFlags, PeerInfo, PeerState, QosPriority, RegisterOptions,
+    ServiceFlags, ServiceIdentifier, ServiceState, SubscribeOptions, SubscriptionInfo,
+    SubscriptionKind,
+};
 
-use crate::{error::Error, rpc::{Engine, register::RegisterService, locate::ServiceRegistry as _, subscribe::PubSub}, core::AsyncCore, store::object::ObjectIdentifier};
-
+use crate::{
+    core::AsyncCore,
+    error::Error,
+    rpc::{locate::ServiceRegistry as _, register::RegisterService, subscribe::PubSub, Engine},
+    store::object::ObjectIdentifier,
+};
 
 /// Register a service from pages
-pub(super) async fn register<T: Engine>(engine: T, core: AsyncCore, id: &Id, flags: Flags, pages: Vec<Container>) -> Result<ResponseBody, Error> {
-    
-    // TODO(low): determine whether we should allow this service to be 
+pub(super) async fn register<T: Engine>(
+    engine: T,
+    core: AsyncCore,
+    id: &Id,
+    flags: Flags,
+    pages: Vec<Container>,
+) -> Result<ResponseBody, Error> {
+    // TODO(low): determine whether we should allow this service to be
     // registered by this peer
 
     // Add to local service registry
@@ -22,7 +42,7 @@ pub(super) async fn register<T: Engine>(engine: T, core: AsyncCore, id: &Id, fla
     // Return early for standard registrations
     if !flags.contains(Flags::CONSTRAINED) {
         info!("Register request for service: {:#} complete", id);
-        return Ok(ResponseBody::Status(net::Status::Ok))
+        return Ok(ResponseBody::Status(net::Status::Ok));
     }
 
     // DELEGATION: Execute network registration
@@ -30,14 +50,17 @@ pub(super) async fn register<T: Engine>(engine: T, core: AsyncCore, id: &Id, fla
     // (eg. should only be allowed for devices with locally scoped addresses)
     info!("starting delegated registration for {id:#}");
 
-    let resp = match engine.service_register(RegisterOptions {
-        service: ServiceIdentifier::id(id.clone()),
-        no_replica: false,
-    }).await {
+    let resp = match engine
+        .service_register(RegisterOptions {
+            service: ServiceIdentifier::id(id.clone()),
+            no_replica: false,
+        })
+        .await
+    {
         Ok(v) => {
             info!("Registration complete: {v:?}");
             net::ResponseBody::Status(net::Status::Ok)
-        },
+        }
         Err(e) => {
             error!("Registration failed: {:?}", e);
             net::ResponseBody::Status(net::Status::Failed)

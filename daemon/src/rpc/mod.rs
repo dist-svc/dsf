@@ -16,10 +16,7 @@ use dsf_rpc::*;
 
 use crate::{
     core::services::ServiceInst,
-    daemon::{
-        net::NetIf,
-        Dsf,
-    },
+    daemon::{net::NetIf, Dsf},
     error::{CoreError, Error},
     rpc::{
         bootstrap::Bootstrap, connect::Connect, create::CreateService, discover::Discover,
@@ -63,14 +60,14 @@ impl<T: Engine> Rpc for T {
                 debug!("Status request");
 
                 // TODO(med): fill in status information
-                let info = StatusInfo{
+                let info = StatusInfo {
                     id: self.id(),
                     peers: 0,
                     services: 0,
                     version: crate::VERSION.to_string(),
                 };
 
-                return Response::new(req_id, ResponseKind::Status(info))
+                return Response::new(req_id, ResponseKind::Status(info));
             }
             RequestKind::Peer(c) => {
                 debug!("Starting async peer op");
@@ -84,9 +81,7 @@ impl<T: Engine> Rpc for T {
                     }
                     PeerCommands::Block(_) => todo!("Block command not yet implemented"),
                     PeerCommands::Unblock(_) => todo!("Unblock command not yet implemented"),
-                    PeerCommands::List(_) => {
-                        self.peer_list().await.map(ResponseKind::Peers)
-                    },
+                    PeerCommands::List(_) => self.peer_list().await.map(ResponseKind::Peers),
                     PeerCommands::Info(_) => todo!("Info command not yet implemented"),
                     PeerCommands::Remove(_) => todo!("Remove command not yet implemented"),
                 };
@@ -107,7 +102,7 @@ impl<T: Engine> Rpc for T {
                         .await
                         .map(ResponseKind::Services)
                         .map_err(DsfError::from),
-                    ServiceCommands::Info(_) => todo!(),
+                    ServiceCommands::Info(opts) => todo!(),
                     ServiceCommands::Create(opts) => {
                         self.service_create(opts).await.map(ResponseKind::Service)
                     }
@@ -126,7 +121,9 @@ impl<T: Engine> Rpc for T {
                     ServiceCommands::Subscribe(opts) => {
                         self.subscribe(opts).await.map(ResponseKind::Subscribed)
                     }
-                    ServiceCommands::Unsubscribe(_) => todo!("Unsubscribe not yet implemented"),
+                    ServiceCommands::Unsubscribe(opts) => {
+                        self.unsubscribe(opts).await.map(|_| ResponseKind::None)
+                    }
                     ServiceCommands::Discover(opts) => {
                         self.discover(opts).await.map(ResponseKind::Services)
                     }
@@ -171,6 +168,7 @@ impl<T: Engine> Rpc for T {
                     NsCommands::Create(opts) => {
                         self.ns_create(opts).await.map(ResponseKind::Service)
                     }
+                    NsCommands::Adopt(opts) => self.ns_adopt(opts).await.map(ResponseKind::Service),
                     NsCommands::Register(opts) => {
                         self.ns_register(opts).await.map(ResponseKind::NsRegister)
                     }

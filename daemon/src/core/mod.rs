@@ -4,12 +4,12 @@ use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedSender},
     oneshot::{self, Sender as OneshotSender},
 };
-use tracing::{debug, error, info, warn, trace};
+use tracing::{debug, error, info, trace, warn};
 
 use dsf_core::prelude::*;
 use dsf_rpc::{
     DataInfo, PageBounds, PeerInfo, PeerState, ReplicaInfo, ServiceIdentifier, ServiceInfo,
-    ServiceState, SubscriptionInfo, TimeBounds, SubscriptionKind,
+    ServiceState, SubscriptionInfo, SubscriptionKind, TimeBounds,
 };
 
 use crate::{
@@ -106,27 +106,45 @@ impl core::fmt::Debug for CoreOp {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             CoreOp::ServiceGet(id) => f.debug_tuple("ServiceGet").field(id).finish(),
-            CoreOp::ServiceCreate(svc, _pages) => f.debug_tuple("ServiceCreate").field(svc).finish(),
-            CoreOp::ServiceRegister(id, _pages) => f.debug_tuple("ServiceRegister").field(id).finish(),
+            CoreOp::ServiceCreate(svc, _pages) => {
+                f.debug_tuple("ServiceCreate").field(svc).finish()
+            }
+            CoreOp::ServiceRegister(id, _pages) => {
+                f.debug_tuple("ServiceRegister").field(id).finish()
+            }
             CoreOp::ServiceList(bounds) => f.debug_tuple("ServiceList").field(bounds).finish(),
             CoreOp::ServiceUpdate(id, _) => f.debug_tuple("ServiceUpdate").field(id).finish(),
-            
+
             CoreOp::PeerGet(ident) => f.debug_tuple("PeerGet").field(ident).finish(),
             CoreOp::PeerList(bounds) => f.debug_tuple("PeerList").field(bounds).finish(),
             CoreOp::PeerCreate(info) => f.debug_tuple("PeerCreate").field(info).finish(),
             CoreOp::PeerUpdate(id, _) => f.debug_tuple("PeerUpdate").field(id).finish(),
-            
+
             CoreOp::ReplicaList(id) => f.debug_tuple("ReplicaList").field(id).finish(),
-            CoreOp::ReplicaCreateUpdate(id, _pages) => f.debug_tuple("ReplicaCreateUpdate").field(id).finish(),
-            
+            CoreOp::ReplicaCreateUpdate(id, _pages) => {
+                f.debug_tuple("ReplicaCreateUpdate").field(id).finish()
+            }
+
             CoreOp::SubscriberList(id) => f.debug_tuple("SubscriberList").field(id).finish(),
-            CoreOp::SubscriberCreateUpdate(info) => f.debug_tuple("SubscriberCreateUpdate").field(info).finish(),
-            CoreOp::SubscriberRemove(id, sub_kind) => f.debug_tuple("SubscriberRemove").field(id).field(sub_kind).finish(),
-            
+            CoreOp::SubscriberCreateUpdate(info) => {
+                f.debug_tuple("SubscriberCreateUpdate").field(info).finish()
+            }
+            CoreOp::SubscriberRemove(id, sub_kind) => f
+                .debug_tuple("SubscriberRemove")
+                .field(id)
+                .field(sub_kind)
+                .finish(),
+
             CoreOp::GetData(id, _bounds) => f.debug_tuple("GetData").field(id).finish(),
             CoreOp::StoreData(id, _objects) => f.debug_tuple("StoreData").field(id).finish(),
-            CoreOp::GetObject(id, object) => f.debug_tuple("GetObject").field(id).field(object).finish(),
-            CoreOp::StoreObject(id, object) => f.debug_tuple("StoreObject").field(id).field(object).finish(),
+            CoreOp::GetObject(id, object) => {
+                f.debug_tuple("GetObject").field(id).field(object).finish()
+            }
+            CoreOp::StoreObject(id, object) => f
+                .debug_tuple("StoreObject")
+                .field(id)
+                .field(object)
+                .finish(),
             CoreOp::GetKeys(id) => f.debug_tuple("GetKeys").field(id).finish(),
 
             CoreOp::Exit => f.debug_tuple("Exit").finish(),
@@ -279,7 +297,7 @@ impl Core {
             CoreOp::PeerUpdate(peer_id, f) => self
                 .peer_update(&peer_id, f)
                 .await
-                .map(|p| p.map(CoreRes::Peer).unwrap_or(CoreRes::NotFound) )
+                .map(|p| p.map(CoreRes::Peer).unwrap_or(CoreRes::NotFound))
                 .unwrap_or(CoreRes::NotFound),
 
             CoreOp::ReplicaCreateUpdate(service_id, replicas) => self
@@ -295,10 +313,12 @@ impl Core {
                 .find_subscribers(&service_id)
                 .map(CoreRes::Subscribers)
                 .unwrap_or(CoreRes::NotFound),
-            CoreOp::SubscriberCreateUpdate(info) => self.subscriber_create_or_update(info)
+            CoreOp::SubscriberCreateUpdate(info) => self
+                .subscriber_create_or_update(info)
                 .map(|s| CoreRes::Subscribers(vec![s]))
                 .unwrap_or(CoreRes::NotFound),
-            CoreOp::SubscriberRemove(service_id, sub_kind) => self.subscriber_remove(&service_id, &sub_kind)
+            CoreOp::SubscriberRemove(service_id, sub_kind) => self
+                .subscriber_remove(&service_id, &sub_kind)
                 .map(|_s| CoreRes::Ok)
                 .unwrap_or(CoreRes::NotFound),
             CoreOp::Exit => unimplemented!(),

@@ -337,7 +337,7 @@ mod tests {
         })
     }
 
-    /// Benchmark file based database without WAL
+    /// Benchmark file based database write without WAL
     #[bench]
     fn bench_db_write_file_nowal(b: &mut Bencher) {
         let d = TempDir::new("dsf-db").unwrap();
@@ -356,6 +356,40 @@ mod tests {
 
         b.iter(|| {
             test_write_data(&mut store, &mut svc);
+        })
+    }
+
+    #[bench]
+    fn bench_db_read_file(b: &mut Bencher) {
+        let d = TempDir::new("dsf-db").unwrap();
+        let d = d.path().to_str().unwrap().to_string();
+
+        let mut store = Store::new_rc(
+            &format!("{d}/sqlite-nowal.db"),
+            StoreOptions {
+                enable_wal: false,
+                ..Default::default()
+            },
+        )
+        .expect("Error opening store");
+
+        let mut svc = setup_store(&mut store);
+
+        let data: Vec<_> = (0..100)
+            .map(|_| {
+                svc.publish_data_buff::<Vec<u8>>(Default::default())
+                    .unwrap()
+                    .1
+            })
+            .collect();
+
+        store.with(|conn| save_objects(conn, &data[..])).unwrap();
+
+        b.iter(|| {
+            let d: &Container<_> = &data[random::<usize>() % data.len()];
+            store
+                .load_object(&svc.id(), &d.signature(), &svc.keys())
+                .unwrap();
         })
     }
 

@@ -117,9 +117,7 @@ impl AsyncStore {
                     bounds.count.unwrap_or(10),
                 )
                 .map(StoreRes::Objects),
-            StoreOp::ObjectDelete(sig) => store
-                .delete_object(&sig)
-                .map(|_| StoreRes::Ok),
+            StoreOp::ObjectDelete(sig) => store.delete_object(&sig).map(|_| StoreRes::Ok),
             StoreOp::Exit => unimplemented!(),
         }
     }
@@ -290,7 +288,10 @@ impl DataStore for AsyncStore {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
-        if let Err(e) = self.tasks.send((StoreOp::ServiceDelete(service_id.clone()), tx)) {
+        if let Err(e) = self
+            .tasks
+            .send((StoreOp::ServiceDelete(service_id.clone()), tx))
+        {
             error!("Failed to enqueue service delete operation: {e:?}");
             return Err(StoreError::Unknown);
         }

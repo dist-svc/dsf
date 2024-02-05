@@ -21,12 +21,7 @@ use dsf_core::net;
 use dsf_core::service::{DataOptions, Publisher};
 use dsf_rpc::{self as rpc, DataInfo, PeerInfo, PublishInfo, PublishOptions};
 
-use crate::{
-    core::CoreRes,
-    daemon::Dsf,
-    error::Error,
-    rpc::push::push_data,
-};
+use crate::{core::CoreRes, daemon::Dsf, error::Error, rpc::push::push_data};
 
 use super::ops::*;
 

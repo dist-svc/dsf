@@ -536,7 +536,7 @@ impl<'a, T: MutableData> Container<T> {
     /// Decrypt private fields within an object (in place)
     pub fn decrypt(&mut self, sk: &SecretKey) -> Result<(), Error> {
         // TODO: skip if body + private options are empty...
-        debug!("SK Decrypt body with key: {}", sk);
+        trace!("SK Decrypt body with key: {}", sk);
 
         // Check we're encrypted
         if !self.header().flags().contains(Flags::ENCRYPTED) || self.decrypted {

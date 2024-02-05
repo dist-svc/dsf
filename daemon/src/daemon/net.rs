@@ -237,7 +237,7 @@ where
                 )
                 .unwrap();
 
-                let k = Keys{ 
+                let k = Keys {
                     pub_key: Some(pub_key),
                     sym_keys: Some(sym_keys),
                     ..Default::default()

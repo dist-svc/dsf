@@ -294,7 +294,7 @@ impl Container {
             if let Ok(Some(key)) = c.info().map(|v| v.pub_key()) {
                 last_key = Some((c.id().clone(), Keys::new(key.clone())));
 
-                key_source.update(&c.id(), |k| k.pub_key = Some(key.clone()) );
+                key_source.update(&c.id(), |k| k.pub_key = Some(key.clone()));
             }
 
             // Push page to parsed list
@@ -404,6 +404,74 @@ mod test {
                 .public()
                 .sign_pk(keys.pri_key.as_ref().unwrap())
                 .expect("Error encoding page");
+        });
+    }
+
+    #[bench]
+    fn bench_decode_primary(b: &mut Bencher) {
+        let (id, mut keys) = setup();
+        keys.sec_key = None;
+
+        let header = Header {
+            kind: PageKind::Generic.into(),
+            application_id: 10,
+            index: 12,
+            ..Default::default()
+        };
+        let data = vec![1, 2, 3, 4, 5, 6, 7];
+
+        // Encode using builder
+        let c = Builder::new([0u8; 1024])
+            .id(&id)
+            .header(&header)
+            .body(&data)
+            .unwrap()
+            .private_options(&[])
+            .unwrap()
+            .public()
+            .sign_pk(keys.pri_key.as_ref().unwrap())
+            .expect("Error encoding page");
+
+        // Time decodes
+        b.iter(|| {
+            let _decoded = Container::parse(c.raw().to_vec(), &keys)
+                .expect("Error decoding page with known public key");
+        });
+    }
+
+    #[bench]
+    fn bench_decode_primary_encrypted(b: &mut Bencher) {
+        let (id, mut keys) = setup();
+
+        let header = Header {
+            kind: PageKind::Generic.into(),
+            application_id: 10,
+            index: 12,
+            flags: Flags::ENCRYPTED,
+            ..Default::default()
+        };
+        let data = vec![1, 2, 3, 4, 5, 6, 7];
+
+        // Encode using builder
+        let c = Builder::new([0u8; 1024])
+            .id(&id)
+            .header(&header)
+            .body(&data)
+            .unwrap()
+            .private_options(&[])
+            .unwrap()
+            .encrypt(keys.sec_key.as_ref().unwrap())
+            .unwrap()
+            .public_options(&[])
+            .unwrap()
+            .sign_pk(keys.pri_key.as_ref().unwrap())
+            .expect("Error encoding page");
+
+        // Time decodes
+        b.iter(|| {
+            let mut decoded = Container::parse(c.raw().to_vec(), &keys)
+                .expect("Error decoding page with known public key");
+            decoded.decrypt(keys.sec_key.as_ref().unwrap()).unwrap()
         });
     }
 

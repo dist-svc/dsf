@@ -235,7 +235,7 @@ impl<'a> Decode<'a> for Options {
         let k = match OptionKind::try_from(option_kind) {
             Ok(v) => v,
             Err(_e) => {
-                // TODO: return raw / unsupported / applicationoption data
+                // TODO: return raw / unsupported / application option data
                 return Ok((Options::None, option_len + OPTION_HEADER_LEN));
             }
         };

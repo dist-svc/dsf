@@ -9,7 +9,7 @@ use crate::{
     options::Options,
     prelude::{Header, Keys},
     service::Service,
-    types::{Address, Flags, Kind, MutableData, RequestKind, ResponseKind, Id},
+    types::{Address, Flags, Id, Kind, MutableData, RequestKind, ResponseKind},
     wire::{
         builder::{Encrypt, SetPublicOptions},
         Builder, Container,
@@ -95,7 +95,6 @@ impl<D: PageBody> Net for Service<D> {
         keys: &Keys,
         buff: B,
     ) -> Result<Container<B>, Error> {
-
         // Inject service private key for signing / encryption
         let mut keys = keys.clone();
         match &self.private_key {
@@ -161,7 +160,6 @@ pub fn encode_request<B: MutableData>(
         _ => b.public_options(&[])?,
     };
 
-
     // Sign/encrypt object using provided keys
     let c = finalise_message(req.flags, &req.common, keys, b)?;
 
@@ -205,12 +203,13 @@ pub fn encode_response<B: MutableData>(
             }
             Ok(i)
         })?,
-        ResponseBody::ValuesFound(id, pages) | ResponseBody::PullData(id, pages) => b
-            .with_body(|buff| {
+        ResponseBody::ValuesFound(id, pages) | ResponseBody::PullData(id, pages) => {
+            b.with_body(|buff| {
                 let mut i = id.encode(buff)?;
                 i += Container::encode_pages(pages, &mut buff[i..])?;
                 Ok(i)
-            })?,
+            })?
+        }
         ResponseBody::NoResult => b.body(Empty)?,
     };
 

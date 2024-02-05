@@ -114,14 +114,17 @@ async fn status(h: &State<HttpCtx>) -> Json<ResponseKind> {
 // Service endpoints
 
 #[get("/services?<count>&<offset>")]
-async fn service_list(h: &State<HttpCtx>,     count: Option<usize>,
-    offset: Option<usize>) -> Json<ResponseKind> {
+async fn service_list(
+    h: &State<HttpCtx>,
+    count: Option<usize>,
+    offset: Option<usize>,
+) -> Json<ResponseKind> {
     Json(
         h.exec(RequestKind::Service(ServiceCommands::List(
             ServiceListOptions {
                 application_id: None,
                 kind: None,
-                bounds: PageBounds {count, offset}
+                bounds: PageBounds { count, offset },
             },
         )))
         .await,

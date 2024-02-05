@@ -285,9 +285,7 @@ impl Core {
             }
 
             // TODO(med): Setup replication if enabled
-            if let Some(_rp_sig) = &info.replica_page {
-
-            }
+            if let Some(_rp_sig) = &info.replica_page {}
 
             // Add loaded service to list
             services.push(ServiceInst {

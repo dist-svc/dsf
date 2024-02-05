@@ -12,7 +12,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
 
 use dsf_core::wire::Container;
-use dsf_rpc::{PeerInfo, ServiceInfo, PeerState, PeerFlags};
+use dsf_rpc::{PeerFlags, PeerInfo, PeerState, ServiceInfo};
 use log::{debug, error, info, trace, warn};
 use tracing::{span, Level};
 
@@ -30,10 +30,10 @@ use kad::table::NodeTable;
 use crate::error::Error;
 use crate::store::Store;
 
-use super::dht::{dht_reducer, DsfDhtMessage, AsyncDht};
+use super::dht::{dht_reducer, AsyncDht, DsfDhtMessage};
 use super::net::{ByteSink, NetIf, NetSink};
-use super::DsfOptions;
 use super::net2::AsyncNet;
+use super::DsfOptions;
 
 /// Re-export of Dht type used for DSF
 pub type DsfDht = Dht<Id, PeerInfo, Data>;
@@ -130,7 +130,7 @@ where
             net_sink,
             net,
             net_out_rx,
-            
+
             addresses: Vec::new(),
 
             waker: None,
@@ -209,7 +209,10 @@ where
             let mut req = NetRequest::new(self.id(), req_id, body, Flags::PUB_KEY_REQUEST);
             req.common.public_key = Some(self.pub_key());
 
-            let targets: Vec<_> = peers.iter().map(|p| (p.info().address().clone(), Some(p.info().id.clone())) ).collect();
+            let targets: Vec<_> = peers
+                .iter()
+                .map(|p| (p.info().address().clone(), Some(p.info().id.clone())))
+                .collect();
 
             debug!(
                 "Issuing DHT {} request ({}) to {:?}",

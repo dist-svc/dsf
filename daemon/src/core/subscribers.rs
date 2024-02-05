@@ -30,7 +30,10 @@ impl Core {
         }
     }
 
-    pub fn subscriber_create_or_update(&mut self, info: SubscriptionInfo) -> Result<SubscriptionInfo, Error> {
+    pub fn subscriber_create_or_update(
+        &mut self,
+        info: SubscriptionInfo,
+    ) -> Result<SubscriptionInfo, Error> {
         let service_id = info.service_id.clone();
         let svc_subs = self.subscribers.entry(service_id.clone()).or_insert(vec![]);
         let mut subscriber = svc_subs.iter_mut().find(|s| s.kind == info.kind);
@@ -39,11 +42,11 @@ impl Core {
             Some(s) => {
                 debug!("Update subscriber for service {service_id}: {info:?}");
                 *s = info.clone();
-            },
+            }
             None => {
                 debug!("Create new subscriber for service {service_id}: {info:?}");
                 svc_subs.push(info.clone());
-            },
+            }
         }
 
         Ok(info)
@@ -149,7 +152,11 @@ impl Core {
     }
 
     /// Remove a subscription
-    pub fn subscriber_remove(&mut self, service_id: &Id, peer_kind: &SubscriptionKind) -> Result<(), Error> {
+    pub fn subscriber_remove(
+        &mut self,
+        service_id: &Id,
+        peer_kind: &SubscriptionKind,
+    ) -> Result<(), Error> {
         let subscribers = self.subscribers.entry(service_id.clone()).or_insert(vec![]);
 
         let remove = subscribers

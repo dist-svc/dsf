@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use log::{debug, error, info, trace, warn};
 
-use rpc::{PeerInfo, PeerAddress};
+use rpc::{PeerAddress, PeerInfo};
 use tokio::task;
 
 use futures::channel::mpsc;
@@ -70,20 +70,27 @@ async fn test_manager() {
 
     info!("Responds to pings");
 
-    let p2 = PeerInfo::new(s2.id(), PeerAddress::Implicit(a2.into()), PeerState::Unknown, 0, None);
+    let p2 = PeerInfo::new(
+        s2.id(),
+        PeerAddress::Implicit(a2.into()),
+        PeerState::Unknown,
+        0,
+        None,
+    );
 
-    let resp = dsf.handle_net_req(
-        p2,
-        a2,
-        Request::new(
-            s2.id(),
-            rand::random(),
-            RequestBody::Hello,
-            Flags::ADDRESS_REQUEST,
-        ),
-    )
-    .await
-    .unwrap();
+    let resp = dsf
+        .handle_net_req(
+            p2,
+            a2,
+            Request::new(
+                s2.id(),
+                rand::random(),
+                RequestBody::Hello,
+                Flags::ADDRESS_REQUEST,
+            ),
+        )
+        .await
+        .unwrap();
 
     assert_eq!(
         resp,
