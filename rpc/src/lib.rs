@@ -235,28 +235,21 @@ pub enum ResponseKind {
     Status(StatusInfo),
     Connected(ConnectInfo),
 
-    Peer(PeerInfo),
     Peers(Vec<PeerInfo>),
 
-    Service(ServiceInfo),
     Services(Vec<ServiceInfo>),
+    
     Registered(RegisterInfo),
     Located(Vec<LocateInfo>),
-
     Subscribed(Vec<SubscriptionInfo>),
-
     Published(PublishInfo),
-
-    Datastore(Vec<(Id, Vec<Vec<u8>>)>),
 
     NsRegister(NsRegisterInfo),
     NsSearch(NsSearchInfo),
 
-    Data(Vec<DataInfo>),
+    Objects(Vec<(DataInfo, Container)>),
 
     Pages(Vec<Container>),
-
-    Page(Container),
 
     Bootstrap(BootstrapInfo),
 

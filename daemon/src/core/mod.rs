@@ -90,10 +90,11 @@ pub enum CoreOp {
     /// Remove a subscription for a given service
     SubscriberRemove(Id, SubscriptionKind),
 
-    GetData(Id, PageBounds),
+    ListData(ServiceIdentifier, PageBounds),
+    GetData(ServiceIdentifier, ObjectIdentifier),
     StoreData(Id, Vec<Container>),
 
-    GetObject(Id, ObjectIdentifier),
+    GetObject(ServiceIdentifier, ObjectIdentifier),
     StoreObject(Id, Container),
 
     GetKeys(Id),
@@ -135,8 +136,10 @@ impl core::fmt::Debug for CoreOp {
                 .field(sub_kind)
                 .finish(),
 
-            CoreOp::GetData(id, _bounds) => f.debug_tuple("GetData").field(id).finish(),
+            CoreOp::ListData(id, bounds) => f.debug_tuple("ListData").field(id).field(bounds).finish(),
+            CoreOp::GetData(id, ident) => f.debug_tuple("GetData").field(id).field(ident).finish(),
             CoreOp::StoreData(id, _objects) => f.debug_tuple("StoreData").field(id).finish(),
+
             CoreOp::GetObject(id, object) => {
                 f.debug_tuple("GetObject").field(id).field(object).finish()
             }
@@ -175,8 +178,7 @@ pub enum CoreRes {
     Subscribers(Vec<SubscriptionInfo>),
 
     Pages(Vec<Container>, Option<SearchInfo>),
-    Data(Vec<(DataInfo, Container)>),
-    Object(Container),
+    Objects(Vec<(DataInfo, Container)>),
 
     Keys(Keys),
     Sig(Signature),
@@ -252,10 +254,16 @@ impl Core {
                 .unwrap_or(CoreRes::NotFound),
             CoreOp::ServiceUpdate(service_id, f) => self.service_update(&service_id, f).await,
 
-            CoreOp::GetData(service_id, page_bounds) => self
-                .fetch_data(&service_id, &page_bounds, &TimeBounds::default())
+            CoreOp::ListData(service_id, page_bounds) => self
+                .list_data(&service_id, &page_bounds, &TimeBounds::default())
                 .await
-                .map(CoreRes::Data)
+                .map(CoreRes::Objects)
+                .unwrap_or(CoreRes::NotFound),
+        
+            CoreOp::GetData(service_id, object_ident) => self
+                .get_object(&service_id, object_ident)
+                .await
+                .map(|v| CoreRes::Objects(vec![v]))
                 .unwrap_or(CoreRes::NotFound),
 
             CoreOp::StoreData(service_id, pages) => self
@@ -267,7 +275,7 @@ impl Core {
             CoreOp::GetObject(service_id, obj) => self
                 .get_object(&service_id, obj)
                 .await
-                .map(|o| o.map(CoreRes::Object).unwrap_or(CoreRes::NotFound))
+                .map(|o| CoreRes::Objects(vec![o]))
                 .unwrap_or(CoreRes::NotFound),
 
             CoreOp::StoreObject(service_id, obj) => self
@@ -690,15 +698,15 @@ impl AsyncCore {
     /// Fetch a stored object for a given service and object identifier
     pub async fn object_get<I: Into<ObjectIdentifier>>(
         &self,
-        service_id: &Id,
-        ident: I,
-    ) -> Result<Option<Container>, DsfError> {
+        service_id: &ServiceIdentifier,
+        object_ident: I,
+    ) -> Result<(DataInfo, Container), DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
         if let Err(e) = self
             .tasks
-            .send((CoreOp::GetObject(service_id.clone(), ident.into()), tx))
+            .send((CoreOp::GetObject(service_id.clone(), object_ident.into()), tx))
         {
             error!("Failed to enqueue service list operation: {e:?}");
             return Err(DsfError::IO);
@@ -706,8 +714,8 @@ impl AsyncCore {
 
         // Await operation completion
         match rx.await {
-            Ok(CoreRes::Object(info)) => Ok(Some(info)),
-            Ok(CoreRes::NotFound) => Ok(None),
+            Ok(CoreRes::Objects(info)) if info.len() == 1 => Ok(info[0].clone()),
+            Ok(CoreRes::NotFound) | Ok(CoreRes::Objects(_)) => Err(DsfError::NotFound),
             Ok(CoreRes::Error(e)) => Err(e),
             _ => Err(DsfError::Unknown),
         }
@@ -728,6 +736,26 @@ impl AsyncCore {
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Ok) => Ok(()),
+            Ok(CoreRes::Error(e)) => Err(e),
+            _ => Err(DsfError::Unknown),
+        }
+    }
+
+    pub async fn data_list(&self, ident: &ServiceIdentifier, bounds: &PageBounds) -> Result<Vec<(DataInfo, Container)>, DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self
+            .tasks
+            .send((CoreOp::ListData(ident.clone(), bounds.clone()), tx))
+        {
+            error!("Failed to enqueue list data operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Objects(p)) => Ok(p),
             Ok(CoreRes::Error(e)) => Err(e),
             _ => Err(DsfError::Unknown),
         }

@@ -75,8 +75,8 @@ pub(super) async fn fetch_replica<E: Engine>(
 ) -> Result<Container, DsfError> {
     // Fetch existing replica page if available
     if let Some(sig) = &info.replica_page {
-        match e.object_get(e.id(), sig.clone()).await {
-            Ok(v) if !v.expired() => {
+        match e.object_get(e.id().into(), sig.clone()).await {
+            Ok((_i, v)) if !v.expired() => {
                 debug!(
                     "Using existing replica page {:#} for service {:#}",
                     sig, info.id

@@ -339,7 +339,19 @@ where
                         };
                     });
                 }
-                OpKind::PeerList => {
+                OpKind::PeerInfo(ident) => {
+                    tokio::task::spawn(async move {
+                        let r = match core.peer_get(ident).await {
+                            Ok(p) => CoreRes::Peers(vec![p], None),
+                            Err(e) => CoreRes::Error(e),
+                        };
+
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
+                }
+                OpKind::PeerList(_opts) => {
                     tokio::task::spawn(async move {
                         let r = match core.peer_list(Default::default()).await {
                             Ok(p) => CoreRes::Peers(p, None),
@@ -351,14 +363,14 @@ where
                         };
                     });
                 }
-                OpKind::ObjectGet(id, sig) => {
+                OpKind::ObjectGet(ident, sig) => {
                     tokio::task::spawn(async move {
                         // Fetch object
-                        let page = core.object_get(&id, &sig).await;
+                        let page = core.object_get(&ident, &sig).await;
 
                         // And return the response object if found
                         let r = match page {
-                            Ok(Some(p)) => CoreRes::Pages(vec![p], None),
+                            Ok(p) => CoreRes::Objects(vec![p]),
                             _ => CoreRes::Error(CoreError::NotFound),
                         };
                         if let Err(e) = done.try_send(r) {
@@ -385,6 +397,23 @@ where
                         if let Err(e) = done.try_send(resp) {
                             error!("Failed to forward net response: {:?}", e);
                         }
+                    });
+                }
+                OpKind::ObjectList(ident, bounds) => {
+                    // Grab service credentials
+
+                    tokio::task::spawn(async move {
+                        // Fetch objects
+                        let page = core.data_list(&ident, &bounds).await;
+
+                        // And return the response object if found
+                        let r = match page {
+                            Ok(p) => CoreRes::Objects(p),
+                            _ => CoreRes::Error(CoreError::NotFound),
+                        };
+                        if let Err(e) = done.try_send(r) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
                     });
                 }
                 OpKind::ReplicaGet(id) => {

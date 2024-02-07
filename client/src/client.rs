@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use clap::Parser;
+use dsf_core::wire::Container;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use home::home_dir;
@@ -139,7 +140,7 @@ impl Client {
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Peer(info) => Ok(info),
+            ResponseKind::Peers(info) if info.len() == 1 => Ok(info[0].clone()),
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }
@@ -169,21 +170,26 @@ impl Client {
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Service(info) => Ok((ServiceHandle::new(info.id.clone()), info)),
+            ResponseKind::Services(info) if info.len() == 1 => {
+                Ok((ServiceHandle::new(info[0].id.clone()), info[0].clone()))
+            }
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }
     }
 
     /// Fetch pages from a given service
-    pub async fn object(&mut self, options: data::FetchOptions) -> Result<DataInfo, Error> {
+    pub async fn object(
+        &mut self,
+        options: data::FetchOptions,
+    ) -> Result<(DataInfo, Container), Error> {
         let req = RequestKind::Data(DataCommands::Get(options));
 
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Data(data) if data.len() == 1 => Ok(data[0].clone()),
-            ResponseKind::Data(_) => Err(Error::NoPageFound),
+            ResponseKind::Objects(data) if data.len() == 1 => Ok(data[0].clone()),
+            ResponseKind::Objects(_) => Err(Error::NoPageFound),
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }
@@ -199,7 +205,9 @@ impl Client {
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Service(info) => Ok(ServiceHandle::new(info.id)),
+            ResponseKind::Services(info) if info.len() == 1 => {
+                Ok(ServiceHandle::new(info[0].id.clone()))
+            }
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }
@@ -279,13 +287,16 @@ impl Client {
     }
 
     /// Fetch data from a given service
-    pub async fn data(&mut self, options: data::DataListOptions) -> Result<Vec<DataInfo>, Error> {
+    pub async fn data(
+        &mut self,
+        options: data::DataListOptions,
+    ) -> Result<Vec<(DataInfo, Container)>, Error> {
         let req = RequestKind::Data(DataCommands::List(options));
 
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Data(info) => Ok(info),
+            ResponseKind::Objects(info) => Ok(info),
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }
@@ -301,7 +312,7 @@ impl Client {
         let resp = self.request(req).await?;
 
         match resp {
-            ResponseKind::Service(info) => Ok(info),
+            ResponseKind::Services(info) if info.len() == 1 => Ok(info[0].clone()),
             ResponseKind::Error(e) => Err(Error::Remote(e)),
             _ => Err(Error::UnrecognizedResult),
         }

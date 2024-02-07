@@ -130,9 +130,9 @@ pub(crate) async fn handle_dsf_req<T: Engine + 'static>(
                 Some(n) => ObjectIdentifier::Index(n),
                 None => ObjectIdentifier::Latest,
             };
-            let r = match core.object_get(&id, q.clone()).await {
-                Ok(Some(i)) => Ok(ResponseBody::PullData(id, vec![i])),
-                Ok(None) => Ok(ResponseBody::NoResult),
+            let r = match core.object_get(&(&id).into(), q.clone()).await {
+                Ok((i, c)) => Ok(ResponseBody::PullData(id, vec![c])),
+                Err(DsfError::NotFound) => Ok(ResponseBody::NoResult),
                 Err(e) => {
                     error!("Failed to fetch object {:?}: {:?}", q, e);
                     Err(e.into())

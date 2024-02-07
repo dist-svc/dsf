@@ -56,14 +56,14 @@ pub(super) async fn subscribe<T: Engine>(
     }
 
     // Fetch primary page for service
+    // TODO(med): should this fail out if we don't have a primary page?
     let pages = {
         match core
-            .object_get(&service_id, &service.primary_page.unwrap())
+            .object_get(&(service_id).into(), &service.primary_page.unwrap())
             .await
-            .unwrap()
         {
-            Some(p) => vec![p.clone()],
-            None => vec![],
+            Ok((_i, p)) => vec![p.clone()],
+            Err(_) => vec![],
         }
     };
 

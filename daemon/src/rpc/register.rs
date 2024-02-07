@@ -102,8 +102,8 @@ pub(super) async fn fetch_primary<E: Engine>(
 
     // Attempt to locate existing primary page
     if let Some(sig) = &info.primary_page {
-        match e.object_get(info.id.clone(), sig.clone()).await {
-            Ok(v) if !v.expired() => {
+        match e.object_get((&info.id).into(), sig.clone()).await {
+            Ok((_i, v)) if !v.expired() => {
                 debug!("Using existing primary page {:#}", sig);
                 return Ok(v);
             }

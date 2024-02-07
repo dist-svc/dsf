@@ -58,8 +58,7 @@ impl AsyncStore {
         let (tx, mut rx) = unbounded_channel();
         let s = Self { tasks: tx };
 
-        // Setup blocking store interface task
-        // TODO: rework to perform all ops this way? or only writes?
+        // Setup blocking store interface task/thread
         std::thread::spawn(move || {
             // Wait for store commands
             while let Some((op, done)) = rx.blocking_recv() {

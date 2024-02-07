@@ -339,7 +339,7 @@ impl Engine {
                             trace!("engine::net::rx {:?}", m);
                             let mut net_in_tx = net_in_tx.clone();
 
-                            // TODO: prefer not to spawn a task every rx but,
+                            // TODO(low): prefer not to spawn a task every rx but,
                             // need to be able to inject rx delays so this seems like
                             // an easy option for the moment...
                             task::spawn(async move {
@@ -445,7 +445,7 @@ impl Engine {
                         trace!("engine::update");
 
                         // TODO: prompt dsf service updates?
-                        // Maybe this should just use time internally?
+                        // Maybe this should just use an internal timer?
                     },
                     // Poll on DSF internal state (this actually runs DSF logic)
                     _ = dsf => {

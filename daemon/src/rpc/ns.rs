@@ -287,8 +287,8 @@ impl<T: Engine> NameService for T {
         // Lookup prefix for NS
         // TODO: this should be non-optional
         let prefix = match ns.primary_page.clone() {
-            Some(sig) => match self.object_get(ns.id.clone(), sig).await {
-                Ok(ns_page) => ns_page.public_options_iter().find_map(|o| match o {
+            Some(sig) => match self.object_get((&ns.id).into(), sig).await {
+                Ok((_i, ns_page)) => ns_page.public_options_iter().find_map(|o| match o {
                     Options::Name(n) => Some(n.to_string()),
                     _ => None,
                 }),

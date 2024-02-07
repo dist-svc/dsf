@@ -26,7 +26,7 @@ use dsf_rpc::{self as rpc, DataInfo, SyncOptions};
 
 use crate::daemon::Dsf;
 use crate::error::Error;
-use crate::rpc::push::push_data;
+use crate::rpc::data::push_data;
 use crate::rpc::subscribe::find_replicas;
 
 use super::ops::*;
@@ -140,8 +140,8 @@ impl<T: Engine> SyncData for T {
 
             // Check whether the object is available locally
             if let Some(sig) = &last_sig {
-                match self.object_get(info.id.clone(), sig.clone()).await {
-                    Ok(o) if o.header().index() == i => {
+                match self.object_get((&info.id).into(), sig.clone()).await {
+                    Ok((_i, o)) if o.header().index() == i => {
                         // Update prior sig and object state
                         last_sig = Filters::prev_sig(&o.public_options_iter());
                         objects.insert(o.header().index(), o);

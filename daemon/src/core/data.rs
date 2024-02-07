@@ -24,15 +24,15 @@ pub struct DataInst {
 }
 
 impl Core {
-    /// Fetch data for a given service
-    pub async fn fetch_data(
+    /// List data for a given service
+    pub async fn list_data(
         &self,
-        service_id: &Id,
+        ident: &ServiceIdentifier,
         page_bounds: &PageBounds,
         _time_bounds: &TimeBounds,
     ) -> Result<Vec<(DataInfo, Container)>, Error> {
         // Get service info for object decoding
-        let service = match self.service_get(&ServiceIdentifier::from(service_id)).await {
+        let service = match self.service_get(ident).await {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };
@@ -47,7 +47,7 @@ impl Core {
         // Load data from store
         let mut data = self
             .store
-            .object_find(service_id, &keys, page_bounds)
+            .object_find(&service.id, &keys, page_bounds)
             .await?;
 
         debug!("Retrieved {} objects: {:?}", data.len(), data);
@@ -62,13 +62,14 @@ impl Core {
         Ok(results)
     }
 
+    /// Fetch a single object for the specified service
     pub async fn get_object<F: Into<ObjectIdentifier>>(
         &self,
-        service_id: &Id,
+        service_id: &ServiceIdentifier,
         f: F,
-    ) -> Result<Option<Container>, Error> {
+    ) -> Result<(DataInfo, Container), Error> {
         // Fetch service info for object decoding
-        let service = match self.service_get(&ServiceIdentifier::from(service_id)).await {
+        let service = match self.service_get(&service_id).await {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };
@@ -82,13 +83,15 @@ impl Core {
         // and return early if found
 
         // Fetch object from backing store
-        let object = match self.store.object_get(service_id, f.into(), &keys).await {
+        let object = match self.store.object_get(&service.id, f.into(), &keys).await {
             Ok(v) => v,
-            Err(StoreError::NotFound) => return Ok(None),
+            Err(StoreError::NotFound) => return Err(Error::NotFound),
             Err(e) => return Err(Error::Store(e)),
         };
 
-        Ok(Some(object))
+        let i = DataInfo::from_block(&object, &keys)?;
+
+        Ok((i, object))
     }
 
     /// Store data for a given service

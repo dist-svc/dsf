@@ -1,10 +1,13 @@
 //! Publish operation, publishes data using a known service,
 //! distributing updates to any active subscribers
 
-use std::convert::TryFrom;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    convert::TryFrom,
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+    collections::HashMap,
+};
 
 use dsf_core::base::DataBody;
 use dsf_core::wire::Container;
@@ -12,27 +15,30 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 
 use log::{debug, error, info, warn};
-use rpc::ServiceInfo;
+use rpc::{DataListOptions, ServiceInfo};
 use tracing::{span, Level};
 
 use dsf_core::prelude::*;
 
 use dsf_core::net;
 use dsf_core::service::{DataOptions, Publisher};
-use dsf_rpc::{self as rpc, DataInfo, PeerInfo, PublishInfo, PublishOptions};
+use dsf_rpc::{self as rpc, DataInfo, PeerInfo, PublishInfo, PublishOptions, PushOptions};
 
-use crate::{core::CoreRes, daemon::Dsf, error::Error, rpc::push::push_data};
+use crate::{core::CoreRes, daemon::Dsf, error::Error};
 
 use super::ops::*;
 
 #[allow(async_fn_in_trait)]
 pub trait PublishData {
-    /// Publish data using a known / local service
-    async fn publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError>;
+    /// Publish data using a local service managed by the daemon
+    async fn data_publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError>;
+
+    /// Push pre-signed data for a known service managed externally
+    async fn data_push(&self, options: PushOptions) -> Result<PublishInfo, DsfError>;
 }
 
 impl<T: Engine> PublishData for T {
-    async fn publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError> {
+    async fn data_publish(&self, options: PublishOptions) -> Result<PublishInfo, DsfError> {
         info!("Publish: {:?}", &options);
 
         // Resolve service id / index to a service instance
@@ -56,6 +62,21 @@ impl<T: Engine> PublishData for T {
             sig: block.signature(),
             subscribers: resps.len(),
         })
+    }
+
+    async fn data_push(&self, options: PushOptions) -> Result<PublishInfo, DsfError> {
+        info!("Push: {:?}", &options);
+
+        // Resolve service id / index to a service instance
+        let _info = self.svc_get(options.service).await?;
+
+        // TODO: Parse RPC data to container and validate
+
+        // TODO: Add to local store
+
+        // TODO: Push to subscribers
+
+        todo!("Implement data push")
     }
 }
 
@@ -114,4 +135,35 @@ pub(super) async fn publish_data<E: Engine, B: DataBody>(
 
     // Return published block
     Ok(block)
+}
+
+/// Helper function to push published objects to subscribers
+pub(super) async fn push_data<E: Engine>(
+    e: &E,
+    info: &ServiceInfo,
+    objects: Vec<Container>,
+) -> Result<HashMap<Id, NetResponse>, DsfError> {
+    // Fetch service subscribers
+    let subs = e.subscribers_get(info.id.clone()).await?;
+
+    // Resolve subscribers to peers for net operation
+    let mut peers = Vec::with_capacity(subs.len());
+    for s in &subs {
+        match e.peer_get(s.clone()).await {
+            Ok(p) => peers.push(p),
+            Err(e) => {
+                warn!("Failed to lookup peer {:#}: {:?}", s, e);
+            }
+        }
+    }
+
+    debug!("Push to {}(/{}) subscribers", peers.len(), subs.len());
+
+    // Issue network request
+    let req = net::RequestBody::PushData(info.id.clone(), objects);
+    let resp = e.net_req(req, peers).await?;
+
+    // TODO: process subscriber responses
+
+    Ok(resp)
 }

@@ -52,8 +52,10 @@ pub enum OpKind {
     PeerCreateUpdate(PeerInfo),
     /// Fetch peer information by peer ID
     PeerGet(Id),
+    /// Fetch peer information by mixed identifier
+    PeerInfo(ServiceIdentifier),
     /// List known peers
-    PeerList,
+    PeerList(PeerListOptions),
 
     /// Update available replicas for a service
     ReplicaUpdate(Id, Vec<Container>),
@@ -61,9 +63,11 @@ pub enum OpKind {
     ReplicaGet(Id),
 
     /// Fetch an object by service ID and signature
-    ObjectGet(Id, Signature),
+    ObjectGet(ServiceIdentifier, Signature),
     /// Store an object
     ObjectPut(Container),
+    /// Fetch a list of objects for a service with the attached filters
+    ObjectList(ServiceIdentifier, PageBounds),
 
     /// Issue a network request to the listed peers
     Net(NetRequestBody, Vec<PeerInfo>),
@@ -99,9 +103,10 @@ impl core::fmt::Debug for OpKind {
             Self::Publish(id, info) => f.debug_tuple("Publish").field(id).field(info).finish(),
 
             Self::PeerCreateUpdate(info) => f.debug_tuple("PeerCreateUpdate").field(info).finish(),
-
             Self::PeerGet(id) => f.debug_tuple("PeerGet").field(id).finish(),
-            Self::PeerList => f.debug_tuple("PeerList").finish(),
+            Self::PeerList(opts) => f.debug_tuple("PeerList").field(opts).finish(),
+            Self::PeerInfo(ident) => f.debug_tuple("PeerInfo").field(ident).finish(),
+
             Self::SubscribersGet(id) => f.debug_tuple("SubscribersGet").field(id).finish(),
 
             Self::ReplicaGet(id) => f.debug_tuple("ReplicaGet").field(id).finish(),
@@ -114,6 +119,7 @@ impl core::fmt::Debug for OpKind {
 
             Self::ObjectGet(id, sig) => f.debug_tuple("ObjectGet").field(id).field(sig).finish(),
             Self::ObjectPut(o) => f.debug_tuple("ObjectPut").field(o).finish(),
+            Self::ObjectList(id, bounds) => f.debug_tuple("ObjectList").field(id).field(bounds).finish(),
 
             Self::Net(req, peers) => f.debug_tuple("Net").field(req).field(peers).finish(),
 
@@ -208,9 +214,18 @@ pub trait Engine: Sync + Send {
     }
 
     /// List known peers
-    async fn peer_list(&self) -> Result<Vec<PeerInfo>, DsfError> {
-        match self.exec(OpKind::PeerList).await {
+    async fn peer_list(&self, opts: PeerListOptions) -> Result<Vec<PeerInfo>, DsfError> {
+        match self.exec(OpKind::PeerList(opts)).await {
             CoreRes::Peers(p, _) => Ok(p),
+            CoreRes::Error(e) => Err(e),
+            _ => Err(DsfError::Unknown),
+        }
+    }
+
+    /// Fetch peer info
+    async fn peer_info(&self, ident: ServiceIdentifier) -> Result<PeerInfo, DsfError> {
+        match self.exec(OpKind::PeerInfo(ident)).await {
+            CoreRes::Peer(p) => Ok(p),
             CoreRes::Error(e) => Err(e),
             _ => Err(DsfError::Unknown),
         }
@@ -270,9 +285,9 @@ pub trait Engine: Sync + Send {
     }
 
     /// Fetch an object with the provided signature
-    async fn object_get(&self, service: Id, sig: Signature) -> Result<Container, DsfError> {
-        match self.exec(OpKind::ObjectGet(service, sig)).await {
-            CoreRes::Pages(p, _) if p.len() == 1 => Ok(p[0].clone()),
+    async fn object_get(&self, ident: ServiceIdentifier, sig: Signature) -> Result<(DataInfo, Container), DsfError> {
+        match self.exec(OpKind::ObjectGet(ident, sig)).await {
+            CoreRes::Objects(d) if d.len() == 1 => Ok(d[0].clone()),
             CoreRes::Error(e) => Err(e),
             _ => Err(DsfError::NotFound),
         }
@@ -282,6 +297,15 @@ pub trait Engine: Sync + Send {
     async fn object_put(&self, data: Container) -> Result<Signature, DsfError> {
         match self.exec(OpKind::ObjectPut(data)).await {
             CoreRes::Sig(s) => Ok(s),
+            CoreRes::Error(e) => Err(e),
+            _ => Err(DsfError::NotFound),
+        }
+    }
+
+     /// List objects
+     async fn object_list(&self, ident: ServiceIdentifier, bounds: PageBounds) -> Result<Vec<(DataInfo, Container)>, DsfError> {
+        match self.exec(OpKind::ObjectList(ident, bounds)).await {
+            CoreRes::Objects(p) => Ok(p),
             CoreRes::Error(e) => Err(e),
             _ => Err(DsfError::NotFound),
         }
