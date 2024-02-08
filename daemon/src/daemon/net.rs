@@ -120,7 +120,7 @@ impl NetIf for Dsf<ByteSink> {
                 // Resolve target IDs to peers
 
                 // Lookup keys in cache
-                let peer_keys = id.as_ref().map(|id| keys.get(id)).flatten();
+                let peer_keys = id.as_ref().map(|id| keys.get(id).map(|k| k.clone())).flatten();
 
                 // Lookup peer info so we can use this for symmetric mode determination
                 // TODO(med): we should cache this state / pass these down to improve efficiency
@@ -129,10 +129,17 @@ impl NetIf for Dsf<ByteSink> {
                     None => None,
                 };
 
+                match (id, peer_info.as_ref().map(|k| k.state().clone() )) {
+                    (Some(id), Some(PeerState::Known(pub_key))) if peer_keys.is_none() => {
+                        keys.insert(id.clone(), Keys{ pub_key: Some(pub_key.clone()), ..Default::default()});
+                    },
+                    _ => (),
+                };
+
                 // Resolve public key from cache or info
                 let pub_key = match (
                     peer_info.as_ref().map(|i| i.state()),
-                    peer_keys.map(|k| k.pub_key.clone()),
+                    peer_keys.as_ref().map(|k| k.pub_key.clone()),
                 ) {
                     (Some(PeerState::Known(pub_key)), _) => Some(pub_key.clone()),
                     (_, Some(pub_key)) => pub_key.clone(),
@@ -214,6 +221,25 @@ where
 
         // Spawn task to handle network operations in parallel
         tokio::task::spawn(async move {
+            
+            // Grab un-parsed container to lookup peer id and credentials
+            let id = match Container::try_from(msg.data.to_vec()) {
+                Ok(c) => c.id(),
+                Err(e) => {
+                    error!("Failed to grab container ID: {e:?}");
+                    return
+                }
+            };
+
+            // Fetch peer information and update cache if found
+            if key_cache.keys(&id).is_none() {
+                trace!("Key cache miss (id: {id})");
+                if let Ok(keys) = core.keys_get(&id).await {
+                    trace!("Fetched keys for net decode (id: {id})");
+                    key_cache.create_update(&id, &keys);
+                }
+            }
+
             // Decode and verify/decrypt message
             let container = match Container::parse(msg.data.to_vec(), &key_cache) {
                 Ok(v) => v,

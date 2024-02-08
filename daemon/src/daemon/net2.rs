@@ -282,3 +282,14 @@ impl AsyncNet {
 }
 
 // TODO(med): add tests for this module
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn net_requests() {
+        let (req_tx, _req_rx) = unbounded_channel();
+
+        let _async_net = AsyncNet::new(req_tx);
+    }
+}

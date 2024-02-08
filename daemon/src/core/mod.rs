@@ -1,3 +1,9 @@
+//! Core provides the core functionality of DSF, 
+//! managing services and peers as well as interacting with the database.
+//! 
+//! Core is a singleton wrapped in [AsyncCore] for shared use, while
+//! methods are re-exported via the [Engine] interface for use in higher-level logic.
+
 use std::{collections::HashMap, iter::FromIterator, time::SystemTime};
 
 use tokio::sync::{

@@ -1,4 +1,4 @@
-//! Registry register and search operations for interactions with name services
+//! Name service register and search operating implementations
 //!
 //!
 

@@ -1,3 +1,6 @@
+//! RPC contains high-level DSF functionality, implemented on top of the 
+//! [Engine] abstraction to allow unit testing of each function.
+
 use std::{
     task::{Context, Poll},
     time::SystemTime,
@@ -41,6 +44,7 @@ pub mod register;
 pub mod replicate;
 pub mod subscribe;
 pub mod sync;
+
 
 /// Async RPC handler abstraction
 #[allow(async_fn_in_trait)]

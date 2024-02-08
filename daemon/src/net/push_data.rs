@@ -84,33 +84,35 @@ pub(super) async fn push_data<T: Engine>(
         });
     }
 
-    // Generate data push message for subscribers
-    let req = RequestBody::PushData(id.clone(), data);
-
     // Generate peer list for data push
     // TODO(med): we should be cleverer about this to avoid
     // loops etc. (and prolly add a TTL if it can be repeated?)
     let subscribers = core.subscriber_list(id.clone()).await?;
-    let mut peer_subs = Vec::new();
-    for s in subscribers {
-        let peer_id = match s.kind {
-            SubscriptionKind::Peer(id) => id,
-            // TODO: include RPC peers in data push
-            _ => continue,
-        };
-        match core.peer_get(peer_id).await {
-            Ok(p) => peer_subs.push(p),
-            _ => (),
+    if subscribers.len() > 0 {
+        // Generate data push message for subscribers
+        let req = RequestBody::PushData(id.clone(), data);
+
+        let mut peer_subs = Vec::new();
+        for s in subscribers {
+            let peer_id = match s.kind {
+                SubscriptionKind::Peer(id) => id,
+                // TODO: include RPC peers in data push
+                _ => continue,
+            };
+            match core.peer_get(peer_id).await {
+                Ok(p) => peer_subs.push(p),
+                _ => (),
+            }
         }
-    }
-
-    info!("Sending data push message to: {:?}", peer_subs);
-
-    // Issue data push requests
-    // TODO(low): we should probably wire the return here to send a delayed PublishInfo to the requester?
-    match engine.net_req(req, peer_subs).await {
-        Ok(_) => info!("Data push complete"),
-        Err(e) => warn!("Data push error: {:?}", e),
+    
+        info!("Sending data push message to: {:?}", peer_subs);
+    
+        // Issue data push requests
+        // TODO(low): we should probably wire the return here to send a delayed PublishInfo to the requester?
+        match engine.net_req(req, peer_subs).await {
+            Ok(_) => info!("Data push complete"),
+            Err(e) => warn!("Data push error: {:?}", e),
+        }
     }
 
     Ok(ResponseBody::Status(net::Status::Ok))
