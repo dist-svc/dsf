@@ -5,12 +5,16 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
 use clap::{Parser, Subcommand};
-use dsf_core::{options::Options, prelude::Service, wire::Container};
+use dsf_core::{
+    options::Options,
+    prelude::{Keys, Service},
+    wire::Container,
+};
 
 use dsf_core::types::*;
 
 pub use crate::helpers::{try_load_file, try_parse_key_value};
-use crate::ServiceIdentifier;
+use crate::{PageBounds, ServiceIdentifier};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 //#[cfg_attr(feature = "diesel", derive(diesel::Queryable))]
@@ -20,7 +24,6 @@ pub struct ServiceInfo {
     pub short_id: ShortId,
 
     pub index: usize,
-
     pub kind: ServiceKind,
     pub state: ServiceState,
 
@@ -48,6 +51,17 @@ bitflags::bitflags! {
         const ENCRYPTED = (1 << 1);
         const SUBSCRIBED = (1 << 2);
         const REPLICATED = (1 << 3);
+    }
+}
+
+impl ServiceInfo {
+    pub fn keys(&self) -> Keys {
+        Keys {
+            pub_key: Some(self.public_key.clone()),
+            pri_key: self.private_key.clone(),
+            sec_key: self.secret_key.clone(),
+            sym_keys: None,
+        }
     }
 }
 
@@ -160,6 +174,10 @@ pub struct ServiceListOptions {
     #[clap(long)]
     /// Service type for filtering
     pub kind: Option<ServiceKind>,
+
+    #[clap(flatten)]
+    /// Bounds for listing
+    pub bounds: PageBounds,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser, Default)]
@@ -232,6 +250,7 @@ impl RegisterOptions {
             service: ServiceIdentifier {
                 id: Some(id),
                 index: None,
+                short_id: None,
             },
             no_replica: false,
         }

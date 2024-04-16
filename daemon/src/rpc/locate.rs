@@ -14,13 +14,10 @@ use rpc::ServiceFlags;
 use tracing::{instrument, span, Level};
 
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, LocateInfo, LocateOptions};
+use dsf_rpc::{self as rpc, LocateInfo, LocateOptions, PeerInfo, ServiceState};
 
 use crate::daemon::{net::NetIf, Dsf};
 use crate::error::Error;
-
-use crate::core::peers::Peer;
-use crate::core::services::ServiceState;
 
 use super::ops::*;
 
@@ -31,6 +28,7 @@ pub enum LocateState {
     Error,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait ServiceRegistry {
     /// Locate service information using the DHT
     async fn service_locate(&self, options: LocateOptions) -> Result<LocateInfo, DsfError>;
@@ -43,17 +41,19 @@ impl<T: Engine> ServiceRegistry for T {
 
         info!("Locating service: {:?}", opts);
 
+        let id = opts.id.clone();
+
         // Check for existing / local information
-        let local = self.svc_get(opts.id.clone()).await;
+        let local = self.svc_get(opts.id.clone().into()).await;
         let local = match local {
             Ok(i) => {
                 let page = match i.primary_page {
-                    Some(sig) => Some(self.object_get(opts.id.clone(), sig).await?),
+                    Some(sig) => Some(self.object_get((&id).into(), sig).await.map(|(_p, c)| c)?),
                     None => None,
                 };
 
                 Some(LocateInfo {
-                    id: opts.id.clone(),
+                    id: i.id.clone(),
                     flags: i.flags,
                     updated: false,
                     page_version: i.index as u32,

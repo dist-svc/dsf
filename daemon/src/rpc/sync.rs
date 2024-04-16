@@ -14,24 +14,24 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 
 use log::{debug, error, info, warn};
-use rpc::{ServiceInfo, SyncInfo};
+use rpc::{PeerInfo, ServiceInfo, SyncInfo};
 use tracing::{span, Level};
 
-use dsf_core::prelude::*;
-
-use dsf_core::net;
-use dsf_core::service::{DataOptions, Publisher};
+use dsf_core::{
+    net,
+    prelude::*,
+    service::{DataOptions, Publisher},
+};
 use dsf_rpc::{self as rpc, DataInfo, SyncOptions};
 
-use crate::core::peers::Peer;
-use crate::daemon::net::{NetFuture, NetIf};
 use crate::daemon::Dsf;
 use crate::error::Error;
-use crate::rpc::push::push_data;
+use crate::rpc::data::push_data;
 use crate::rpc::subscribe::find_replicas;
 
 use super::ops::*;
 
+#[allow(async_fn_in_trait)]
 pub trait SyncData {
     /// Sync data for a subscribed service
     async fn sync(&self, options: SyncOptions) -> Result<SyncInfo, DsfError>;
@@ -42,8 +42,7 @@ impl<T: Engine> SyncData for T {
         info!("Sync: {:?}", &options);
 
         // Resolve service id / index to a service instance
-        let svc = self.svc_resolve(options.service).await?;
-        let info = self.svc_get(svc.id()).await?;
+        let info = self.svc_get(options.service).await?;
 
         // Resolve replicas / peers for connection
         let mut peers = vec![];
@@ -62,10 +61,10 @@ impl<T: Engine> SyncData for T {
             // Lookup peer services for available replicas
             // TODO: skip if no known peers / not connected to DHT?
             for r in &replicas {
-                let peer = match self.peer_get(r.info.peer_id.clone()).await {
+                let peer = match self.peer_get(r.peer_id.clone()).await {
                     Ok(v) => v,
                     Err(e) => {
-                        error!("Failed to lookup replica peer {}: {:?}", r.info.peer_id, e);
+                        error!("Failed to lookup replica peer {}: {:?}", r.peer_id, e);
                         continue;
                     }
                 };
@@ -141,8 +140,8 @@ impl<T: Engine> SyncData for T {
 
             // Check whether the object is available locally
             if let Some(sig) = &last_sig {
-                match self.object_get(info.id.clone(), sig.clone()).await {
-                    Ok(o) if o.header().index() == i => {
+                match self.object_get((&info.id).into(), sig.clone()).await {
+                    Ok((_i, o)) if o.header().index() == i => {
                         // Update prior sig and object state
                         last_sig = Filters::prev_sig(&o.public_options_iter());
                         objects.insert(o.header().index(), o);
@@ -195,7 +194,8 @@ impl<T: Engine> SyncData for T {
             }
         }
         if let Some(p) = last_page {
-            self.svc_register(svc.id(), vec![p.to_owned()]).await?;
+            self.svc_register(info.id.clone(), vec![p.to_owned()])
+                .await?;
         }
 
         Ok(SyncInfo {
@@ -205,11 +205,11 @@ impl<T: Engine> SyncData for T {
     }
 }
 
-async fn issue_query<E: Engine>(
+async fn issue_query<E: Engine + Sync + Send>(
     e: &E,
     target_id: Id,
     index: Option<u32>,
-    peers: &[Peer],
+    peers: &[PeerInfo],
 ) -> Result<Container, DsfError> {
     let req = NetRequestBody::Query(target_id.clone(), index);
 

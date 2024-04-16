@@ -102,8 +102,7 @@ impl Unix {
                 }
 
                 Ok(())
-            }
-            .instrument(span!(Level::TRACE, "UNIX", path)),
+            }, //.instrument(span!(Level::TRACE, "UNIX", path)),
         );
 
         Ok(Self {
@@ -148,7 +147,7 @@ impl Connection {
             //let mut unix_rx = unix_rx.fuse();
 
             loop {
-                select!{
+                select! {
                     // Encode and send outgoing messages
                     tx = tx_stream.next() => {
                         // Exit on tx stream closed
@@ -214,7 +213,8 @@ impl Connection {
             debug!("task UNIX closed {}", index);
 
             Ok(())
-        }.instrument(span!(Level::TRACE, "UNIX", index)) );
+        });
+        //.instrument(span!(Level::TRACE, "UNIX", index)) );
 
         Connection {
             index,

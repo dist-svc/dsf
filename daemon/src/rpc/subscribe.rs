@@ -12,20 +12,19 @@ use futures::future::join_all;
 use futures::prelude::*;
 
 use log::{debug, error, info, trace, warn};
-use rpc::{QosPriority, ReplicaInfo};
+use rpc::{PeerInfo, QosPriority, ReplicaInfo, UnsubscribeOptions};
 use tracing::{span, Level};
 
 use dsf_core::error::Error as CoreError;
 use dsf_core::net;
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, SubscribeOptions, SubscriptionInfo, SubscriptionKind};
+use dsf_rpc::{self as rpc, ServiceState, SubscribeOptions, SubscriptionInfo, SubscriptionKind};
 
-use crate::core::peers::Peer;
-use crate::core::replicas::ReplicaInst;
-use crate::core::services::ServiceState;
-use crate::daemon::net::{NetFuture, NetIf};
-use crate::daemon::Dsf;
-use crate::error::Error;
+use crate::{
+    core::{replicas::ReplicaInst, CoreRes},
+    daemon::Dsf,
+    error::Error,
+};
 
 use super::ops::*;
 
@@ -38,13 +37,14 @@ pub enum SubscribeState {
     Done,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait PubSub {
     /// Subscribe to a known service
     async fn subscribe(&self, options: SubscribeOptions)
         -> Result<Vec<SubscriptionInfo>, DsfError>;
 
     /// Unsubscribe from a known service
-    async fn unsubscribe(&self, options: SubscribeOptions) -> Result<(), DsfError>;
+    async fn unsubscribe(&self, options: UnsubscribeOptions) -> Result<(), DsfError>;
 }
 
 impl<T: Engine> PubSub for T {
@@ -55,7 +55,7 @@ impl<T: Engine> PubSub for T {
         info!("Subscribing to service: {:?}", options);
 
         // Lookup local service information
-        let target = match self.svc_resolve(options.service.clone()).await {
+        let target = match self.svc_get(options.service.clone()).await {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -76,22 +76,22 @@ impl<T: Engine> PubSub for T {
 
         // Attempt direct peer connection if available
         // TODO: this needs to be configurable / balanced based on QoS etc.
-        if let Ok(p) = self.peer_get(target.id()).await {
+        if let Ok(p) = self.peer_get(target.id.clone()).await {
             debug!("Found peer matching service ID, attempting direct subscription");
             peers.push(p);
         } else {
             // Resolve replicas via DHT
-            let replicas = find_replicas(self, target.id()).await?;
+            let replicas = find_replicas(self, target.id.clone()).await?;
 
             debug!("Located {} replicas", replicas.len());
 
             // Lookup peer services for available replicas
             // TODO: skip if no known peers / not connected to DHT?
             for r in &replicas {
-                let peer = match self.peer_get(r.info.peer_id.clone()).await {
+                let peer = match self.peer_get(r.peer_id.clone()).await {
                     Ok(v) => v,
                     Err(e) => {
-                        error!("Failed to lookup replica peer {}: {:?}", r.info.peer_id, e);
+                        error!("Failed to lookup replica peer {}: {:?}", r.peer_id, e);
                         continue;
                     }
                 };
@@ -103,14 +103,14 @@ impl<T: Engine> PubSub for T {
         debug!("Issuing subscribe request to {} peers", peers.len());
 
         // Issue subscription requests
-        let subs = do_subscribe(self, target.id(), &peers).await?;
+        let subs = do_subscribe(self, target.id.clone(), &peers).await?;
 
         // Update local service state
         self.svc_update(
-            target.id(),
-            Box::new(|svc, state| {
-                *state = ServiceState::Subscribed;
-                Ok(Res::Id(svc.id()))
+            target.id.clone(),
+            Box::new(|svc, info| {
+                info.state = ServiceState::Subscribed;
+                CoreRes::Id(svc.id())
             }),
         )
         .await?;
@@ -122,15 +122,15 @@ impl<T: Engine> PubSub for T {
         Ok(subs)
     }
 
-    async fn unsubscribe(&self, _options: SubscribeOptions) -> Result<(), DsfError> {
-        todo!()
+    async fn unsubscribe(&self, _options: UnsubscribeOptions) -> Result<(), DsfError> {
+        todo!("unsubscribe not yet implemented")
     }
 }
 
 pub(super) async fn find_replicas<E: Engine>(
     e: &E,
     target_id: Id,
-) -> Result<Vec<ReplicaInst>, DsfError> {
+) -> Result<Vec<ReplicaInfo>, DsfError> {
     debug!("Searching for service {:#} via DHT", target_id);
 
     // Fetch service and replica information from DHT
@@ -147,32 +147,18 @@ pub(super) async fn find_replicas<E: Engine>(
     // TODO: filter for primary pages / annotations & update
 
     // Filter for replica pages & update
-    let mut replicas = vec![];
-    for p in &pages {
-        // TODO: check other page fields here (id etc.)
-        if let PageInfo::Secondary(s) = &p.info()? {
-            let info = ReplicaInfo {
-                peer_id: s.peer_id.clone(),
-
-                version: p.header().index(),
-                page_id: p.id(),
-
-                //peer: None,
-                issued: p.public_options_iter().issued().unwrap().into(),
-                expiry: p.public_options_iter().expiry().map(|v| v.into()),
-                updated: SystemTime::now(),
-
-                active: false,
-            };
-            replicas.push(ReplicaInst {
-                info,
-                page: p.clone(),
-            });
-        }
-    }
+    let replica_pages: Vec<_> = pages
+        .iter()
+        .filter(|p| {
+            let h = p.header();
+            // TODO: expand these checks
+            h.flags().contains(Flags::SECONDARY)
+        })
+        .map(|p| p.clone())
+        .collect();
 
     // Update replica tracking in engine
-    e.replica_update(target_id, replicas.clone()).await?;
+    let replicas = e.replica_update(target_id, replica_pages).await?;
 
     Ok(replicas)
 }
@@ -180,7 +166,7 @@ pub(super) async fn find_replicas<E: Engine>(
 async fn do_subscribe<E: Engine>(
     e: &E,
     target_id: Id,
-    peers: &[Peer],
+    peers: &[PeerInfo],
 ) -> Result<Vec<SubscriptionInfo>, DsfError> {
     // Issue subscription requests
     let req = net::RequestBody::Subscribe(target_id);

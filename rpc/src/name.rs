@@ -13,6 +13,9 @@ pub enum NsCommands {
     /// Create a new name service
     Create(NsCreateOptions),
 
+    /// Adopt an existing name service
+    Adopt(NsAdoptOptions),
+
     /// Search using the specified name service
     Search(NsSearchOptions),
 
@@ -30,6 +33,14 @@ pub struct NsCreateOptions {
     #[clap(long)]
     /// Create a name service for public use
     pub public: bool,
+}
+
+/// Options used to adopt a name service
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Parser)]
+pub struct NsAdoptOptions {
+    #[clap(long)]
+    /// Name service ID
+    pub id: Id,
 }
 
 /// Options used for name searching

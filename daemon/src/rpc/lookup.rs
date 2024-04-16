@@ -12,13 +12,10 @@ use log::{debug, error, info, warn};
 use tracing::{span, Level};
 
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, peer::SearchOptions as LookupOptions, PeerInfo};
+use dsf_rpc::{self as rpc, peer::SearchOptions as LookupOptions, PeerInfo, ServiceState};
 
 use crate::daemon::{net::NetIf, Dsf};
 use crate::error::Error;
-
-use crate::core::peers::Peer;
-use crate::core::services::ServiceState;
 
 use super::ops::*;
 
@@ -29,6 +26,7 @@ pub enum LookupState {
     Error,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait PeerRegistry {
     /// Lookup a peer using the DHT
     async fn peer_lookup(&mut self, options: LookupOptions) -> Result<PeerInfo, DsfError>;
@@ -53,6 +51,6 @@ impl<T: Engine> PeerRegistry for T {
 
         // TODO: what if we explicitly updated the local peer and store here rather than implicitly through the DHT?
 
-        Ok(peer.info)
+        Ok(peer)
     }
 }

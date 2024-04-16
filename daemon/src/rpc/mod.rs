@@ -1,3 +1,6 @@
+//! RPC contains high-level DSF functionality, implemented on top of the 
+//! [Engine] abstraction to allow unit testing of each function.
+
 use std::{
     task::{Context, Poll},
     time::SystemTime,
@@ -15,15 +18,12 @@ use dsf_core::prelude::*;
 use dsf_rpc::*;
 
 use crate::{
-    core::{peers::Peer, services::ServiceInst},
-    daemon::{
-        net::{NetFuture, NetIf},
-        Dsf,
-    },
+    core::services::ServiceInst,
+    daemon::{net::NetIf, Dsf},
     error::{CoreError, Error},
     rpc::{
         bootstrap::Bootstrap, connect::Connect, create::CreateService, discover::Discover,
-        locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService, publish::PublishData,
+        locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService, data::PublishData,
         register::RegisterService, replicate::ReplicateService, subscribe::PubSub, sync::SyncData,
     },
 };
@@ -39,358 +39,201 @@ pub mod discover;
 pub mod locate;
 pub mod lookup;
 pub mod ns;
-pub mod publish;
-pub mod push;
+pub mod data;
 pub mod register;
 pub mod replicate;
 pub mod subscribe;
 pub mod sync;
+
+
+/// Async RPC handler abstraction
+#[allow(async_fn_in_trait)]
+pub trait Rpc {
+    /// Handle an RPC request, returning an RPC response
+    async fn handle_rpc(&mut self, req: Request) -> Response;
+}
+
+/// Async RPC handler implementation for [Engine] types
+impl<T: Engine> Rpc for T {
+    async fn handle_rpc(&mut self, req: Request) -> Response {
+        let req_id = req.req_id();
+
+        match req.kind() {
+            RequestKind::Status => {
+                debug!("Status request");
+
+                // TODO(med): fill in status information
+                let info = StatusInfo {
+                    id: self.id(),
+                    peers: 0,
+                    services: 0,
+                    version: crate::VERSION.to_string(),
+                };
+
+                return Response::new(req_id, ResponseKind::Status(info));
+            }
+            RequestKind::Peer(c) => {
+                debug!("Starting async peer op");
+
+                let r = match c {
+                    PeerCommands::Search(opts) => {
+                        self.peer_lookup(opts).await.map(|p| ResponseKind::Peers(vec![p]))
+                    }
+                    PeerCommands::Connect(opts) => {
+                        self.connect(opts).await.map(ResponseKind::Connected)
+                    }
+                    PeerCommands::Block(_) => todo!("Block command not yet implemented"),
+                    PeerCommands::Unblock(_) => todo!("Unblock command not yet implemented"),
+                    PeerCommands::List(opts) => self.peer_list(opts).await.map(ResponseKind::Peers),
+                    PeerCommands::Info(opts) => self.peer_info(opts).await.map(|p| ResponseKind::Peers(vec![p])),
+                    PeerCommands::Remove(_) => todo!("Remove command not yet implemented"),
+                };
+
+                debug!("Async peer rpc result: {:?}", r);
+                let r = match r {
+                    Ok(r) => r,
+                    Err(e) => ResponseKind::Error(e),
+                };
+
+                return Response::new(req_id, r);
+            }
+            RequestKind::Service(c) => {
+                debug!("Starting async service rpc: {:?}", c);
+                let r = match c {
+                    ServiceCommands::List(opts) => self
+                        .svc_list(opts)
+                        .await
+                        .map(ResponseKind::Services)
+                        .map_err(DsfError::from),
+                    ServiceCommands::Info(opts) => self.svc_get(opts.service).await.map(|s| ResponseKind::Services(vec![s])),
+                    ServiceCommands::Create(opts) => self.service_create(opts).await.map(|s| ResponseKind::Services(vec![s])),
+                    ServiceCommands::Locate(opts) => self
+                        .service_locate(opts)
+                        .await
+                        .map(|v| ResponseKind::Located(vec![v])),
+                    ServiceCommands::Register(opts) => self
+                        .service_register(opts)
+                        .await
+                        .map(|v| ResponseKind::Registered(v)),
+                    ServiceCommands::Replicate(opts) => self
+                        .service_replicate(opts)
+                        .await
+                        .map(|v| ResponseKind::Registered(v)),
+                    ServiceCommands::Subscribe(opts) => self.subscribe(opts).await.map(ResponseKind::Subscribed),
+                    ServiceCommands::Unsubscribe(opts) => self.unsubscribe(opts).await.map(|_| ResponseKind::None),
+                    ServiceCommands::Discover(opts) => self.discover(opts).await.map(ResponseKind::Services),
+                    ServiceCommands::SetKey(opts) => todo!("SetKey not yet implemented"),
+                    ServiceCommands::Remove(opts) => todo!("Remove not yet implemented"),
+                    ServiceCommands::GetKey(_) => todo!("GetKey not yet implemented"),
+                };
+
+                debug!("Async service rpc result: {:?}", r);
+                let r = match r {
+                    Ok(r) => r,
+                    Err(e) => ResponseKind::Error(e),
+                };
+
+                return Response::new(req_id, r);
+            }
+            RequestKind::Data(c) => {
+                debug!("Starting async data rpc: {:?}", c);
+                let r = match c {
+                    DataCommands::Publish(opts) => self.data_publish(opts).await.map(|v| ResponseKind::Published(v)),
+                    DataCommands::Sync(opts) => self.sync(opts).await.map(ResponseKind::Sync),
+                    DataCommands::List(opts) => self.object_list(opts.service, opts.page_bounds).await.map(ResponseKind::Objects),
+                    DataCommands::Get(opts) => self.object_get(opts.service, opts.page_sig).await.map(|o| ResponseKind::Objects(vec![o])),
+                    DataCommands::Query {} => todo!("Data Query not yet implemented"),
+                    DataCommands::Push(opts) => self.data_push(opts).await.map(|v| ResponseKind::Published(v)),
+                    
+                };
+
+                debug!("Async data rpc result: {:?}", r);
+                let r = match r {
+                    Ok(r) => r,
+                    Err(e) => ResponseKind::Error(e),
+                };
+
+                return Response::new(req_id, r);
+            }
+            RequestKind::Ns(c) => {
+                debug!("Starting NS op: {:?}", c);
+                // Run NS operation
+                let r = match c {
+                    NsCommands::Create(opts) => {
+                        self.ns_create(opts).await.map(|s| ResponseKind::Services(vec![s]))
+                    }
+                    NsCommands::Adopt(opts) => self.ns_adopt(opts).await.map(|s| ResponseKind::Services(vec![s])),
+                    NsCommands::Register(opts) => {
+                        self.ns_register(opts).await.map(ResponseKind::NsRegister)
+                    }
+                    NsCommands::Search(opts) => {
+                        self.ns_search(opts).await.map(ResponseKind::NsSearch)
+                    }
+                };
+                let r = match r {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!("NS operation failed: {:?}", e);
+                        ResponseKind::Error(e)
+                    }
+                };
+
+                return Response::new(req_id, r);
+            }
+            RequestKind::Debug(c) => {
+                debug!("Starting async debug task");
+                let r = match c {
+                    DebugCommands::Search { id } => match self.dht_search(id).await {
+                        Ok((p, _i)) => ResponseKind::Pages(p),
+                        Err(e) => ResponseKind::Error(e),
+                    },
+                    DebugCommands::Bootstrap => match self.bootstrap().await {
+                        Ok(i) => ResponseKind::Bootstrap(i),
+                        Err(e) => ResponseKind::Error(e),
+                    },
+                    DebugCommands::Update => match self.dht_update().await {
+                        Ok(_i) => ResponseKind::None,
+                        Err(e) => ResponseKind::Error(e),
+                    },
+                    _ => ResponseKind::Error(DsfError::Unimplemented),
+                };
+
+                return Response::new(req_id, r);
+            }
+            _ => {
+                error!("RPC operation {:?} not yet implemented", req.kind());
+
+                return Response::new(req_id, ResponseKind::Error(DsfError::Unimplemented));
+            }
+        }
+    }
+}
 
 impl<Net> Dsf<Net>
 where
     Dsf<Net>: NetIf<Interface = Net>,
 {
     // Create a new RPC operation
-    pub fn start_rpc(&mut self, req: Request, done: RpcSender) -> Result<(), Error> {
+    pub fn start_rpc(&mut self, req: Request, mut done: RpcSender) -> Result<(), Error> {
         let req_id = req.req_id();
 
+        // Force wake next tick
         if let Some(waker) = self.waker.as_ref() {
             waker.clone().wake();
         }
 
-        // Respond to non-async RPC requests immediately
-        let resp = match req.kind() {
-            RequestKind::Status => {
-                let i = StatusInfo {
-                    id: self.id(),
-                    peers: self.peers().count(),
-                    services: self.services().count(),
-                    version: crate::VERSION.to_string(),
-                };
-
-                Some(ResponseKind::Status(i))
-            }
-            RequestKind::Peer(PeerCommands::List(_options)) => {
-                let mut peers: Vec<_> = self
-                    .peers()
-                    .list()
-                    .drain(..)
-                    .map(|(id, p)| (id, p.info()))
-                    .collect();
-
-                peers.sort_by_key(|(_, p)| p.index);
-
-                Some(ResponseKind::Peers(peers))
-            }
-            RequestKind::Peer(PeerCommands::Info(options)) => {
-                match self.resolve_peer_identifier(&options) {
-                    Ok(id) => {
-                        let p = self.peers().info(&id);
-                        match p {
-                            Some(p) => Some(ResponseKind::Peer(p)),
-                            None => Some(ResponseKind::None),
-                        }
-                    }
-                    Err(_e) => Some(ResponseKind::None),
-                }
-            }
-            RequestKind::Peer(PeerCommands::Remove(options)) => {
-                match self.resolve_peer_identifier(&options) {
-                    Ok(id) => {
-                        let p = self.peers().remove(&id);
-                        match p {
-                            Some(p) => Some(ResponseKind::Peer(p)),
-                            None => Some(ResponseKind::None),
-                        }
-                    }
-                    Err(_e) => Some(ResponseKind::None),
-                }
-            }
-            RequestKind::Service(ServiceCommands::List(opts)) => {
-                let mut services = self.services().list();
-                services.sort_by_key(|s| s.index);
-
-                // TODO: Filter by application ID
-                if let Some(_a) = opts.application_id {}
-
-                // Filter by service kind
-                if let Some(k) = opts.kind {
-                    services = services.drain(..).filter(|s| s.kind == k).collect();
-                }
-
-                // TODO: clear keys unless specifically requested
-                Some(ResponseKind::Services(services))
-            }
-            RequestKind::Service(ServiceCommands::Info(options)) => {
-                match self.resolve_identifier(&options.service) {
-                    Ok(id) => Some(
-                        self.services()
-                            .find(&id)
-                            .map(|i| {
-                                // TODO: Clear keys unless specifically requested
-                                ResponseKind::Service(i)
-                            })
-                            .unwrap_or(ResponseKind::None),
-                    ),
-                    Err(_e) => Some(ResponseKind::None),
-                }
-            }
-            RequestKind::Service(ServiceCommands::SetKey(options)) => {
-                match self.resolve_identifier(&options.service) {
-                    Ok(id) => {
-                        // TODO: Ehh?
-                        let s = self.services().update_inst(&id, |s| {
-                            s.service.set_secret_key(options.secret_key.clone());
-                        });
-                        match s {
-                            Some(s) => Some(ResponseKind::Services(vec![s])),
-                            None => Some(ResponseKind::None),
-                        }
-                    }
-                    Err(_e) => Some(ResponseKind::None),
-                }
-            }
-            RequestKind::Service(ServiceCommands::Remove(options)) => {
-                match self.resolve_identifier(&options.service) {
-                    Ok(id) => {
-                        let s = self.services().remove(&id)?;
-
-                        match s {
-                            Some(s) => Some(ResponseKind::Service(s)),
-                            None => Some(ResponseKind::None),
-                        }
-                    }
-                    Err(_e) => Some(ResponseKind::None),
-                }
-            }
-            RequestKind::Data(DataCommands::List(data::DataListOptions {
-                service,
-                page_bounds,
-                time_bounds,
-            })) => match self.resolve_identifier(&service) {
-                Ok(id) => {
-                    // Fetch data
-                    let d = self.data().fetch_data(&id, &page_bounds, &time_bounds)?;
-
-                    // Lookup private key
-                    let _k = self.services().find(&id).map(|s| s.private_key).flatten();
-
-                    let i = d.iter().map(|i| i.info.clone()).collect();
-
-                    Some(ResponseKind::Data(i))
-                }
-                Err(_e) => Some(ResponseKind::None),
-            },
-
-            RequestKind::Data(DataCommands::Get(data::FetchOptions { service, page_sig })) => {
-                match self.resolve_identifier(&service) {
-                    Ok(id) => {
-                        // Fetch data
-                        let d = self.data().get_object(&id, &page_sig)?;
-
-                        // Lookup private key
-                        let _k = self.services().find(&id).map(|s| s.private_key).flatten();
-
-                        // Build info array
-                        let i = d.iter().map(|i| i.info.clone()).collect();
-
-                        Some(ResponseKind::Data(i))
-                    }
-                    Err(_e) => Some(ResponseKind::None),
-                }
-            }
-
-            RequestKind::Debug(DebugCommands::SetAddress { addr }) => {
-                self.addresses = vec![addr.into()];
-
-                // Update service address
-                self.service().update(|_b, o, _p| {
-                    let mut opts: Vec<_> = o.drain(..).filter(|o| !o.is_address_v4()).collect();
-                    opts.push(Options::address(addr));
-                    *o = opts;
-                })?;
-
-                // Re-generate primary page
-                let c = self.primary(true)?;
-
-                // Return the primary page
-                Some(ResponseKind::Page(c))
-            }
-
-            RequestKind::Debug(DebugCommands::DhtNodes) => {
-                use kad::table::NodeTable;
-
-                let peers: Vec<_> = self
-                    .dht_mut()
-                    .nodetable()
-                    .entries()
-                    .map(|e| (e.id().clone(), e.info().info.clone()))
-                    .collect();
-
-                Some(ResponseKind::Peers(peers))
-            }
-
-            _ => None,
-        };
-
-        if let Some(k) = resp {
-            let r = Response::new(req_id, k);
-            done.clone().try_send(r).unwrap();
-            return Ok(());
-        }
-
-        // Otherwise queue up request for async execution
+        // Setup async rpc operation
         let mut exec = self.exec();
+        tokio::task::spawn(async move {
+            // Handle RPC request
+            let resp = exec.handle_rpc(req).await;
 
-        match req.kind() {
-            RequestKind::Peer(c) => {
-                tokio::task::spawn(async move {
-                    debug!("Starting async peer op");
-
-                    let r = match c {
-                        PeerCommands::Search(opts) => {
-                            exec.peer_lookup(opts).await.map(ResponseKind::Peer)
-                        }
-                        PeerCommands::Connect(opts) => {
-                            exec.connect(opts).await.map(ResponseKind::Connected)
-                        }
-                        _ => unimplemented!("{:?} not yet implemented", c),
-                    };
-
-                    debug!("Async peer rpc result: {:?}", r);
-                    let r = match r {
-                        Ok(r) => r,
-                        Err(e) => ResponseKind::Error(e),
-                    };
-
-                    if let Err(e) = done.clone().try_send(Response::new(req_id, r)) {
-                        error!("Failed to send RPC response: {:?}", e);
-                    }
-                });
-
-                return Ok(());
+            // Forward response
+            if let Err(e) = done.send(resp).await {
+                error!("Failed to forward RPC response: {e:?}");
             }
-            RequestKind::Data(c) => {
-                tokio::task::spawn(async move {
-                    debug!("Starting async data rpc: {:?}", c);
-                    let r = match c {
-                        DataCommands::Publish(opts) => {
-                            exec.publish(opts).await.map(|v| ResponseKind::Published(v))
-                        }
-                        DataCommands::Sync(opts) => exec.sync(opts).await.map(ResponseKind::Sync),
-                        _ => unimplemented!(),
-                    };
+        });
 
-                    debug!("Async data rpc result: {:?}", r);
-                    let r = match r {
-                        Ok(r) => r,
-                        Err(e) => ResponseKind::Error(e),
-                    };
-
-                    if let Err(e) = done.clone().try_send(Response::new(req_id, r)) {
-                        error!("Failed to send RPC response: {:?}", e);
-                    }
-                });
-                return Ok(());
-            }
-            RequestKind::Service(c) => {
-                tokio::task::spawn(async move {
-                    debug!("Starting async service rpc: {:?}", c);
-                    let r = match c {
-                        ServiceCommands::Create(opts) => exec
-                            .service_create(opts)
-                            .await
-                            .map(|v| ResponseKind::Service(v)),
-                        ServiceCommands::Locate(opts) => exec
-                            .service_locate(opts)
-                            .await
-                            .map(|v| ResponseKind::Located(vec![v])),
-                        ServiceCommands::Register(opts) => exec
-                            .service_register(opts)
-                            .await
-                            .map(|v| ResponseKind::Registered(v)),
-                        ServiceCommands::Replicate(opts) => exec
-                            .service_replicate(opts)
-                            .await
-                            .map(|v| ResponseKind::Registered(v)),
-                        ServiceCommands::Subscribe(opts) => {
-                            exec.subscribe(opts).await.map(ResponseKind::Subscribed)
-                        }
-                        ServiceCommands::Discover(opts) => {
-                            exec.discover(opts).await.map(ResponseKind::Services)
-                        }
-                        _ => unimplemented!(),
-                    };
-
-                    debug!("Async service rpc result: {:?}", r);
-                    let r = match r {
-                        Ok(r) => r,
-                        Err(e) => ResponseKind::Error(e),
-                    };
-
-                    if let Err(e) = done.clone().try_send(Response::new(req_id, r)) {
-                        error!("Failed to send RPC response: {:?}", e);
-                    }
-                });
-                return Ok(());
-            }
-            RequestKind::Ns(c) => {
-                tokio::task::spawn(async move {
-                    debug!("Starting NS op: {:?}", c);
-                    // Run NS operation
-                    let r = match c {
-                        NsCommands::Create(opts) => {
-                            exec.ns_create(opts).await.map(ResponseKind::Service)
-                        }
-                        NsCommands::Register(opts) => {
-                            exec.ns_register(opts).await.map(ResponseKind::NsRegister)
-                        }
-                        NsCommands::Search(opts) => {
-                            exec.ns_search(opts).await.map(ResponseKind::NsSearch)
-                        }
-                    };
-                    let r = match r {
-                        Ok(v) => v,
-                        Err(e) => {
-                            error!("NS operation failed: {:?}", e);
-                            ResponseKind::Error(e)
-                        }
-                    };
-                    if let Err(e) = done.clone().try_send(Response::new(req_id, r)) {
-                        error!("Failed to send RPC response: {:?}", e);
-                    }
-                });
-                return Ok(());
-            }
-            RequestKind::Debug(c) => {
-                tokio::task::spawn(async move {
-                    debug!("Starting async debug task");
-                    let r = match c {
-                        DebugCommands::Search { id } => match exec.dht_search(id).await {
-                            Ok((p, _i)) => ResponseKind::Pages(p),
-                            Err(e) => ResponseKind::Error(e),
-                        },
-                        DebugCommands::Bootstrap => match exec.bootstrap().await {
-                            Ok(i) => ResponseKind::Bootstrap(i),
-                            Err(e) => ResponseKind::Error(e),
-                        },
-                        DebugCommands::Update => match exec.dht_update().await {
-                            Ok(_i) => ResponseKind::None,
-                            Err(e) => ResponseKind::Error(e),
-                        },
-                        _ => ResponseKind::Error(DsfError::Unimplemented),
-                    };
-
-                    if let Err(e) = done.clone().try_send(Response::new(req_id, r)) {
-                        error!("Failed to send RPC response: {:?}", e);
-                    }
-                });
-                return Ok(());
-            }
-            _ => {
-                error!("RPC operation {:?} not yet implemented", req.kind());
-                return Ok(());
-            }
-        }
+        return Ok(());
     }
 }

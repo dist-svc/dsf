@@ -574,9 +574,10 @@ impl<T: MutableData> Builder<SetPublicOptions, T> {
     }
 
     pub fn encrypt_sk(mut self, secret_key: &SecretKey) -> Result<Container<T>, Error> {
-        debug!(
+        trace!(
             "SK Sign/Encrypt (AEAD) with key: {} ({} bytes)",
-            secret_key, self.n
+            secret_key,
+            self.n
         );
 
         let buf = self.buf.as_mut();
@@ -584,7 +585,7 @@ impl<T: MutableData> Builder<SetPublicOptions, T> {
         let (header, body) = buf[..self.n].split_at_mut(HEADER_LEN + ID_LEN);
         let tag = Crypto::sk_encrypt(secret_key, Some(header), body).unwrap();
 
-        debug!("MAC: {}", tag);
+        trace!("MAC: {}", tag);
 
         buf[self.n..][..tag.len()].copy_from_slice(&tag);
         self.n += SIGNATURE_LEN;

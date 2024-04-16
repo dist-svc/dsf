@@ -1,11 +1,13 @@
 #![allow(unused_imports)]
 
+use crate::core::store::AsyncStore;
 use crate::sync::{Arc, Mutex};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use log::{debug, error, info, trace, warn};
 
+use rpc::{PeerAddress, PeerInfo};
 use tokio::task;
 
 use futures::channel::mpsc;
@@ -20,14 +22,13 @@ use kad::store::Datastore;
 
 //use rr_mux::mock::{MockConnector, MockTransaction};
 
-use dsf_core::net::{Request, RequestBody, Response, ResponseBody};
+use dsf_core::net::{Request, RequestBody, Response, ResponseBody, Status};
 use dsf_core::prelude::*;
 use dsf_core::service::{Publisher, ServiceBuilder};
 use dsf_core::types::Flags;
-use dsf_rpc::{self as rpc};
+use dsf_rpc::{self as rpc, PeerState};
 
 use super::{Dsf, DsfOptions};
-use crate::core::peers::PeerState;
 use crate::io::mock::{MockConnector, MockTransaction};
 use crate::store::Store;
 
@@ -35,19 +36,20 @@ use crate::store::Store;
 async fn test_manager() {
     // Initialise logging
     let _ = FmtSubscriber::builder()
-        .with_max_level(LevelFilter::INFO)
+        .with_max_level(LevelFilter::TRACE)
         .try_init();
 
     let d = TempDir::new("/tmp/").unwrap();
 
     let config = DsfOptions::default();
     let db_file = format!("{}/dsf-test.db", d.path().to_str().unwrap());
-    let store = Store::new(&db_file, Default::default()).unwrap();
+    let store = Store::new_rc(&db_file, Default::default()).unwrap();
+    let store = AsyncStore::new(store).unwrap();
 
     let (net_sink_tx, _net_sink_rx) = mpsc::channel::<(Address, Option<Id>, NetMessage)>(10);
 
     let service = Service::default();
-    let mut dsf = Dsf::new(config, service, store, net_sink_tx).unwrap();
+    let mut dsf = Dsf::new(config, service, store, net_sink_tx).await.unwrap();
     let id1 = dsf.id().clone();
     let _addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 0, 1)), 8111);
 
@@ -68,29 +70,36 @@ async fn test_manager() {
 
     info!("Responds to pings");
 
-    let (tx, mut rx) = mpsc::channel(1);
+    let p2 = PeerInfo::new(
+        s2.id(),
+        PeerAddress::Implicit(a2.into()),
+        PeerState::Unknown,
+        0,
+        None,
+    );
 
-    dsf.handle_net_req(
-        a2,
-        Request::new(
-            s2.id(),
-            rand::random(),
-            RequestBody::Ping,
-            Flags::ADDRESS_REQUEST,
-        ),
-        tx,
-    )
-    .await
-    .unwrap();
+    let resp = dsf
+        .handle_net_req(
+            p2,
+            a2,
+            Request::new(
+                s2.id(),
+                rand::random(),
+                RequestBody::Hello,
+                Flags::ADDRESS_REQUEST,
+            ),
+        )
+        .await
+        .unwrap();
 
     assert_eq!(
-        rx.next().await,
-        Some(Response::new(
+        resp,
+        Response::new(
             id1.clone(),
             rand::random(),
-            ResponseBody::NoResult,
+            ResponseBody::Status(Status::Ok),
             Flags::default()
-        )),
+        ),
     );
 }
 

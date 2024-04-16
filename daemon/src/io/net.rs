@@ -213,6 +213,14 @@ impl Net {
         Ok(())
     }
 
+    pub async fn close(mut self) -> Result<(), NetError> {
+        // Close socket bound tasks
+        for (_i, mut b) in self.bindings.drain() {
+            b.exit.send(()).await?;
+        }
+        Ok(())
+    }
+
     /// Start listening on the provided UDP address
     async fn listen_udp(&mut self, address: SocketAddr) -> Result<u32, NetError> {
         let socket = UdpSocket::bind(address).await?;

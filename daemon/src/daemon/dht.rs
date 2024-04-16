@@ -2,21 +2,27 @@ use std::collections::hash_map::{Entry, RandomState};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::num;
+use std::time::SystemTime;
 
-use dsf_core::options::Filters;
-use dsf_core::wire::Container;
+use futures::{
+    channel::mpsc::{self, unbounded as unbounded_channel, UnboundedReceiver, UnboundedSender},
+    SinkExt as _, StreamExt as _,
+};
+use kad::dht::DhtHandle;
 use kad::prelude::*;
-use tracing::{error, trace};
-
-use futures::channel::mpsc;
+use tokio::select;
+use tracing::{debug, error, trace};
 
 use dsf_core::net::{RequestBody, ResponseBody};
+use dsf_core::options::Filters;
 use dsf_core::prelude::*;
 use dsf_core::types::{Data, Id, RequestId};
+use dsf_core::wire::Container;
+use dsf_rpc::{PeerAddress, PeerFlags, PeerInfo, PeerState};
 
+use super::DsfDht;
 use super::{net::NetIf, Dsf};
 
-use crate::core::peers::{Peer, PeerAddress, PeerFlags};
 use crate::error::Error;
 use crate::rpc::Engine;
 
@@ -27,9 +33,140 @@ pub struct DhtAdaptor {
 }
 
 pub struct DsfDhtMessage {
-    pub(crate) target: DhtEntry<Id, Peer>,
+    pub(crate) target: DhtEntry<Id, PeerInfo>,
     pub(crate) req: DhtRequest<Id, Data>,
-    pub(crate) resp_sink: mpsc::Sender<DhtResponse<Id, Peer, Data>>,
+    pub(crate) resp_sink: mpsc::Sender<DhtResponse<Id, PeerInfo, Data>>,
+}
+
+#[derive(Clone)]
+pub struct AsyncDht {
+    ctl: UnboundedSender<DhtCtl>,
+}
+
+#[derive(Clone)]
+pub enum DhtCtl {
+    /// Handle incoming DHT request
+    Handle(
+        PeerInfo,
+        DhtRequest<Id, Data>,
+        UnboundedSender<DhtResponse<Id, PeerInfo, Data>>,
+    ),
+
+    /// Fetch a DHT handle
+    GetHandle(UnboundedSender<DhtHandle<Id, PeerInfo, Data>>),
+
+    /// Exit DHT task
+    Exit,
+}
+
+impl AsyncDht {
+    pub fn new(mut dht: DsfDht) -> Self {
+        // Setup control channel
+        let (tx, mut rx) = unbounded_channel();
+
+        // Setup message handler task
+        tokio::task::spawn(async move {
+            debug!("Starting DHT task");
+
+            loop {
+                select! {
+                    // Poll on control messages
+                    Some(op) = rx.next() => match op {
+                        // Handle DHT requests
+                        DhtCtl::Handle(from, req, mut resp_tx) => {
+                            let peer = DhtEntry::new(from.id.clone(), from);
+
+                            match dht.handle_req(&peer, &req) {
+                                Ok(resp) => {
+                                    if let Err(e) = resp_tx.send(resp).await {
+                                        error!("Failed to forward dht response: {e:?}");
+                                    }
+                                },
+                                Err(e) => {
+                                    error!("DHT handle_req error: {e:?}");
+                                }
+                            }
+                        },
+                        DhtCtl::GetHandle(mut handle_tx) => {
+                            let h = dht.get_handle();
+
+                            if let Err(e) = handle_tx.send(h).await {
+                                error!("Failed to forward dht handle: {e:?}");
+                            }
+                        }
+                        DhtCtl::Exit => break,
+                    },
+                    // Poll on DHT for updates etc.
+                    _ = (&mut dht) => (),
+                    // TODO(low): DHT maintenance task could move here instead of inside DHT impl?
+                }
+            }
+
+            debug!("Exit DHT task");
+        });
+
+        Self { ctl: tx }
+    }
+
+    /// Handle DHT requests
+    pub async fn handle_req(
+        &self,
+        from: PeerInfo,
+        req: DhtRequest<Id, Data>,
+    ) -> Result<DhtResponse<Id, PeerInfo, Data>, Error> {
+        let (tx, mut rx) = unbounded_channel();
+
+        // Send control message
+        let mut ctl = self.ctl.clone();
+        ctl.send(DhtCtl::Handle(from, req, tx))
+            .await
+            .map_err(|_| Error::Closed)?;
+
+        // Await response
+        let resp = match rx.next().await {
+            Some(r) => r,
+            None => return Err(Error::Closed),
+        };
+
+        // Return response object
+        Ok(resp)
+    }
+
+    /// Fetch a handle for executing DHT operations
+    pub async fn get_handle(&self) -> Result<DhtHandle<Id, PeerInfo, Data>, Error> {
+        let (tx, mut rx) = unbounded_channel();
+
+        // Send control message
+        let mut ctl = self.ctl.clone();
+        ctl.send(DhtCtl::GetHandle(tx))
+            .await
+            .map_err(|_| Error::Closed)?;
+
+        // Await response
+        let resp = match rx.next().await {
+            Some(r) => r,
+            None => return Err(Error::Closed),
+        };
+
+        // Return handle object
+        Ok(resp)
+    }
+
+    pub async fn dht_connect(&self, addr: Address, id: Option<Id>) -> Result<(), Error> {
+        todo!()
+    }
+
+    pub async fn dht_locate(&self, id: Id) -> Result<Option<PeerInfo>, Error> {
+        todo!()
+    }
+
+    pub async fn dht_search(&self, id: Id) -> Result<Vec<Container>, Error> {
+        todo!()
+    }
+
+    pub async fn dht_put(&self, id: Id, pages: Vec<Container>) -> Result<Vec<Container>, Error> {
+        todo!()
+    }
 }
 
 impl<Net> Dsf<Net>
@@ -37,19 +174,14 @@ where
     Dsf<Net>: NetIf<Interface = Net>,
 {
     /// Handle a DHT request message
-    pub(crate) fn handle_dht_req(
+    pub(crate) async fn handle_dht_req(
         &mut self,
         from: Id,
-        peer: Peer,
+        peer: PeerInfo,
         req: DhtRequest<Id, Data>,
-    ) -> Result<DhtResponse<Id, Peer, Data>, Error> {
-        // Map peer to existing DHT entry
-        // TODO: resolve this rather than creating a new instance
-        // (or, use only the index and rely on external storage etc.?)
-        let entry = DhtEntry::new(from.into(), peer);
-
+    ) -> Result<DhtResponse<Id, PeerInfo, Data>, Error> {
         // Pass to DHT
-        match self.dht_mut().handle_req(&entry, &req) {
+        match self.dht.handle_req(peer, req.clone()).await {
             Ok(resp) => Ok(resp),
             Err(e) => {
                 error!("Error handling DHT request {:?}: {:?}", req, e);
@@ -57,111 +189,108 @@ where
             }
         }
     }
+}
 
-    pub(crate) fn is_dht_req(msg: &NetRequest) -> bool {
-        match msg.data {
-            RequestBody::Ping
-            | RequestBody::Store(_, _)
-            | RequestBody::FindValue(_)
-            | RequestBody::FindNode(_) => true,
-            _ => false,
-        }
+pub(crate) fn is_dht_req(msg: &NetRequest) -> bool {
+    match msg.data {
+        RequestBody::Ping
+        | RequestBody::Store(_, _)
+        | RequestBody::FindValue(_)
+        | RequestBody::FindNode(_) => true,
+        _ => false,
     }
+}
 
-    pub(crate) fn is_dht_resp(msg: &NetResponse) -> bool {
-        match msg.data {
-            ResponseBody::NoResult
-            | ResponseBody::NodesFound(_, _)
-            | ResponseBody::ValuesFound(_, _) => true,
-            _ => false,
-        }
+pub(crate) fn is_dht_resp(msg: &NetResponse) -> bool {
+    match msg.data {
+        ResponseBody::NoResult
+        | ResponseBody::NodesFound(_, _)
+        | ResponseBody::ValuesFound(_, _) => true,
+        _ => false,
     }
+}
 
-    pub(crate) fn dht_to_net_request(req: DhtRequest<Id, Data>) -> NetRequestBody {
-        match req {
-            DhtRequest::Ping => RequestBody::Ping,
-            DhtRequest::FindNode(id) => RequestBody::FindNode(Id::from(id.clone())),
-            DhtRequest::FindValue(id) => RequestBody::FindValue(Id::from(id.clone())),
-            DhtRequest::Store(id, values) => {
-                RequestBody::Store(Id::from(id.clone()), values.to_vec())
-            }
-        }
+/// Convert a DHT request to a DSF network message
+pub(crate) fn dht_to_net_request(req: DhtRequest<Id, Data>) -> NetRequestBody {
+    match req {
+        DhtRequest::Ping => RequestBody::Ping,
+        DhtRequest::FindNode(id) => RequestBody::FindNode(Id::from(id.clone())),
+        DhtRequest::FindValue(id) => RequestBody::FindValue(Id::from(id.clone())),
+        DhtRequest::Store(id, values) => RequestBody::Store(Id::from(id.clone()), values.to_vec()),
     }
+}
 
-    pub(crate) fn dht_to_net_response(resp: DhtResponse<Id, Peer, Data>) -> NetResponseBody {
-        match resp {
-            DhtResponse::NodesFound(id, nodes) => {
-                let nodes = nodes
-                    .iter()
-                    .filter_map(|n| {
-                        // Drop unseen or nodes without keys from responses
-                        // TODO: is this the desired behaviour?
-                        if n.info().pub_key().is_none() || n.info().seen().is_none() {
-                            None
-                        } else {
-                            Some((
-                                Id::from(n.id().clone()),
-                                n.info().address(),
-                                n.info().pub_key().unwrap(),
-                            ))
+/// Convert a DHT response to a DSF network message
+pub(crate) fn dht_to_net_response(resp: DhtResponse<Id, PeerInfo, Data>) -> NetResponseBody {
+    match resp {
+        DhtResponse::NodesFound(id, nodes) => {
+            let nodes = nodes
+                .iter()
+                .filter_map(|n| {
+                    let i = n.info();
+
+                    // Limit responses to contactable nodes
+                    // TODO: they shouldn't be -added- to the DHT prior to being contacted but
+                    // this needs to be confirmed / is a simple guard rail.
+                    match (&i.state, i.seen.is_some()) {
+                        (PeerState::Known(public_key), true) => {
+                            Some((i.id.clone(), i.address().clone(), public_key.clone()))
                         }
-                    })
-                    .collect();
+                        _ => None,
+                    }
+                })
+                .collect();
 
-                ResponseBody::NodesFound(Id::from(id.clone()), nodes)
-            }
-            DhtResponse::ValuesFound(id, values) => {
-                ResponseBody::ValuesFound(Id::from(id.clone()), values.to_vec())
-            }
-            DhtResponse::NoResult => ResponseBody::NoResult,
+            ResponseBody::NodesFound(Id::from(id.clone()), nodes)
         }
+        DhtResponse::ValuesFound(id, values) => {
+            ResponseBody::ValuesFound(Id::from(id.clone()), values.to_vec())
+        }
+        DhtResponse::NoResult => ResponseBody::NoResult,
     }
+}
 
-    pub(crate) fn net_to_dht_request(req: &NetRequestBody) -> Option<DhtRequest<Id, Data>> {
-        match req {
-            RequestBody::Ping => Some(DhtRequest::Ping),
-            RequestBody::FindNode(id) => Some(DhtRequest::FindNode(Id::into(id.clone()))),
-            RequestBody::FindValue(id) => Some(DhtRequest::FindValue(Id::into(id.clone()))),
-            RequestBody::Store(id, values) => {
-                Some(DhtRequest::Store(Id::into(id.clone()), values.to_vec()))
-            }
-            _ => None,
+pub(crate) fn net_to_dht_request(req: &NetRequestBody) -> Option<DhtRequest<Id, Data>> {
+    match req {
+        RequestBody::Ping => Some(DhtRequest::Ping),
+        RequestBody::FindNode(id) => Some(DhtRequest::FindNode(Id::into(id.clone()))),
+        RequestBody::FindValue(id) => Some(DhtRequest::FindValue(Id::into(id.clone()))),
+        RequestBody::Store(id, values) => {
+            Some(DhtRequest::Store(Id::into(id.clone()), values.to_vec()))
         }
+        _ => None,
     }
+}
 
-    pub(crate) async fn net_to_dht_response<E: Engine>(
-        e: &E,
-        resp: &NetResponseBody,
-    ) -> Option<DhtResponse<Id, Peer, Data>> {
-        // TODO: fix peers:new here peers:new
-        match resp {
-            ResponseBody::NodesFound(id, nodes) => {
-                let mut dht_nodes = Vec::with_capacity(nodes.len());
+pub(crate) async fn net_to_dht_response(
+    resp: &NetResponseBody,
+) -> Option<DhtResponse<Id, PeerInfo, Data>> {
+    // TODO: fix peers:new here peers:new
+    match resp {
+        ResponseBody::NodesFound(id, nodes) => {
+            // Convert response information to PeerInfo objects
+            // (note that peers are only added to local tracking when contacted)
+            let mut dht_nodes = Vec::with_capacity(nodes.len());
+            for (id, addr, key) in nodes {
+                let node = PeerInfo::new(
+                    id.clone(),
+                    PeerAddress::Implicit(addr.clone()),
+                    PeerState::Known(key.clone()),
+                    0,
+                    Some(SystemTime::now()),
+                );
 
-                for (id, addr, key) in nodes {
-                    // Add peer to local tracking
-                    let node = e
-                        .peer_create_update(
-                            id.clone(),
-                            PeerAddress::Implicit(addr.clone()),
-                            Some(key.clone()),
-                            PeerFlags::empty(),
-                        )
-                        .await
-                        .unwrap();
-
-                    dht_nodes.push((id.clone(), node).into());
-                }
-
-                Some(DhtResponse::NodesFound(Id::into(id.clone()), dht_nodes))
+                dht_nodes.push((id.clone(), node).into());
             }
-            ResponseBody::ValuesFound(id, values) => Some(DhtResponse::ValuesFound(
-                Id::into(id.clone()),
-                values.to_vec(),
-            )),
-            ResponseBody::NoResult => Some(DhtResponse::NoResult),
-            _ => None,
+
+            Some(DhtResponse::NodesFound(Id::into(id.clone()), dht_nodes))
         }
+        ResponseBody::ValuesFound(id, values) => Some(DhtResponse::ValuesFound(
+            Id::into(id.clone()),
+            values.to_vec(),
+        )),
+        ResponseBody::NoResult => Some(DhtResponse::NoResult),
+        _ => None,
     }
 }
 

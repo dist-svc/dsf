@@ -10,7 +10,7 @@ use tracing_subscriber::{
 };
 
 use dsf_client::{Client, Config};
-use dsf_core::{helpers::print_bytes, prelude::MaybeEncrypted, types::Id};
+use dsf_core::{helpers::print_bytes, prelude::MaybeEncrypted, types::Id, wire::Container};
 use dsf_rpc::{DataInfo, PeerInfo, RequestKind, ResponseKind, ServiceInfo};
 
 #[derive(Parser)]
@@ -115,16 +115,13 @@ fn handle_response(resp: ResponseKind, no_trunc: bool) {
         ResponseKind::Status(status) => {
             println!("Status: {:?}", status);
         }
-        ResponseKind::Service(info) => {
-            print_service(&info, no_trunc);
-        }
         ResponseKind::Services(services) => {
             print_services(&services, no_trunc);
         }
         ResponseKind::Peers(peers) => {
             print_peers(&peers, no_trunc);
         }
-        ResponseKind::Data(data) => {
+        ResponseKind::Objects(data) => {
             println!("Data:");
             print_objects(&data, no_trunc);
         }
@@ -139,7 +136,7 @@ fn systemtime_to_humantime(s: SystemTime) -> String {
     chrono_humanize::HumanTime::from(v).to_string()
 }
 
-fn print_peers(peers: &[(Id, PeerInfo)], no_trunc: bool) {
+fn print_peers(peers: &[PeerInfo], no_trunc: bool) {
     if peers.len() == 0 {
         warn!("No peers found");
         return;
@@ -153,7 +150,7 @@ fn print_peers(peers: &[(Id, PeerInfo)], no_trunc: bool) {
     // Add a row per time
     table.add_row(row![b => "Peer ID", "Index", "State", "Address(es)", "Seen", "Sent", "Received", "Blocked"]);
 
-    for (_id, p) in peers {
+    for p in peers {
         let id = match no_trunc {
             true => format!("{}", p.id),
             false => format!("{:#}", p.id),
@@ -273,13 +270,13 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
     table.printstd();
 }
 
-fn print_objects(objects: &[DataInfo], no_trunc: bool) {
+fn print_objects(objects: &[(DataInfo, Container)], no_trunc: bool) {
     if objects.len() == 0 {
         warn!("No objects found");
         return;
     }
 
-    for o in objects {
+    for (o, _c) in objects {
         println!("index: {}", o.index);
 
         println!("  - kind: {}", o.kind);

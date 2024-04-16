@@ -29,15 +29,35 @@ pub enum PeerAddress {
     Explicit(Address),
 }
 
+bitflags::bitflags!(
+    /// Flags for peer information
+    #[derive(Default, Serialize, Deserialize)]
+    pub struct PeerFlags: u16 {
+        /// Message flag indicating symmetric encryption is available
+        const SYMMETRIC_AVAILABLE = (1 << 0);
+        /// Message flag indicating symmetric encryption is in use
+        const SYMMETRIC_ENABLED = (1 << 1);
+        /// Message and object flag indicating device is constrained
+        const CONSTRAINED = (1 << 2);
+        /// Message and object flag indicating peer identity is transient and should not be persisted
+        const TRANSIENT = (1 << 3);
+
+        // Mask for persistent bit flags
+        const PERSISTED = Self::CONSTRAINED.bits();
+    }
+);
+
 /// PeerInfo object for storage and exchange of peer information
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "diesel", derive(diesel::Queryable))]
 pub struct PeerInfo {
     pub id: Id,
+    pub short_id: ShortId,
     pub index: usize,
     pub address: PeerAddress,
     pub state: PeerState,
     pub seen: Option<SystemTime>,
+    pub flags: PeerFlags,
 
     pub sent: u64,
     pub received: u64,
@@ -52,16 +72,24 @@ impl PeerInfo {
         index: usize,
         seen: Option<SystemTime>,
     ) -> Self {
+        let short_id = ShortId::from(&id);
         Self {
             id,
+            short_id,
+            index,
             address,
             state,
             seen,
-            index,
+            flags: PeerFlags::empty(),
             sent: 0,
             received: 0,
             blocked: false,
         }
+    }
+
+    pub fn with_flags(mut self, flags: PeerFlags) -> Self {
+        self.flags = flags;
+        self
     }
 
     /// Fetch the address of a peer
@@ -104,7 +132,7 @@ impl PeerInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, clap::Parser)]
 pub enum PeerCommands {
     /// List known peers
-    List(PeerOptions),
+    List(PeerListOptions),
 
     /// Connects to a known peer
     Connect(ConnectOptions),
@@ -143,7 +171,7 @@ pub struct ConnectOptions {
 
 // Peer list options
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
-pub struct PeerOptions {}
+pub struct PeerListOptions {}
 
 /// ConnectOptions passed to connect function
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]

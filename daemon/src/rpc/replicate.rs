@@ -17,12 +17,12 @@ use dsf_core::options::Options;
 use dsf_core::prelude::*;
 use dsf_rpc::{self as rpc, RegisterInfo, RegisterOptions};
 
-use crate::core::peers::Peer;
-use crate::core::services::ServiceState;
-
 use super::ops::*;
-use crate::daemon::{net::NetIf, Dsf};
-use crate::error::Error;
+use crate::{
+    core::CoreRes,
+    daemon::{net::NetIf, Dsf},
+    error::Error,
+};
 
 pub enum RegisterState {
     Init,
@@ -31,6 +31,7 @@ pub enum RegisterState {
     Error,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait ReplicateService {
     /// Replicate a known service, providing a replica for other subscribers
     async fn service_replicate(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError>;
@@ -41,8 +42,7 @@ impl<T: Engine> ReplicateService for T {
         info!("Replicate: {:?}", &options);
 
         // Resolve service id / index to a service instance
-        let svc = self.svc_resolve(options.service).await?;
-        let info = self.svc_get(svc.id()).await?;
+        let info = self.svc_get(options.service).await?;
 
         // Fetch or generate replica page
         let p = fetch_replica(self, &info).await?;
@@ -51,17 +51,17 @@ impl<T: Engine> ReplicateService for T {
         let replica_version = Some(p.header().index());
 
         // Store replica page in DHT
-        let peers = match self.dht_put(svc.id(), vec![p]).await {
+        let peers = match self.dht_put(info.id.clone(), vec![p]).await {
             Ok((peers, _info)) => peers.len(),
             Err(e) => {
-                error!("Failed to store pages for {:#}: {:?}", svc.id(), e);
+                error!("Failed to store pages for {:#}: {:?}", info.id, e);
                 0
             }
         };
 
         // TODO: return registered peer count
         Ok(RegisterInfo {
-            page_version: svc.version(),
+            page_version: info.index as u32,
             replica_version,
             peers,
         })
@@ -75,8 +75,8 @@ pub(super) async fn fetch_replica<E: Engine>(
 ) -> Result<Container, DsfError> {
     // Fetch existing replica page if available
     if let Some(sig) = &info.replica_page {
-        match e.object_get(e.id(), sig.clone()).await {
-            Ok(v) if !v.expired() => {
+        match e.object_get(e.id().into(), sig.clone()).await {
+            Ok((_i, v)) if !v.expired() => {
                 debug!(
                     "Using existing replica page {:#} for service {:#}",
                     sig, info.id
@@ -115,7 +115,10 @@ pub(super) async fn fetch_replica<E: Engine>(
                     ..Default::default()
                 };
 
-                let (_, p) = svc.publish_data_buff(primary_opts)?;
+                let (_, p) = match svc.publish_data_buff(primary_opts) {
+                    Ok(v) => v,
+                    Err(e) => return CoreRes::Error(e.into()),
+                };
 
                 // Publish secondary page object, matching replica data
                 let opts = SecondaryOptions {
@@ -125,17 +128,20 @@ pub(super) async fn fetch_replica<E: Engine>(
                     ..Default::default()
                 };
 
-                let (_, c) = svc.publish_secondary_buff(&target_id, opts)?;
+                let (_, c) = match svc.publish_secondary_buff(&target_id, opts) {
+                    Ok(v) => v,
+                    Err(e) => return CoreRes::Error(e.into()),
+                };
 
                 // Return data and secondary page
-                Ok(Res::Pages(vec![p.to_owned(), c.to_owned()], None))
+                CoreRes::Pages(vec![p.to_owned(), c.to_owned()], None)
             }),
         )
         .await;
 
     // Parse out pages from response
     let objects = match r {
-        Ok(Res::Pages(v, _)) => v,
+        Ok(CoreRes::Pages(v, _)) => v,
         Err(e) => {
             error!("Failed to generate replica pages: {:?}", e);
             return Err(e.into());

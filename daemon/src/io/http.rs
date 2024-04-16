@@ -113,13 +113,18 @@ async fn status(h: &State<HttpCtx>) -> Json<ResponseKind> {
 
 // Service endpoints
 
-#[get("/services")]
-async fn service_list(h: &State<HttpCtx>) -> Json<ResponseKind> {
+#[get("/services?<count>&<offset>")]
+async fn service_list(
+    h: &State<HttpCtx>,
+    count: Option<usize>,
+    offset: Option<usize>,
+) -> Json<ResponseKind> {
     Json(
         h.exec(RequestKind::Service(ServiceCommands::List(
             ServiceListOptions {
                 application_id: None,
                 kind: None,
+                bounds: PageBounds { count, offset },
             },
         )))
         .await,
@@ -181,7 +186,7 @@ async fn service_unsubscribe(
 #[get("/peers")]
 async fn peer_list(h: &State<HttpCtx>) -> Json<ResponseKind> {
     Json(
-        h.exec(RequestKind::Peer(PeerCommands::List(PeerOptions {})))
+        h.exec(RequestKind::Peer(PeerCommands::List(PeerListOptions {})))
             .await,
     )
 }

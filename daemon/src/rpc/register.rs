@@ -17,13 +17,13 @@ use dsf_core::options::Options;
 use dsf_core::prelude::*;
 use dsf_rpc::{self as rpc, RegisterInfo, RegisterOptions};
 
-use crate::core::peers::Peer;
-use crate::core::services::ServiceState;
-use crate::rpc::replicate::fetch_replica;
-
 use super::ops::*;
-use crate::daemon::{net::NetIf, Dsf};
-use crate::error::Error;
+use crate::{
+    core::CoreRes,
+    daemon::{net::NetIf, Dsf},
+    error::Error,
+    rpc::replicate::fetch_replica,
+};
 
 pub enum RegisterState {
     Init,
@@ -32,6 +32,7 @@ pub enum RegisterState {
     Error,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait RegisterService {
     /// Register service information using the DHT
     async fn service_register(&self, options: RegisterOptions) -> Result<RegisterInfo, DsfError>;
@@ -42,8 +43,7 @@ impl<T: Engine> RegisterService for T {
         info!("Register: {:?}", &options);
 
         // Resolve service id / index to a service instance
-        let svc = self.svc_resolve(options.service).await?;
-        let info = self.svc_get(svc.id()).await?;
+        let info = self.svc_get(options.service).await?;
 
         // Locate or generate a primary page for the service
         let primary_page = match fetch_primary(self, &info).await {
@@ -77,10 +77,10 @@ impl<T: Engine> RegisterService for T {
         debug!("Saving pages to DHT: {:?}", pages);
 
         // Store new page(s) in the DHT
-        let peers = match self.dht_put(svc.id(), pages).await {
+        let peers = match self.dht_put(info.id.clone(), pages).await {
             Ok((v, _i)) => v.len(),
             Err(e) => {
-                error!("Failed to store pages for {:#}: {:?}", svc.id(), e);
+                error!("Failed to store pages for {:#}: {:?}", info.id, e);
                 0
             }
         };
@@ -102,8 +102,8 @@ pub(super) async fn fetch_primary<E: Engine>(
 
     // Attempt to locate existing primary page
     if let Some(sig) = &info.primary_page {
-        match e.object_get(info.id.clone(), sig.clone()).await {
-            Ok(v) if !v.expired() => {
+        match e.object_get((&info.id).into(), sig.clone()).await {
+            Ok((_i, v)) if !v.expired() => {
                 debug!("Using existing primary page {:#}", sig);
                 return Ok(v);
             }
@@ -130,16 +130,18 @@ pub(super) async fn fetch_primary<E: Engine>(
     let r = e
         .svc_update(
             info.id.clone(),
-            Box::new(|svc, _state| {
-                let (_n, c) = svc.publish_primary_buff(Default::default())?;
-                Ok(Res::Pages(vec![c.to_owned()], None))
-            }),
+            Box::new(
+                |svc, _state| match svc.publish_primary_buff(Default::default()) {
+                    Ok((_n, c)) => CoreRes::Pages(vec![c.to_owned()], None),
+                    Err(e) => CoreRes::Error(e.into()),
+                },
+            ),
         )
         .await;
 
     // Handle errors
     let p = match r {
-        Ok(Res::Pages(p, _i)) if p.len() == 1 => p[0].clone(),
+        Ok(CoreRes::Pages(p, _i)) if p.len() == 1 => p[0].clone(),
         Err(e) => {
             error!("Failed to sign primary page: {:?}", e);
             return Err(e.into());

@@ -12,17 +12,15 @@ use tracing::{debug, error, info, instrument, span, trace, warn, Level};
 
 use dsf_core::options::Options;
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, DiscoverOptions, ServiceInfo};
+use dsf_rpc::{self as rpc, DiscoverOptions, PeerInfo, ServiceInfo, ServiceState};
 
 use super::ops::*;
 use crate::{
-    core::peers::Peer,
-    core::services::ServiceState,
-    daemon::net::NetFuture,
     daemon::{net::NetIf, Dsf},
     error::Error,
 };
 
+#[allow(async_fn_in_trait)]
 pub trait Discover {
     /// Discover a service using local broadcast discovery
     async fn discover(&self, options: DiscoverOptions) -> Result<Vec<ServiceInfo>, DsfError>;
@@ -75,40 +73,5 @@ impl<T: Engine> Discover for T {
 
         // Return matching service information
         Ok(services)
-    }
-}
-
-pub struct DiscoverOp {
-    pub(crate) opts: DiscoverOptions,
-    pub(crate) state: DiscoverState,
-}
-
-pub enum DiscoverState {
-    Init,
-    Pending(NetFuture),
-    Done,
-    Error,
-}
-
-pub struct DiscoverFuture {
-    rx: mpsc::Receiver<rpc::Response>,
-}
-
-unsafe impl Send for DiscoverFuture {}
-
-impl Future for DiscoverFuture {
-    type Output = Result<Vec<ServiceInfo>, DsfError>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        let resp = match self.rx.poll_next_unpin(ctx) {
-            Poll::Ready(Some(r)) => r,
-            _ => return Poll::Pending,
-        };
-
-        match resp.kind() {
-            rpc::ResponseKind::Services(r) => Poll::Ready(Ok(r)),
-            rpc::ResponseKind::Error(e) => Poll::Ready(Err(e.into())),
-            _ => Poll::Pending,
-        }
     }
 }

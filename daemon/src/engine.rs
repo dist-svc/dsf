@@ -19,6 +19,7 @@ use dsf_core::types::{Address, Id};
 use dsf_rpc::{Request as RpcRequest, Response as RpcResponse};
 use kad::Config as DhtConfig;
 
+use crate::core::store::AsyncStore;
 use crate::daemon::net::NetIf;
 use crate::daemon::*;
 use crate::error::Error;
@@ -145,7 +146,7 @@ pub struct Engine {
     http: Option<Http>,
     net: Net,
 
-    net_source: mpsc::Receiver<(Address, Vec<u8>)>,
+    net_tx_source: mpsc::Receiver<(Address, Vec<u8>)>,
     rpc_source: mpsc::Receiver<(RpcRequest, mpsc::Sender<RpcResponse>)>,
 
     options: EngineOptions,
@@ -167,10 +168,11 @@ impl Engine {
                 }
             }
         }
-        let store = Store::new(&options.database_file, Default::default())?;
+        // Create new store
+        let s = Store::new_rc(&options.database_file, Default::default())?;
 
         // Fetch or create new peer service
-        let mut service = match store.load_peer_service()? {
+        let mut service = match s.load_peer_service()? {
             Some(s) => {
                 info!("Loaded existing peer service: {}", s.id());
                 s
@@ -192,7 +194,7 @@ impl Engine {
         let (_n, page) = service.publish_primary(Default::default(), buff)?;
 
         // Store peer service identity for re-use
-        store.set_peer_service(&service, &page)?;
+        s.set_peer_service(&service, &page)?;
 
         info!("Creating new engine");
 
@@ -246,10 +248,13 @@ impl Engine {
             None => None,
         };
 
-        let (net_sink, net_source) = mpsc::channel::<(Address, Vec<u8>)>(1000);
+        let (net_tx_sink, net_tx_source) = mpsc::channel::<(Address, Vec<u8>)>(1000);
+
+        // Setup async store task
+        let store = AsyncStore::new(s)?;
 
         // Create new DSF instance
-        let dsf = Dsf::new(options.daemon_options.clone(), service, store, net_sink)?;
+        let dsf = Dsf::new(options.daemon_options.clone(), service, store, net_tx_sink).await?;
 
         info!("Engine created!");
 
@@ -257,7 +262,7 @@ impl Engine {
             id: dsf.id(),
             dsf: dsf,
             net: net,
-            net_source: net_source,
+            net_tx_source: net_tx_source,
             rpc_source: rpc_rx,
             unix,
             http,
@@ -275,7 +280,7 @@ impl Engine {
             id,
             mut dsf,
             mut net,
-            mut net_source,
+            mut net_tx_source,
             mut rpc_source,
             unix: _,
             http: _,
@@ -331,10 +336,10 @@ impl Engine {
                     // Incoming network messages
                     net_rx = net.next() => {
                         if let Some(m) = net_rx {
-                            trace!("engine::net_rx {:?}", m);
+                            trace!("engine::net::rx {:?}", m);
                             let mut net_in_tx = net_in_tx.clone();
 
-                            // TODO: prefer not to spawn a task every rx but,
+                            // TODO(low): prefer not to spawn a task every rx but,
                             // need to be able to inject rx delays so this seems like
                             // an easy option for the moment...
                             task::spawn(async move {
@@ -349,12 +354,12 @@ impl Engine {
                                 }
                             });
                         } else {
-                            error!("engine::net_rx returned None");
+                            error!("engine::net::rx returned None");
                         }
                     },
                     net_tx = net_out_rx.next().fuse() => {
                         if let Some((address, data)) = net_tx {
-                            trace!("engine::net_tx {:?} {:?}", address, data);
+                            trace!("engine::net::tx {:?} {:?}", address, data);
 
                             if let Err(e) = net.send(address, None, data).await {
                                 error!("error sending ougoing network message: {:?}", e);
@@ -376,13 +381,13 @@ impl Engine {
         let dsf_handle: JoinHandle<Result<(), Error>> = task::spawn(async move {
             loop {
                 select! {
-                    // Incoming network _requests_
+                    // Incoming network _requests_ to the daemon
                     net_rx = net_in_rx.next().fuse() => {
+                        trace!("engine::net_rx: {net_rx:?}");
 
                         if let Some(m) = net_rx {
-
                             // Handle request via DSF
-                            match dsf.handle_net_raw(m).await {
+                            match dsf.handle_net(m).await {
                                 Ok(v) => v,
                                 Err(e) => {
                                     error!("error handling DSF message: {:?}", e);
@@ -391,8 +396,10 @@ impl Engine {
                             };
                         }
                     },
-                    // Outgoing network _requests_
-                    net_tx = net_source.next().fuse() => {
+                    // Outgoing network _requests_ from the daemon
+                    net_tx = net_tx_source.next().fuse() => {
+                        trace!("engine::net_tx: {net_tx:?}");
+
                         if let Some((addr, data)) = net_tx {
                             if let Err(e) = net_out_tx.send((addr.into(), Bytes::from(data))).await {
                                 error!("error forwarding outgoing network message: {:?}", e);
@@ -402,7 +409,7 @@ impl Engine {
                     },
                     // Incoming RPC messages
                     rpc_rx = rpc_source.next().fuse() => {
-                        debug!("engine::rpc_rx");
+                        trace!("engine::rpc_rx: {rpc_rx:?}");
 
                         let (req, mut tx) = match rpc_rx {
                             Some(v) => v,
@@ -417,7 +424,7 @@ impl Engine {
                         tokio::task::spawn(async move {
                             match resp_source.next().await {
                                 Some(r) => {
-                                    debug!("RPC response: {r:?}");
+                                    debug!("engine::rpc_tx {r:?}");
 
                                     if let Err(e) = tx.send(r).await {
                                         error!("Failed to foward RPC response: {:?}", e);
@@ -438,7 +445,7 @@ impl Engine {
                         trace!("engine::update");
 
                         // TODO: prompt dsf service updates?
-                        // Maybe this should just use time internally?
+                        // Maybe this should just use an internal timer?
                     },
                     // Poll on DSF internal state (this actually runs DSF logic)
                     _ = dsf => {
@@ -446,7 +453,7 @@ impl Engine {
                     },
                     // Tick timer for process reactivity
                     _tick = tick_timer.tick().fuse() => {
-                        trace!("engine::tick");
+                        //trace!("engine::tick");
 
                         // Prompt DSF poll
                         dsf.wake();
