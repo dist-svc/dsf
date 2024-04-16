@@ -46,7 +46,7 @@ impl<A: Application, S: Store<Address = std::net::SocketAddr>, const N: usize>
         }
 
         // Update internal state
-        return self.update();
+        self.update()
     }
 
     /// Resolve the local address of the engine

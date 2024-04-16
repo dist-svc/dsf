@@ -234,7 +234,7 @@ pub(crate) fn dht_to_net_response(resp: DhtResponse<Id, PeerInfo, Data>) -> NetR
                     // this needs to be confirmed / is a simple guard rail.
                     match (&i.state, i.seen.is_some()) {
                         (PeerState::Known(public_key), true) => {
-                            Some((i.id.clone(), i.address().clone(), public_key.clone()))
+                            Some((i.id.clone(), *i.address(), public_key.clone()))
                         }
                         _ => None,
                     }
@@ -274,7 +274,7 @@ pub(crate) async fn net_to_dht_response(
             for (id, addr, key) in nodes {
                 let node = PeerInfo::new(
                     id.clone(),
-                    PeerAddress::Implicit(addr.clone()),
+                    PeerAddress::Implicit(*addr),
                     PeerState::Known(key.clone()),
                     0,
                     Some(SystemTime::now()),
@@ -391,11 +391,11 @@ pub(crate) fn dht_reducer(id: Id, pages: Vec<Container>) -> Vec<Container> {
     }
 
     // And finally sort by index and limit to the latest N indicies
-    let mut tertiaries: Vec<&Container> = tertiaries.iter().map(|(_k, v)| *v).collect();
+    let mut tertiaries: Vec<&Container> = tertiaries.values().copied().collect();
     tertiaries.sort_by_key(|c| c.header().index());
 
     let num_tertiaries = tertiaries.len().min(16);
-    let tertiaries = tertiaries.drain(..num_tertiaries).map(|c| c.clone());
+    let tertiaries = tertiaries.drain(..num_tertiaries).cloned();
 
     filtered.extend(tertiaries);
 
@@ -494,13 +494,11 @@ mod test {
             )
             .unwrap();
 
-        let pages = vec![
-            svc_page.to_owned(),
+        let pages = [svc_page.to_owned(),
             p1a.to_owned(),
             p1b.to_owned(),
             p2a.to_owned(),
-            p2b.to_owned(),
-        ];
+            p2b.to_owned()];
 
         let mut r = dht_reducer(svc.id(), pages.to_vec());
 
@@ -556,7 +554,7 @@ mod test {
             )
             .unwrap();
 
-        let pages = vec![t1.to_owned(), t2.to_owned(), t2a.to_owned()];
+        let pages = [t1.to_owned(), t2.to_owned(), t2a.to_owned()];
 
         // Reduce should leave only the _later_ tertiary page for a given target
         let mut r = dht_reducer(tid, pages.to_vec());
@@ -604,7 +602,7 @@ mod test {
             )
             .unwrap();
 
-        let pages = vec![t1.to_owned(), t2.to_owned()];
+        let pages = [t1.to_owned(), t2.to_owned()];
 
         // Reduce should leave only the _later_ tertiary page
         // TODO: could sort by time equally as well as index?

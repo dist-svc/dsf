@@ -116,7 +116,7 @@ impl EngineOptions {
             .bind_addresses
             .iter()
             .map(|a| {
-                let mut a = a.clone();
+                let mut a = *a;
                 let p = portpicker::pick_unused_port().unwrap();
                 a.set_port(p);
                 a
@@ -237,11 +237,11 @@ impl Engine {
             Some(s) => {
                 info!("Creating HTTP socket: {}", s);
 
-                match Http::new(s.clone(), rpc_tx.clone()).await {
+                match Http::new(s, rpc_tx.clone()).await {
                     Ok(v) => Some(v),
                     Err(e) => {
                         error!("Failed to create HTTP connector: {:?}", e);
-                        return Err(e.into());
+                        return Err(e);
                     }
                 }
             }
@@ -260,9 +260,9 @@ impl Engine {
 
         Ok(Self {
             id: dsf.id(),
-            dsf: dsf,
-            net: net,
-            net_tx_source: net_tx_source,
+            dsf,
+            net,
+            net_tx_source,
             rpc_source: rpc_rx,
             unix,
             http,
@@ -327,7 +327,7 @@ impl Engine {
             dsf_exit_tx.send(()).await.unwrap();
         });
 
-        let mock_rx_latency = options.mock_rx_latency.clone();
+        let mock_rx_latency = options.mock_rx_latency;
 
         // Setup network IO task
         let net_handle: JoinHandle<Result<(), Error>> = task::spawn(async move {

@@ -195,7 +195,7 @@ impl Encode for Kind {
     }
 
     fn encode(&self, buff: &mut [u8]) -> Result<usize, Self::Error> {
-        if buff.len() < 1 {
+        if buff.is_empty() {
             return Err(Error::BufferLength);
         }
 
@@ -211,7 +211,7 @@ impl DecodeOwned for Kind {
     type Error = Error;
 
     fn decode_owned(buff: &[u8]) -> Result<(Self::Output, usize), Self::Error> {
-        if buff.len() < 1 {
+        if buff.is_empty() {
             return Err(Error::BufferLength);
         }
 
@@ -468,11 +468,11 @@ mod tests {
         ];
 
         test_kind_coersions(&tests, |k| {
-            assert_eq!(k.is_data(), false);
-            assert_eq!(k.is_page(), true);
-            assert_eq!(k.is_message(), false);
-            assert_eq!(k.is_request(), false);
-            assert_eq!(k.is_response(), false);
+            assert!(!k.is_data());
+            assert!(k.is_page());
+            assert!(!k.is_message());
+            assert!(!k.is_request());
+            assert!(!k.is_response());
         });
     }
 
@@ -481,11 +481,11 @@ mod tests {
         let tests = vec![(DataKind::Generic, [0b0100_0000])];
 
         test_kind_coersions(&tests, |k| {
-            assert_eq!(k.is_data(), true);
-            assert_eq!(k.is_page(), false);
-            assert_eq!(k.is_message(), false);
-            assert_eq!(k.is_request(), false);
-            assert_eq!(k.is_response(), false);
+            assert!(k.is_data());
+            assert!(!k.is_page());
+            assert!(!k.is_message());
+            assert!(!k.is_request());
+            assert!(!k.is_response());
         });
     }
 
@@ -507,11 +507,11 @@ mod tests {
         ];
 
         test_kind_coersions(&tests, |k| {
-            assert_eq!(k.is_data(), false);
-            assert_eq!(k.is_page(), false);
-            assert_eq!(k.is_message(), true);
-            assert_eq!(k.is_request(), true);
-            assert_eq!(k.is_response(), false);
+            assert!(!k.is_data());
+            assert!(!k.is_page());
+            assert!(k.is_message());
+            assert!(k.is_request());
+            assert!(!k.is_response());
         });
     }
 
@@ -526,11 +526,11 @@ mod tests {
         ];
 
         test_kind_coersions(&tests, |k| {
-            assert_eq!(k.is_data(), false);
-            assert_eq!(k.is_page(), false);
-            assert_eq!(k.is_message(), true);
-            assert_eq!(k.is_request(), false);
-            assert_eq!(k.is_response(), true);
+            assert!(!k.is_data());
+            assert!(!k.is_page());
+            assert!(k.is_message());
+            assert!(!k.is_request());
+            assert!(k.is_response());
         });
     }
 

@@ -262,10 +262,10 @@ impl<Addr: Clone + Debug + 'static> Store for SqliteStore<Addr> {
 
     fn get_peer(&self, id: &Id) -> Result<Option<Peer<Self::Address>>, Self::Error> {
         let p = self.peers.get(id);
-        Ok(p.map(|p| p.clone()))
+        Ok(p.cloned())
     }
 
-    fn peers<'a>(&'a self) -> Self::Iter<'a> {
+    fn peers(&self) -> Self::Iter<'_> {
         self.peers.iter()
     }
 
@@ -346,7 +346,7 @@ impl<Addr: Clone + Debug + 'static> Store for SqliteStore<Addr> {
     // Fetch service information
     fn get_service(&self, id: &Id) -> Result<Option<Service>, Self::Error> {
         let s = self.services.get(id);
-        Ok(s.map(|s| s.clone()))
+        Ok(s.cloned())
     }
 
     // Update a specified service

@@ -3,15 +3,11 @@ use super::Comms;
 use alloc::vec::Vec;
 
 /// Mock comms interface for test use
+#[derive(Default)]
 pub struct MockComms {
     pub(crate) tx: Vec<(u8, Vec<u8>)>,
 }
 
-impl Default for MockComms {
-    fn default() -> Self {
-        Self { tx: Vec::new() }
-    }
-}
 
 impl Comms for MockComms {
     type Address = u8;

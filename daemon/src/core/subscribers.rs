@@ -35,8 +35,8 @@ impl Core {
         info: SubscriptionInfo,
     ) -> Result<SubscriptionInfo, Error> {
         let service_id = info.service_id.clone();
-        let svc_subs = self.subscribers.entry(service_id.clone()).or_insert(vec![]);
-        let mut subscriber = svc_subs.iter_mut().find(|s| s.kind == info.kind);
+        let svc_subs = self.subscribers.entry(service_id.clone()).or_default();
+        let subscriber = svc_subs.iter_mut().find(|s| s.kind == info.kind);
 
         match subscriber {
             Some(s) => {
@@ -76,7 +76,7 @@ impl Core {
         peer_id: &Id,
         f: F,
     ) -> Result<(), Error> {
-        let subscribers = self.subscribers.entry(service_id.clone()).or_insert(vec![]);
+        let subscribers = self.subscribers.entry(service_id.clone()).or_default();
 
         // Find subscriber in list
         let mut subscriber = subscribers.iter_mut().find(|s| {
@@ -104,8 +104,8 @@ impl Core {
         }
 
         // Call update function
-        if let Some(mut s) = subscriber {
-            f(&mut s);
+        if let Some(s) = subscriber {
+            f(s);
         }
 
         Ok(())
@@ -118,7 +118,7 @@ impl Core {
         socket_id: u32,
         f: F,
     ) -> Result<(), Error> {
-        let subscribers = self.subscribers.entry(service_id.clone()).or_insert(vec![]);
+        let subscribers = self.subscribers.entry(service_id.clone()).or_default();
 
         let mut subscriber = subscribers.iter_mut().find(|s| {
             if let SubscriptionKind::Socket(i) = &s.kind {
@@ -144,8 +144,8 @@ impl Core {
             subscriber = Some(&mut subscribers[n - 1]);
         }
 
-        if let Some(mut s) = subscriber {
-            f(&mut s);
+        if let Some(s) = subscriber {
+            f(s);
         }
 
         Ok(())
@@ -157,7 +157,7 @@ impl Core {
         service_id: &Id,
         peer_kind: &SubscriptionKind,
     ) -> Result<(), Error> {
-        let subscribers = self.subscribers.entry(service_id.clone()).or_insert(vec![]);
+        let subscribers = self.subscribers.entry(service_id.clone()).or_default();
 
         let remove = subscribers
             .iter()

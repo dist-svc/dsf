@@ -213,7 +213,7 @@ async fn issue_query<E: Engine + Sync + Send>(
 ) -> Result<Container, DsfError> {
     let req = NetRequestBody::Query(target_id.clone(), index);
 
-    if peers.len() == 0 {
+    if peers.is_empty() {
         return Err(DsfError::NoPeersFound);
     }
 
@@ -248,7 +248,7 @@ async fn issue_query<E: Engine + Sync + Send>(
             }
         };
 
-        if data.len() == 0 {
+        if data.is_empty() {
             debug!("No data in response");
             continue;
         }
@@ -272,5 +272,5 @@ async fn issue_query<E: Engine + Sync + Send>(
         return Ok(data[data.len() - 1].to_owned());
     }
 
-    return Err(DsfError::NotFound);
+    Err(DsfError::NotFound)
 }

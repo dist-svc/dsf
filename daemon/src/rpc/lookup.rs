@@ -43,7 +43,7 @@ impl<T: Engine> PeerRegistry for T {
             Ok(p) => p,
             Err(e) => {
                 error!("DHT lookup failed: {:?}", e);
-                return Err(e.into());
+                return Err(e);
             }
         };
 

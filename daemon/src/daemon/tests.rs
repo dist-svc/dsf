@@ -65,7 +65,7 @@ async fn test_manager() {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 0, 3)), 8114),
         ServiceBuilder::default().build().unwrap(),
     );
-    let mut peers = vec![(&a2, &s2), (&a3, &s3), (&a4, &s4)];
+    let mut peers = [(&a2, &s2), (&a3, &s3), (&a4, &s4)];
     peers.sort_by_key(|(_, s)| DhtDatabaseId::xor(&id1.clone(), &s.id()));
 
     info!("Responds to pings");

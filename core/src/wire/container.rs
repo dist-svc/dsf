@@ -332,8 +332,7 @@ impl<'a, T: ImmutableData> Container<T> {
 
     pub fn tag(&self) -> Option<SecretMeta> {
         self.tag_raw()
-            .map(|d| SecretMeta::try_from(d).ok())
-            .flatten()
+            .and_then(|d| SecretMeta::try_from(d).ok())
     }
 
     /// Return the public options section data
@@ -555,7 +554,7 @@ impl<'a, T: MutableData> Container<T> {
 
         // Perform decryption
         let c = self.cyphertext_mut();
-        if let Err(_) = Crypto::sk_decrypt(sk, &tag, None, c) {
+        if Crypto::sk_decrypt(sk, &tag, None, c).is_err() {
             debug!("Signature verification failed");
             return Err(Error::InvalidSignature);
         }
@@ -589,7 +588,7 @@ impl<'a, T: MutableData> Container<T> {
 
         self.decrypted = true;
 
-        return Ok(());
+        Ok(())
     }
 }
 

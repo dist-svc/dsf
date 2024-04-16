@@ -73,10 +73,10 @@ impl<'a, B: PageBody + DecodeOwned<Output = B>> Subscriber<B> for Service<B> {
             version: header.index(),
             index: header.index(),
 
-            body: body,
+            body,
 
-            public_options: public_options,
-            private_options: private_options,
+            public_options,
+            private_options,
 
             public_key,
             private_key: None,

@@ -38,6 +38,12 @@ pub struct RequestBuilder2<'a> {
     _p: PhantomData<&'a ()>,
 }
 
+impl<'a> Default for RequestBuilder2<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> RequestBuilder2<'a> {
     /// Create a new request builder
     pub fn new() -> Self {

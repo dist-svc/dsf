@@ -17,6 +17,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
+#[derive(Default)]
 pub struct MessageOptions {
     pub append_public_key: bool,
 
@@ -25,15 +26,6 @@ pub struct MessageOptions {
     pub peer_keys: Keys,
 }
 
-impl Default for MessageOptions {
-    fn default() -> Self {
-        Self {
-            append_public_key: false,
-            remote_addr: Default::default(),
-            peer_keys: Default::default(),
-        }
-    }
-}
 
 pub trait Net {
     /// Encode a request using the provided peer keys and buffer
@@ -183,7 +175,7 @@ pub fn encode_response<B: MutableData>(
     };
 
     // Setup builder
-    let b = Builder::new(buff).id(&id).header(&header);
+    let b = Builder::new(buff).id(id).header(&header);
 
     // Encode body
     let b = match &resp.data {
@@ -237,7 +229,7 @@ pub fn encrypt_message<T: MutableData>(
             _ => panic!("Attempted to encrypt object with no secret key"),
         };
 
-        b.encrypt(&sec_key)
+        b.encrypt(sec_key)
     } else {
         Ok(b.public())
     }
@@ -321,37 +313,37 @@ mod test {
         let request_id = 120;
 
         vec![
-            Request::new(source.clone(), 0, RequestBody::Hello, flags.clone()),
-            Request::new(source.clone(), 1, RequestBody::Ping, flags.clone()),
+            Request::new(source.clone(), 0, RequestBody::Hello, flags),
+            Request::new(source.clone(), 1, RequestBody::Ping, flags),
             Request::new(
                 source.clone(),
                 request_id,
                 RequestBody::FindNode(target.clone()),
-                flags.clone(),
+                flags,
             ),
             Request::new(
                 source.clone(),
                 request_id,
                 RequestBody::Store(source.clone(), vec![page.clone()]),
-                flags.clone(),
+                flags,
             ),
             Request::new(
                 source.clone(),
                 request_id,
                 RequestBody::Subscribe(target.clone()),
-                flags.clone(),
+                flags,
             ),
             Request::new(
                 source.clone(),
                 request_id,
                 RequestBody::Query(target.clone(), None),
-                flags.clone(),
+                flags,
             ),
             Request::new(
                 source.clone(),
                 request_id,
                 RequestBody::PushData(source.clone(), vec![page.clone()]),
-                flags.clone(),
+                flags,
             ),
         ]
     }
@@ -432,7 +424,7 @@ mod test {
                 source.id(),
                 request_id,
                 ResponseBody::Status(Status::Ok),
-                flags.clone(),
+                flags,
             ),
             // TODO: put node information here
             Response::new(
@@ -446,25 +438,25 @@ mod test {
                         target.public_key(),
                     )],
                 ),
-                flags.clone(),
+                flags,
             ),
             Response::new(
                 source.id(),
                 request_id,
                 ResponseBody::ValuesFound(target.id(), vec![page.clone()]),
-                flags.clone(),
+                flags,
             ),
             Response::new(
                 source.id(),
                 request_id,
                 ResponseBody::NoResult,
-                flags.clone(),
+                flags,
             ),
             Response::new(
                 source.id(),
                 request_id,
                 ResponseBody::PullData(target.id(), vec![page.clone()]),
-                flags.clone(),
+                flags,
             ),
         ]
     }

@@ -166,12 +166,12 @@ impl AsyncNet {
                     // Handle responses
                     Some((addr, id, resp)) = rx.next() => {
                         // Add to response map
-                        responses.insert(id, (addr.clone(), resp));
+                        responses.insert(id, (addr, resp));
                         // Remove responder from target list for next retry
                         targets.retain(|(a, _i)| *a != addr);
 
                         // Break when all targets have responded
-                        if targets.len() == 0 {
+                        if targets.is_empty() {
                             break 'retries;
                         }
                     }

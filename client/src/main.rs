@@ -10,7 +10,7 @@ use tracing_subscriber::{
 };
 
 use dsf_client::{Client, Config};
-use dsf_core::{helpers::print_bytes, prelude::MaybeEncrypted, types::Id, wire::Container};
+use dsf_core::{helpers::print_bytes, prelude::MaybeEncrypted, wire::Container};
 use dsf_rpc::{DataInfo, PeerInfo, RequestKind, ResponseKind, ServiceInfo};
 
 #[derive(Parser)]
@@ -69,15 +69,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .try_init();
 
     // Parse out commands
-    let cmd = match &opts.cmd {
-        Commands::Request(r) => r,
-        #[cfg(nope)]
-        Commands::Completion { shell, dir } => {
-            info!("Writing completions for {} to: {}", *shell, dir);
-            Config::clap().gen_completions("dsfc", *shell, dir);
-            return Ok(());
-        }
-    };
+    let Commands::Request(cmd) = &opts.cmd;
 
     // Create client connector
     debug!(
@@ -137,7 +129,7 @@ fn systemtime_to_humantime(s: SystemTime) -> String {
 }
 
 fn print_peers(peers: &[PeerInfo], no_trunc: bool) {
-    if peers.len() == 0 {
+    if peers.is_empty() {
         warn!("No peers found");
         return;
     }
@@ -184,7 +176,7 @@ fn print_service(service: &ServiceInfo, _no_trunc: bool) {
     println!("  replicas: {}", service.replicas);
 
     if let Some(u) = &service.last_updated {
-        println!("  updated: {}", systemtime_to_humantime(u.clone()));
+        println!("  updated: {}", systemtime_to_humantime(*u));
     }
 
     if let Some(s) = &service.primary_page {
@@ -217,7 +209,7 @@ fn print_service(service: &ServiceInfo, _no_trunc: bool) {
 }
 
 fn print_services(services: &[ServiceInfo], no_trunc: bool) {
-    if services.len() == 0 {
+    if services.is_empty() {
         warn!("No services found");
         return;
     }
@@ -246,7 +238,7 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
                 true => format!("{}", p),
                 false => format!("{:#}", p),
             },
-            None => format!("None"),
+            None => "None".to_string(),
         };
 
         table.add_row(row![
@@ -271,7 +263,7 @@ fn print_services(services: &[ServiceInfo], no_trunc: bool) {
 }
 
 fn print_objects(objects: &[(DataInfo, Container)], no_trunc: bool) {
-    if objects.len() == 0 {
+    if objects.is_empty() {
         warn!("No objects found");
         return;
     }
@@ -282,7 +274,7 @@ fn print_objects(objects: &[(DataInfo, Container)], no_trunc: bool) {
         println!("  - kind: {}", o.kind);
 
         let body = match &o.body {
-            MaybeEncrypted::Cleartext(v) if v.len() > 0 => print_bytes(v),
+            MaybeEncrypted::Cleartext(v) if !v.is_empty() => print_bytes(v),
             MaybeEncrypted::Encrypted(_) => "Encrypted".to_string(),
             _ => "Empty".to_string(),
         };
@@ -292,7 +284,7 @@ fn print_objects(objects: &[(DataInfo, Container)], no_trunc: bool) {
         match &o.private_options {
             MaybeEncrypted::None => println!("Empty"),
             MaybeEncrypted::Cleartext(options) => {
-                println!("");
+                println!();
                 for o in options {
                     if no_trunc {
                         println!("    - {o}");
@@ -305,10 +297,10 @@ fn print_objects(objects: &[(DataInfo, Container)], no_trunc: bool) {
         };
 
         print!("  - public_options: ");
-        if o.public_options.len() == 0 {
+        if o.public_options.is_empty() {
             println!("Empty")
         } else {
-            println!("");
+            println!();
             for o in &o.public_options {
                 if no_trunc {
                     println!("    - {o}");

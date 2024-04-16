@@ -137,6 +137,12 @@ impl NetInfo {
     }
 }
 
+impl Default for Net {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Net {
     /// Create a new network manager object
     pub fn new() -> Self {
@@ -155,7 +161,7 @@ impl Net {
 
     /// List bound network interfaces
     pub fn list(&self) -> Vec<NetInfo> {
-        self.bindings.iter().map(|(_k, b)| b.info.clone()).collect()
+        self.bindings.values().map(|b| b.info.clone()).collect()
     }
 
     /// Bind to a new interface
@@ -293,7 +299,7 @@ impl Net {
                         },
                         // Handle the exit signal
                         res = exit_stream.next() => {
-                            if let Some(_) = res {
+                            if res.is_some() {
                                 debug!("Received exit");
                                 break;
                             }

@@ -26,7 +26,7 @@ use super::{
 
 impl<B: Backend> Store<B> {
     pub fn load_peer_service(&self) -> Result<Option<Service>, StoreError> {
-        self.with(|conn| load_peer_service(conn))
+        self.with(load_peer_service)
     }
 
     pub fn set_peer_service<T: ImmutableData>(
@@ -54,9 +54,9 @@ pub fn load_peer_service<C: Connection<Backend = Sqlite> + LoadConnection>(
 
     let (s_id, s_pub_key, s_pri_key, s_sec_key, page_sig) = &results[0];
 
-    let id = Id::from_str(&s_id).unwrap();
-    let sig = Signature::from_str(&page_sig).unwrap();
-    let pub_key = PublicKey::from_str(&s_pub_key).unwrap();
+    let id = Id::from_str(s_id).unwrap();
+    let sig = Signature::from_str(page_sig).unwrap();
+    let pub_key = PublicKey::from_str(s_pub_key).unwrap();
     let keys = Keys::new(pub_key);
 
     // Load page
@@ -69,7 +69,7 @@ pub fn load_peer_service<C: Connection<Backend = Sqlite> + LoadConnection>(
     let mut service = Service::load(&page).unwrap();
 
     service.set_private_key(Some(PrivateKey::from_str(s_pri_key).unwrap()));
-    let sec_key = s_sec_key.as_ref().map(|v| SecretKey::from_str(&v).unwrap());
+    let sec_key = s_sec_key.as_ref().map(|v| SecretKey::from_str(v).unwrap());
     service.set_secret_key(sec_key);
 
     Ok(Some(service))
@@ -109,7 +109,7 @@ pub fn set_peer_service<C: Connection<Backend = Sqlite> + LoadConnection, T: Imm
     let results = identity.select(service_id).load::<String>(conn)?;
 
     // Create or update
-    if results.len() != 0 {
+    if !results.is_empty() {
         diesel::update(identity).set(values).execute(conn)?;
     } else {
         diesel::insert_into(identity).values(values).execute(conn)?;

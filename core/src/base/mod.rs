@@ -48,9 +48,11 @@ pub struct Empty;
 #[derive(PartialEq, Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Default)]
 pub enum MaybeEncrypted<O: Encode = Vec<u8>, E: ImmutableData = Vec<u8>> {
     Cleartext(O),
     Encrypted(E),
+    #[default]
     None,
 }
 
@@ -97,11 +99,6 @@ impl<O: Encode + Debug, E: ImmutableData + Debug> Encode for MaybeEncrypted<O, E
     }
 }
 
-impl<O: Encode + Debug, E: ImmutableData> Default for MaybeEncrypted<O, E> {
-    fn default() -> Self {
-        MaybeEncrypted::None
-    }
-}
 
 impl<'a> MaybeEncrypted<&'a [Options], &'a [u8]> {
     pub fn to_vec(&self) -> MaybeEncrypted<Vec<Options>, Vec<u8>> {

@@ -348,9 +348,9 @@ mod test {
 
         println!("Creating new service");
         let service_builder = ServiceBuilder::<Vec<u8>>::default()
-            .kind(PageKind::Generic.into())
+            .kind(PageKind::Generic)
             .public_options(vec![Options::name("Test Service")])
-            .private_options(vec![Options::address_v4(socket)].into())
+            .private_options(vec![Options::address_v4(socket)])
             .encrypt();
         let mut service = service_builder.build().unwrap();
         let keys = service.keys();

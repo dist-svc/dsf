@@ -6,6 +6,7 @@ use crate::types::{Id, PrivateKey, PublicKey, SecretKey};
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 
+#[derive(Default)]
 pub struct Keys {
     /// Service public key
     #[cfg_attr(feature = "clap", clap(long))]
@@ -24,16 +25,6 @@ pub struct Keys {
     pub sym_keys: Option<(SecretKey, SecretKey)>,
 }
 
-impl Default for Keys {
-    fn default() -> Self {
-        Self {
-            pub_key: None,
-            pri_key: None,
-            sec_key: None,
-            sym_keys: None,
-        }
-    }
-}
 
 impl Keys {
     pub fn new(pub_key: PublicKey) -> Self {
@@ -97,17 +88,17 @@ pub trait KeySource: Sized {
 
     /// Fetch public key
     fn pub_key(&self, id: &Id) -> Option<PublicKey> {
-        self.keys(id).map(|k| k.pub_key).flatten()
+        self.keys(id).and_then(|k| k.pub_key)
     }
 
     /// Fetch private key
     fn pri_key(&self, id: &Id) -> Option<PrivateKey> {
-        self.keys(id).map(|k| k.pri_key).flatten()
+        self.keys(id).and_then(|k| k.pri_key)
     }
 
     /// Fetch secret key
     fn sec_key(&self, id: &Id) -> Option<SecretKey> {
-        self.keys(id).map(|k| k.sec_key).flatten()
+        self.keys(id).and_then(|k| k.sec_key)
     }
 
     /// Update keys for the specified ID (optional)

@@ -21,6 +21,7 @@ pub struct Unknown {
 /// Service history information
 #[derive(PartialEq, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Default)]
 pub struct History {
     /// Last page index
     pub last_page: u32,
@@ -30,12 +31,3 @@ pub struct History {
     pub last_sig: Option<Signature>,
 }
 
-impl Default for History {
-    fn default() -> Self {
-        Self {
-            last_page: 0,
-            last_data: 0,
-            last_sig: None,
-        }
-    }
-}

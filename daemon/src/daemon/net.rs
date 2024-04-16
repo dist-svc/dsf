@@ -120,7 +120,7 @@ impl NetIf for Dsf<ByteSink> {
                 // Resolve target IDs to peers
 
                 // Lookup keys in cache
-                let peer_keys = id.as_ref().map(|id| keys.get(id).map(|k| k.clone())).flatten();
+                let peer_keys = id.as_ref().and_then(|id| keys.get(id).cloned());
 
                 // Lookup peer info so we can use this for symmetric mode determination
                 // TODO(med): we should cache this state / pass these down to improve efficiency
@@ -151,9 +151,9 @@ impl NetIf for Dsf<ByteSink> {
                     // daemon private key for signing
                     pri_key: Some(signing_key.clone()),
                     // target public key for asymmetric encryption
-                    pub_key: pub_key,
+                    pub_key,
                     // Symmetric key must be in key cache
-                    sec_key: peer_keys.map(|k| k.sec_key.clone()).flatten(),
+                    sec_key: peer_keys.and_then(|k| k.sec_key.clone()),
                     ..Default::default()
                 };
 
@@ -251,8 +251,8 @@ where
 
             trace!("RX: {:?}", container);
 
-            let id: Id = container.id().into();
-            let addr = Address::from(msg.address.clone());
+            let id: Id = container.id();
+            let addr = Address::from(msg.address);
 
             // Add newly discovered peer keys to cache, generating symmetric keys as we do
             if let Some(pub_key) = container.public_options_iter().pub_key() {
@@ -321,7 +321,7 @@ where
                 &our_id,
                 core.clone(),
                 &from,
-                &addr.into(),
+                &addr,
                 &message.common().clone(),
             )
             .await
@@ -429,7 +429,7 @@ async fn handle_net_req2<T: Engine + 'static>(
     let own_id = engine.id();
 
     let req_id = req.id;
-    let flags = req.flags.clone();
+    let flags = req.flags;
 
     let from = req.from.clone();
 
@@ -454,7 +454,7 @@ async fn handle_net_req2<T: Engine + 'static>(
             core.clone(),
             peer,
             req.data.clone(),
-            req.flags.clone(),
+            req.flags,
         )
         .await?;
 
@@ -482,6 +482,12 @@ async fn handle_net_req2<T: Engine + 'static>(
 #[derive(Clone)]
 pub struct KeyCache {
     keys: Arc<Mutex<HashMap<Id, Keys>>>,
+}
+
+impl Default for KeyCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KeyCache {
@@ -516,14 +522,14 @@ impl KeyCache {
 /// KeySource implementation for KeyCache
 impl KeySource for KeyCache {
     fn keys(&self, id: &Id) -> Option<Keys> {
-        self.keys.lock().unwrap().get(id).map(|k| k.clone())
+        self.keys.lock().unwrap().get(id).cloned()
     }
 
     fn update<F: FnMut(&mut Keys)>(&self, id: &Id, mut f: F) -> bool {
         let mut key_cache = self.keys.lock().unwrap();
-        let mut e = key_cache.entry(id.clone()).or_default();
+        let e = key_cache.entry(id.clone()).or_default();
 
-        f(&mut e);
+        f(e);
 
         true
     }

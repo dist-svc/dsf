@@ -69,7 +69,7 @@ impl Core {
         f: F,
     ) -> Result<(DataInfo, Container), Error> {
         // Fetch service info for object decoding
-        let service = match self.service_get(&service_id).await {
+        let service = match self.service_get(service_id).await {
             Some(s) => s,
             None => return Err(Error::NotFound),
         };

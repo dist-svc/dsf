@@ -157,7 +157,7 @@ pub trait Engine: Sync + Send {
     /// Lookup a peer using the DHT
     async fn dht_locate(&self, id: Id) -> Result<(PeerInfo, SearchInfo), DsfError> {
         match self.exec(OpKind::DhtLocate(id)).await {
-            CoreRes::Peers(p, i) if p.len() > 0 => Ok((p[0].clone(), i.unwrap())),
+            CoreRes::Peers(p, i) if !p.is_empty() => Ok((p[0].clone(), i.unwrap())),
             CoreRes::Peers(_, _) => Err(DsfError::NotFound),
             CoreRes::Error(e) => Err(e),
             _ => Err(DsfError::Unknown),

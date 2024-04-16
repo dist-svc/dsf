@@ -458,7 +458,7 @@ mod test {
 
     fn init_service() -> Service {
         ServiceBuilder::default()
-            .kind(PageKind::Generic.into())
+            .kind(PageKind::Generic)
             .public_options(vec![Options::name("Test Service")])
             .encrypt()
             .build()

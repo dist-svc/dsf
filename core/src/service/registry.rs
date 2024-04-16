@@ -121,8 +121,8 @@ impl<B: PageBody> Registry for Service<B> {
         }
 
         let (kind, body): (_, &[u8]) = match &link {
-            TertiaryLink::Service(id) => (PageKind::ServiceLink, &id),
-            TertiaryLink::Block(sig) => (PageKind::BlockLink, &sig),
+            TertiaryLink::Service(id) => (PageKind::ServiceLink, id),
+            TertiaryLink::Block(sig) => (PageKind::BlockLink, sig),
         };
 
         // Setup header

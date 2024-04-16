@@ -279,7 +279,7 @@ impl Container {
         while i < buff.len() {
             // TODO: validate signatures against existing services!
             let c =
-                match Container::parse((&buff[i..]).to_vec(), &key_source.cached(last_key.clone()))
+                match Container::parse(buff[i..].to_vec(), &key_source.cached(last_key.clone()))
                 {
                     Ok(v) => v,
                     Err(e) => {
@@ -441,7 +441,7 @@ mod test {
 
     #[bench]
     fn bench_decode_primary_encrypted(b: &mut Bencher) {
-        let (id, mut keys) = setup();
+        let (id, keys) = setup();
 
         let header = Header {
             kind: PageKind::Generic.into(),
@@ -578,7 +578,7 @@ mod test {
         assert_eq!(encoded, decoded);
 
         // Check we're encrypted
-        assert_eq!(decoded.encrypted(), true);
+        assert!(decoded.encrypted());
         assert_ne!(decoded.body_raw(), &data);
 
         // Perform decryption
@@ -621,7 +621,7 @@ mod test {
         assert_eq!(encoded.header(), decoded.header());
 
         // Check we're decrypted
-        assert_eq!(decoded.encrypted(), false);
+        assert!(!decoded.encrypted());
         assert_eq!(decoded.body_raw(), &data);
     }
 

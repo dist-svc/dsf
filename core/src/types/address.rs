@@ -103,9 +103,9 @@ impl From<SocketAddrV4> for AddressV4 {
 }
 
 #[cfg(feature = "std")]
-impl Into<SocketAddrV4> for AddressV4 {
-    fn into(self) -> SocketAddrV4 {
-        SocketAddrV4::new(Ipv4Addr::from(self.ip), self.port)
+impl From<AddressV4> for SocketAddrV4 {
+    fn from(val: AddressV4) -> Self {
+        SocketAddrV4::new(Ipv4Addr::from(val.ip), val.port)
     }
 }
 
@@ -147,8 +147,8 @@ impl From<SocketAddrV6> for AddressV6 {
 }
 
 #[cfg(feature = "std")]
-impl Into<SocketAddrV6> for AddressV6 {
-    fn into(self) -> SocketAddrV6 {
-        SocketAddrV6::new(Ipv6Addr::from(self.ip), self.port, 0, 0)
+impl From<AddressV6> for SocketAddrV6 {
+    fn from(val: AddressV6) -> Self {
+        SocketAddrV6::new(Ipv6Addr::from(val.ip), val.port, 0, 0)
     }
 }

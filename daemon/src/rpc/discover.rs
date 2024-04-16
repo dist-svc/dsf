@@ -34,7 +34,7 @@ impl<T: Engine> Discover for T {
         // Build discovery request
         let net_req_body = NetRequestBody::Discover(
             options.application_id,
-            options.body.clone().unwrap_or(vec![]),
+            options.body.clone().unwrap_or_default(),
             options.filters.clone(),
         );
 

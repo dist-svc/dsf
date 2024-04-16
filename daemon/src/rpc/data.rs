@@ -107,7 +107,7 @@ pub(super) async fn publish_data<E: Engine, B: DataBody>(
             Box::new(
                 move |svc, _state| match svc.publish_data_buff(data_options.clone()) {
                     Ok((_n, c)) => CoreRes::Pages(vec![c.to_owned()], None),
-                    Err(e) => CoreRes::Error(e.into()),
+                    Err(e) => CoreRes::Error(e),
                 },
             ),
         )

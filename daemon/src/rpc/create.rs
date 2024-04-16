@@ -66,7 +66,7 @@ impl<T: Engine> CreateService for T {
             options
                 .addresses
                 .iter()
-                .map(|v| Options::address(v.clone()))
+                .map(|v| Options::address(*v))
                 .collect(),
         );
 

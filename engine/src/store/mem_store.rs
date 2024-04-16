@@ -20,6 +20,12 @@ pub struct MemoryStore<Addr: Clone + Debug = std::net::SocketAddr> {
     pub(crate) services: HashMap<Id, Service>,
 }
 
+impl<Addr: Clone + Debug> Default for MemoryStore<Addr> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<Addr: Clone + Debug> MemoryStore<Addr> {
     pub fn new() -> Self {
         Self {
@@ -53,24 +59,21 @@ impl<Addr: Clone + Debug + 'static> Store for MemoryStore<Addr> {
 
     /// Fetch previous object information
     fn get_last(&self) -> Result<Option<ObjectInfo>, Self::Error> {
-        let i = match self.last_sig.as_ref() {
-            Some(s) => Some(ObjectInfo {
+        let i = self.last_sig.as_ref().map(|s| ObjectInfo {
                 page_index: self.last_page,
                 block_index: self.last_block,
                 sig: s.clone(),
-            }),
-            _ => None,
-        };
+            });
 
         Ok(i)
     }
 
     fn get_peer(&self, id: &Id) -> Result<Option<Peer<Self::Address>>, Self::Error> {
         let p = self.peers.get(id);
-        Ok(p.map(|p| p.clone()))
+        Ok(p.cloned())
     }
 
-    fn peers<'a>(&'a self) -> Self::Iter<'a> {
+    fn peers(&self) -> Self::Iter<'_> {
         self.peers.iter()
     }
 
@@ -110,7 +113,7 @@ impl<Addr: Clone + Debug + 'static> Store for MemoryStore<Addr> {
             (ObjectFilter::Latest, Some(s)) => self.pages.get(s),
             (ObjectFilter::Sig(ref s), _) => self.pages.get(s),
             (ObjectFilter::Index(n), _) => {
-                self.page_idx.get(&n).map(|s| self.pages.get(s)).flatten()
+                self.page_idx.get(&n).and_then(|s| self.pages.get(s))
             }
             _ => return Ok(None),
         };
@@ -130,7 +133,7 @@ impl<Addr: Clone + Debug + 'static> Store for MemoryStore<Addr> {
     // Fetch service information
     fn get_service(&self, id: &Id) -> Result<Option<Service>, Self::Error> {
         let s = self.services.get(id);
-        Ok(s.map(|s| s.clone()))
+        Ok(s.cloned())
     }
 
     // Update a specified service

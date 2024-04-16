@@ -123,9 +123,9 @@ pub trait Hash {
         // (like, curves and point multiplication..?)
         let seed: CryptoHash = match (&keys.sec_key, &keys.pub_key) {
             // Private service, use secret key
-            (Some(sk), _) => Self::kdf(&sk)?,
+            (Some(sk), _) => Self::kdf(sk)?,
             // Public service, use public key
-            (_, Some(pk)) => Self::kdf(&pk)?,
+            (_, Some(pk)) => Self::kdf(pk)?,
             _ => todo!(),
         };
 

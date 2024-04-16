@@ -74,7 +74,7 @@ impl<K, const N: usize> Default for Array<K, N> {
 
 impl<K, const N: usize> Clone for Array<K, N> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), PhantomData)
+        Self(self.0, PhantomData)
     }
 }
 
@@ -163,9 +163,9 @@ impl<K, const N: usize> From<&[u8; N]> for Array<K, N> {
     }
 }
 
-impl<K, const N: usize> Into<[u8; N]> for Array<K, N> {
-    fn into(self) -> [u8; N] {
-        self.0
+impl<K, const N: usize> From<Array<K, N>> for [u8; N] {
+    fn from(val: Array<K, N>) -> Self {
+        val.0
     }
 }
 

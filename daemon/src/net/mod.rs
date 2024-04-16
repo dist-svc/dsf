@@ -206,7 +206,7 @@ pub(crate) async fn handle_net_raw<T: Engine>(
             register(
                 engine,
                 core,
-                &id,
+                id,
                 header.flags(),
                 vec![container.to_owned()],
             )
@@ -222,7 +222,7 @@ pub(crate) async fn handle_net_raw<T: Engine>(
             push_data(
                 engine,
                 core,
-                &id,
+                id,
                 header.flags(),
                 vec![container.to_owned()],
             )
@@ -277,7 +277,7 @@ pub(crate) async fn handle_base(
             // Set address
             address: match common.remote_address {
                 Some(a) => PeerAddress::Explicit(a),
-                None => PeerAddress::Implicit(address.clone()),
+                None => PeerAddress::Implicit(*address),
             },
             flags: peer_flags,
             seen: Some(SystemTime::now()),

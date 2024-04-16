@@ -45,7 +45,7 @@ impl<B: Backend> Store<B> {
 
     // Load all items
     pub fn load_peers(&self) -> Result<Vec<PeerInfo>, StoreError> {
-        self.with(|conn| load_peers(conn))
+        self.with(load_peers)
     }
 
     pub fn delete_peer(&self, id: &Id) -> Result<(), StoreError> {
@@ -78,7 +78,7 @@ fn save_peer<C: Connection<Backend = Sqlite> + LoadConnection>(
         peer_index.eq(info.index as i32),
         s,
         k,
-        address.eq(SocketAddr::from(info.address().clone()).to_string()),
+        address.eq(SocketAddr::from(*info.address()).to_string()),
         address_mode.eq(am),
         seen,
         sent.eq(info.sent as i32),
@@ -91,7 +91,7 @@ fn save_peer<C: Connection<Backend = Sqlite> + LoadConnection>(
         .select(peer_id)
         .load::<String>(conn)?;
 
-    if r.len() != 0 {
+    if !r.is_empty() {
         diesel::update(peers)
             .filter(peer_id.eq(info.id.to_string()))
             .set(values)
@@ -139,7 +139,7 @@ fn find_peer<C: Connection<Backend = Sqlite> + LoadConnection>(
         return Ok(None);
     }
 
-    Ok(p.get(0).map(|v| v.clone()))
+    Ok(p.first().cloned())
 }
 
 // Load all items
@@ -224,7 +224,7 @@ fn parse_peer(v: &PeerFields) -> Result<PeerInfo, StoreError> {
         // TODO(low): persist flags if these become relevant?
         flags: PeerFlags::empty(),
 
-        seen: r_seen.as_ref().map(|v| from_dt(v)),
+        seen: r_seen.as_ref().map(from_dt),
 
         sent: *r_sent as u64,
         received: *r_recv as u64,

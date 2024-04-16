@@ -43,7 +43,7 @@ where
             peer_id: self.id(),
             req_id: rand::random(),
             tx: self.op_tx.clone(),
-            waker: self.waker.as_ref().map(|w| w.clone()),
+            waker: self.waker.clone(),
         }
     }
 
@@ -179,12 +179,12 @@ where
                     );
                     req.common.public_key = Some(self.service().public_key());
 
-                    let targets = [(addr.clone(), id.clone())].to_vec();
+                    let targets = [(addr, id.clone())].to_vec();
 
                     tokio::task::spawn(async move {
                         // Issue network hello request
                         let mut r = match net.net_request(targets, req, Default::default()).await {
-                            Ok(v) if v.len() > 0 => v,
+                            Ok(v) if !v.is_empty() => v,
                             _ => {
                                 error!("No response from peer: {:?}", addr);
                                 return;
@@ -453,7 +453,7 @@ where
                         NetRequest::new(self.id(), rand::random(), body.clone(), Flags::default());
                     let targets: Vec<_> = peers
                         .iter()
-                        .map(|p| (p.address().clone(), Some(p.id.clone())))
+                        .map(|p| (*p.address(), Some(p.id.clone())))
                         .collect();
 
                     tokio::task::spawn(async move {
@@ -501,7 +501,7 @@ where
                 }
             }
 
-            ctx.waker().clone().wake();
+            ctx.waker().wake_by_ref();
         }
 
         Ok(())
@@ -541,7 +541,7 @@ impl Engine for ExecHandle {
 
         // Trigger waker if available (not sure why this isn't happening automatically..?)
         if let Some(waker) = self.waker.as_ref() {
-            waker.clone().wake();
+            waker.wake_by_ref();
         }
 
         // Await response message

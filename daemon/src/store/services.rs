@@ -38,7 +38,7 @@ impl<B: Backend> Store<B> {
         self.with(|conn| find_service(conn, id))
     }
     pub fn load_services(&self) -> Result<Vec<ServiceInfo>, StoreError> {
-        self.with(|conn| load_services(conn))
+        self.with(load_services)
     }
     pub fn delete_service(&self, id: &Id) -> Result<(), StoreError> {
         self.with(|conn| delete_service(conn, id))
@@ -128,7 +128,7 @@ fn find_service<C: Connection<Backend = Sqlite> + LoadConnection>(
         v.push(parse_service(r)?);
     }
 
-    Ok(v.get(0).map(|v| v.clone()))
+    Ok(v.first().cloned())
 }
 
 // Load all items
@@ -202,16 +202,16 @@ fn parse_service(v: &ServiceFields) -> Result<ServiceInfo, StoreError> {
         index: *r_index as usize,
         state: ServiceState::from_str(r_state)?,
         kind: ServiceKind::from_str(r_kind)?,
-        primary_page: r_pp.as_ref().map(|v| Signature::from_str(&v).unwrap()),
-        replica_page: r_rp.as_ref().map(|v| Signature::from_str(&v).unwrap()),
+        primary_page: r_pp.as_ref().map(|v| Signature::from_str(v).unwrap()),
+        replica_page: r_rp.as_ref().map(|v| Signature::from_str(v).unwrap()),
 
         public_key: PublicKey::from_str(r_pub_key)?,
         private_key: r_pri_key
             .as_ref()
-            .map(|v| PrivateKey::from_str(&v).unwrap()),
-        secret_key: r_sec_key.as_ref().map(|v| SecretKey::from_str(&v).unwrap()),
+            .map(|v| PrivateKey::from_str(v).unwrap()),
+        secret_key: r_sec_key.as_ref().map(|v| SecretKey::from_str(v).unwrap()),
 
-        last_updated: r_upd.as_ref().map(|v| from_dt(v)),
+        last_updated: r_upd.as_ref().map(from_dt),
 
         subscribers: *r_subs as usize,
         replicas: *r_reps as usize,

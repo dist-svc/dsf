@@ -117,7 +117,7 @@ pub(super) async fn fetch_replica<E: Engine>(
 
                 let (_, p) = match svc.publish_data_buff(primary_opts) {
                     Ok(v) => v,
-                    Err(e) => return CoreRes::Error(e.into()),
+                    Err(e) => return CoreRes::Error(e),
                 };
 
                 // Publish secondary page object, matching replica data
@@ -130,7 +130,7 @@ pub(super) async fn fetch_replica<E: Engine>(
 
                 let (_, c) = match svc.publish_secondary_buff(&target_id, opts) {
                     Ok(v) => v,
-                    Err(e) => return CoreRes::Error(e.into()),
+                    Err(e) => return CoreRes::Error(e),
                 };
 
                 // Return data and secondary page
@@ -144,7 +144,7 @@ pub(super) async fn fetch_replica<E: Engine>(
         Ok(CoreRes::Pages(v, _)) => v,
         Err(e) => {
             error!("Failed to generate replica pages: {:?}", e);
-            return Err(e.into());
+            return Err(e);
         }
         _ => unreachable!(),
     };

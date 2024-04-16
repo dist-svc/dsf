@@ -50,7 +50,7 @@ impl<T: Engine> RegisterService for T {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to fetch or generate primary page: {:?}", e);
-                return Err(e.into());
+                return Err(e);
             }
         };
         let page_version = primary_page.header().index();
@@ -133,7 +133,7 @@ pub(super) async fn fetch_primary<E: Engine>(
             Box::new(
                 |svc, _state| match svc.publish_primary_buff(Default::default()) {
                     Ok((_n, c)) => CoreRes::Pages(vec![c.to_owned()], None),
-                    Err(e) => CoreRes::Error(e.into()),
+                    Err(e) => CoreRes::Error(e),
                 },
             ),
         )
@@ -144,7 +144,7 @@ pub(super) async fn fetch_primary<E: Engine>(
         Ok(CoreRes::Pages(p, _i)) if p.len() == 1 => p[0].clone(),
         Err(e) => {
             error!("Failed to sign primary page: {:?}", e);
-            return Err(e.into());
+            return Err(e);
         }
         _ => {
             error!("Unhandled update response: {:?}", r);

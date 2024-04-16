@@ -50,6 +50,12 @@ pub struct MockConnector {
     transactions: Arc<Mutex<VecDeque<MockTransaction>>>,
 }
 
+impl Default for MockConnector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockConnector {
     pub fn new() -> Self {
         Self {
@@ -91,10 +97,8 @@ impl Connector for MockConnector {
         _timeout: Duration,
     ) -> Result<NetResponse, Error> {
         let mut transactions = self.transactions.lock().unwrap();
-        let transaction = transactions.pop_front().expect(&format!(
-            "request error, no more transactions available (request: {:?})",
-            req
-        ));
+        let transaction = transactions.pop_front().unwrap_or_else(|| panic!("request error, no more transactions available (request: {:?})",
+            req));
 
         // Check request object exists in transaction
         transaction.req.as_ref().expect("expected request");
@@ -117,10 +121,8 @@ impl Connector for MockConnector {
         resp: NetResponse,
     ) -> Result<(), Error> {
         let mut transactions = self.transactions.lock().unwrap();
-        let transaction = transactions.pop_front().expect(&format!(
-            "response error, no more transactions available (response: {:?})",
-            resp
-        ));
+        let transaction = transactions.pop_front().unwrap_or_else(|| panic!("response error, no more transactions available (response: {:?})",
+            resp));
 
         // Check response object exists in transaction
         transaction.resp.as_ref().expect("expected response");

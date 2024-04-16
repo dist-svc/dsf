@@ -158,7 +158,7 @@ where
 
     pub(crate) fn wake(&self) {
         if let Some(w) = &self.waker {
-            w.clone().wake();
+            w.wake_by_ref();
         }
     }
 
@@ -211,7 +211,7 @@ where
 
             let targets: Vec<_> = peers
                 .iter()
-                .map(|p| (p.info().address().clone(), Some(p.info().id.clone())))
+                .map(|p| (*p.info().address(), Some(p.info().id.clone())))
                 .collect();
 
             debug!(
@@ -249,7 +249,7 @@ where
             });
 
             // Force re-wake
-            ctx.waker().clone().wake();
+            ctx.waker().wake_by_ref();
         }
 
         // Poll on internal network operations
@@ -259,7 +259,7 @@ where
             }
 
             // Force re-wake
-            ctx.waker().clone().wake();
+            ctx.waker().wake_by_ref();
         }
 
         // Poll on internal base operations
@@ -271,7 +271,7 @@ where
         // TODO: propagate this, in a better manner
 
         // Always wake (terrible for CPU use but helps response times)
-        ctx.waker().clone().wake();
+        ctx.waker().wake_by_ref();
 
         // Store waker
         self.waker = Some(ctx.waker().clone());

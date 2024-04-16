@@ -73,16 +73,16 @@ impl Unix {
     ) -> Result<Self, UnixError> {
         debug!("Creating UnixActor with path: {}", path);
 
-        let _ = std::fs::remove_file(&path);
-        let listener = UnixListener::bind(&path)?;
+        let _ = std::fs::remove_file(path);
+        let listener = UnixListener::bind(path)?;
         let mut index = 0;
 
         // Setup socket permissions
-        if let Ok(mut perms) = std::fs::metadata(&path).map(|p| p.permissions()) {
+        if let Ok(mut perms) = std::fs::metadata(path).map(|p| p.permissions()) {
             // +RWX for running user and group
             perms.set_mode(0o770);
             // Write back permission
-            if let Err(e) = std::fs::set_permissions(&path, perms) {
+            if let Err(e) = std::fs::set_permissions(path, perms) {
                 warn!("Failed to set unix socket permissions: {:?}", e);
             }
         }

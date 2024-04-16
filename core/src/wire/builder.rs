@@ -145,7 +145,7 @@ impl<'a, B: Encode> WireBuilder<'a, B> {
 
         // Write header
         let mut h = WireHeader::new(&mut buff[..HEADER_LEN]);
-        h.encode(&self.header);
+        h.encode(self.header);
         h.set_data_len(body_len);
         h.set_private_options_len(private_options_len);
         h.set_public_options_len(public_options_len);
@@ -160,7 +160,7 @@ impl<'a, B: Encode> WireBuilder<'a, B> {
                 trace!("Sign {} byte object, new index: {}", n, n + SIGNATURE_LEN);
 
                 // Write signature to object
-                (&mut buff[n..][..SIGNATURE_LEN]).copy_from_slice(&sig);
+                buff[n..][..SIGNATURE_LEN].copy_from_slice(&sig);
                 n += SIGNATURE_LEN;
             }
             // Perform secret key AEAD over header + body
@@ -358,7 +358,7 @@ impl<T: MutableData> Builder<SetPrivateOptions, T> {
     /// This must be done in one pass as the entire body + private options block is encrypted
     pub fn private_options_raw(mut self, options: &[u8]) -> Result<Builder<Encrypt, T>, Error> {
         let b = self.buf.as_mut();
-        let o = options.as_ref();
+        let o = options;
 
         b[self.n..][..o.len()].copy_from_slice(o);
         self.n += o.len();
@@ -444,7 +444,7 @@ impl<T: MutableData> Builder<Encrypt, T> {
         Crypto::sk_reencrypt(secret_key, tag.as_ref(), None, &mut b[o..o + l]).unwrap();
 
         // Attach tag to object
-        b[self.n..][..SECRET_KEY_TAG_LEN].copy_from_slice(&tag.as_ref());
+        b[self.n..][..SECRET_KEY_TAG_LEN].copy_from_slice(tag.as_ref());
         self.n += SECRET_KEY_TAG_LEN;
 
         trace!(
@@ -559,7 +559,7 @@ impl<T: MutableData> Builder<SetPublicOptions, T> {
         );
 
         // Write to object
-        (&mut b[self.n..self.n + SIGNATURE_LEN]).copy_from_slice(&sig);
+        b[self.n..self.n + SIGNATURE_LEN].copy_from_slice(&sig);
         self.n += SIGNATURE_LEN;
 
         trace!("Created object: {:?}", PrettyHex::hex_dump(&self));
@@ -602,7 +602,7 @@ impl<T: MutableData> Builder<SetPublicOptions, T> {
     pub fn sign_raw(mut self, sig: &Signature) -> Result<Container<T>, Error> {
         let b = self.buf.as_mut();
 
-        (&mut b[self.n..self.n + SIGNATURE_LEN]).copy_from_slice(&sig);
+        b[self.n..self.n + SIGNATURE_LEN].copy_from_slice(sig);
         self.n += SIGNATURE_LEN;
 
         // Return base object

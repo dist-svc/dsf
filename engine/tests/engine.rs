@@ -20,7 +20,7 @@ impl Application for Generic {
     type Data = Vec<u8>;
 
     fn matches(info: &Self::Info, req: &[u8]) -> bool {
-        req.len() == 0 || info == req
+        req.is_empty() || info == req
     }
 }
 
@@ -31,7 +31,7 @@ fn new_engine(addr: &str, info: Vec<u8>) -> anyhow::Result<E> {
     let p = ServiceBuilder::<Vec<u8>>::generic().build()?;
 
     // Setup memory store with pre-filled peer keys
-    let mut s = MemoryStore::<SocketAddr>::new();
+    let s = MemoryStore::<SocketAddr>::new();
     s.update(&p.id(), |k| *k = p.keys());
 
     // Setup engine with newly created service

@@ -95,8 +95,8 @@ impl PubKey for RustCrypto {
         remote: &PublicKey,
     ) -> Result<(SecretKey, SecretKey), Self::Error> {
         // Parse initial keys
-        let our_pri_key = ed25519_dalek::Keypair::from_bytes(&pri_key).unwrap();
-        let their_pub_key = ed25519_dalek::PublicKey::from_bytes(&remote).unwrap();
+        let our_pri_key = ed25519_dalek::Keypair::from_bytes(pri_key).unwrap();
+        let their_pub_key = ed25519_dalek::PublicKey::from_bytes(remote).unwrap();
 
         // Convert into kx form
         let our_pri_key = pri_ed26619_to_x25519(&our_pri_key.secret).unwrap();
@@ -145,7 +145,7 @@ impl SecKey for RustCrypto {
             .encrypt_in_place_detached(&nonce, assoc.unwrap_or(&[]), message)
             .map_err(|e| {
                 error!("Failed to encrypt in place: {:?}", e);
-                ()
+                
             })?;
 
         let d = tag.deref();
@@ -174,7 +174,7 @@ impl SecKey for RustCrypto {
         let nonce = XNonce::from_slice(&meta[16..][..24]);
 
         cipher
-            .decrypt_in_place_detached(&nonce, assoc.unwrap_or(&[]), message, &tag)
+            .decrypt_in_place_detached(nonce, assoc.unwrap_or(&[]), message, tag)
             .map_err(|_| ())?;
 
         Ok(())
@@ -194,10 +194,10 @@ impl SecKey for RustCrypto {
         let nonce = XNonce::from_slice(&meta[16..]);
 
         let tag = cipher
-            .encrypt_in_place_detached(&nonce, assoc.unwrap_or(&[]), message)
+            .encrypt_in_place_detached(nonce, assoc.unwrap_or(&[]), message)
             .map_err(|e| {
                 error!("Failed to encrypt in place: {:?}", e);
-                ()
+                
             })?;
 
         let d = tag.deref();
@@ -206,7 +206,7 @@ impl SecKey for RustCrypto {
         // Setup nonce and tag for decode
         let mut meta = SecretMeta::default();
         meta[..d.len()].copy_from_slice(d);
-        meta[d.len()..][..nonce.len()].copy_from_slice(&nonce);
+        meta[d.len()..][..nonce.len()].copy_from_slice(nonce);
 
         Ok(meta)
     }
@@ -223,7 +223,7 @@ impl Hash for RustCrypto {
         let salt = DSF_NS_KDF_IDX.to_le_bytes();
 
         let inst =
-            blake2::Blake2bMac::<U32>::new_with_salt_and_personal(&key, &salt, &DSF_NS_KDF_CTX)
+            blake2::Blake2bMac::<U32>::new_with_salt_and_personal(key, &salt, &DSF_NS_KDF_CTX)
                 .map_err(|_| ())?;
 
         let derived = inst.finalize_fixed();
@@ -295,12 +295,12 @@ mod test {
 
         let valid =
             RustCrypto::pk_verify(&public, &signature, &data).expect("Error validating signature");
-        assert_eq!(true, valid);
+        assert!(valid);
 
         data[3] = 100;
         let valid =
             RustCrypto::pk_verify(&public, &signature, &data).expect("Error validating signature");
-        assert_eq!(false, valid);
+        assert!(!valid);
     }
 
     #[test]
@@ -339,7 +339,7 @@ mod test {
         b.iter(|| {
             let valid = RustCrypto::pk_verify(&public, &signature, &data)
                 .expect("Error validating signature");
-            assert_eq!(true, valid);
+            assert!(valid);
         })
     }
 
@@ -362,7 +362,7 @@ mod test {
         let data = [0xabu8; 256];
 
         b.iter(|| {
-            let mut d = data.clone();
+            let mut d = data;
             let _sig = RustCrypto::sk_encrypt(&sec_key, None, &mut d).expect("Error signing data");
         });
     }
@@ -374,8 +374,8 @@ mod test {
         let sig = RustCrypto::sk_encrypt(&sec_key, None, &mut data).expect("Error signing data");
 
         b.iter(|| {
-            let mut d = data.clone();
-            let _v = RustCrypto::sk_decrypt(&sec_key, &sig, None, &mut d)
+            let mut d = data;
+            RustCrypto::sk_decrypt(&sec_key, &sig, None, &mut d)
                 .expect("Error validating data");
         });
     }

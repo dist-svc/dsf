@@ -81,12 +81,12 @@ impl UpnpPlugin {
         // Request depends on port type
         let port = match ext_port {
             Some(port) => gw
-                .add_port(PortMappingProtocol::UDP, port, local_addr, 3600, &name)
+                .add_port(PortMappingProtocol::UDP, port, local_addr, 3600, name)
                 .await
                 .map(|_| port)
                 .map_err(|_e| UpnpError::RegisterFailed)?,
             None => gw
-                .add_any_port(PortMappingProtocol::UDP, local_addr, 3600, &name)
+                .add_any_port(PortMappingProtocol::UDP, local_addr, 3600, name)
                 .await
                 .map_err(|_e| UpnpError::RegisterFailed)?,
         };

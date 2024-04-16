@@ -26,6 +26,12 @@ pub struct AddressPlugin {
     known: Vec<IpAddr>,
 }
 
+impl Default for AddressPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AddressPlugin {
     pub fn new() -> Self {
         Self { known: vec![] }
@@ -40,8 +46,8 @@ impl AddressPlugin {
         let mut added = vec![];
         for i in &res {
             if !self.known.contains(i) {
-                added.push(i.clone());
-                self.known.push(i.clone());
+                added.push(*i);
+                self.known.push(*i);
             }
         }
 
@@ -51,7 +57,7 @@ impl AddressPlugin {
             let a = &self.known[i];
 
             if !res.contains(a) {
-                removed.push(a.clone());
+                removed.push(*a);
                 self.known.remove(i);
             }
         }
@@ -67,7 +73,7 @@ impl AddressPlugin {
 
         let a = a
             .iter()
-            .map(|v| v.ip().clone())
+            .map(|v| v.ip())
             .filter(|v| !v.is_loopback())
             .collect();
 

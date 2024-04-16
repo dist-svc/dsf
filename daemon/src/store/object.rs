@@ -80,7 +80,7 @@ pub(super) fn save_objects<C: Connection<Backend = Sqlite> + LoadConnection, T: 
 ) -> Result<(), StoreError> {
     conn.transaction::<_, StoreError, _>(|conn| {
         for p in pages {
-            save_object(conn, &p)?
+            save_object(conn, p)?
         }
         Ok(())
     })?;
@@ -161,7 +161,7 @@ pub(super) fn load_object<'a, C: Connection<Backend = Sqlite> + LoadConnection, 
             .load::<PageFields>(conn)?,
     };
 
-    if results.len() == 0 {
+    if results.is_empty() {
         return Ok(None);
     }
 

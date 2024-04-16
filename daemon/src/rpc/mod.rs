@@ -70,7 +70,7 @@ impl<T: Engine> Rpc for T {
                     version: crate::VERSION.to_string(),
                 };
 
-                return Response::new(req_id, ResponseKind::Status(info));
+                Response::new(req_id, ResponseKind::Status(info))
             }
             RequestKind::Peer(c) => {
                 debug!("Starting async peer op");
@@ -95,7 +95,7 @@ impl<T: Engine> Rpc for T {
                     Err(e) => ResponseKind::Error(e),
                 };
 
-                return Response::new(req_id, r);
+                Response::new(req_id, r)
             }
             RequestKind::Service(c) => {
                 debug!("Starting async service rpc: {:?}", c);
@@ -114,11 +114,11 @@ impl<T: Engine> Rpc for T {
                     ServiceCommands::Register(opts) => self
                         .service_register(opts)
                         .await
-                        .map(|v| ResponseKind::Registered(v)),
+                        .map(ResponseKind::Registered),
                     ServiceCommands::Replicate(opts) => self
                         .service_replicate(opts)
                         .await
-                        .map(|v| ResponseKind::Registered(v)),
+                        .map(ResponseKind::Registered),
                     ServiceCommands::Subscribe(opts) => self.subscribe(opts).await.map(ResponseKind::Subscribed),
                     ServiceCommands::Unsubscribe(opts) => self.unsubscribe(opts).await.map(|_| ResponseKind::None),
                     ServiceCommands::Discover(opts) => self.discover(opts).await.map(ResponseKind::Services),
@@ -133,17 +133,17 @@ impl<T: Engine> Rpc for T {
                     Err(e) => ResponseKind::Error(e),
                 };
 
-                return Response::new(req_id, r);
+                Response::new(req_id, r)
             }
             RequestKind::Data(c) => {
                 debug!("Starting async data rpc: {:?}", c);
                 let r = match c {
-                    DataCommands::Publish(opts) => self.data_publish(opts).await.map(|v| ResponseKind::Published(v)),
+                    DataCommands::Publish(opts) => self.data_publish(opts).await.map(ResponseKind::Published),
                     DataCommands::Sync(opts) => self.sync(opts).await.map(ResponseKind::Sync),
                     DataCommands::List(opts) => self.object_list(opts.service, opts.page_bounds).await.map(ResponseKind::Objects),
                     DataCommands::Get(opts) => self.object_get(opts.service, opts.page_sig).await.map(|o| ResponseKind::Objects(vec![o])),
                     DataCommands::Query {} => todo!("Data Query not yet implemented"),
-                    DataCommands::Push(opts) => self.data_push(opts).await.map(|v| ResponseKind::Published(v)),
+                    DataCommands::Push(opts) => self.data_push(opts).await.map(ResponseKind::Published),
                     
                 };
 
@@ -153,7 +153,7 @@ impl<T: Engine> Rpc for T {
                     Err(e) => ResponseKind::Error(e),
                 };
 
-                return Response::new(req_id, r);
+                Response::new(req_id, r)
             }
             RequestKind::Ns(c) => {
                 debug!("Starting NS op: {:?}", c);
@@ -178,7 +178,7 @@ impl<T: Engine> Rpc for T {
                     }
                 };
 
-                return Response::new(req_id, r);
+                Response::new(req_id, r)
             }
             RequestKind::Debug(c) => {
                 debug!("Starting async debug task");
@@ -198,12 +198,12 @@ impl<T: Engine> Rpc for T {
                     _ => ResponseKind::Error(DsfError::Unimplemented),
                 };
 
-                return Response::new(req_id, r);
+                Response::new(req_id, r)
             }
             _ => {
                 error!("RPC operation {:?} not yet implemented", req.kind());
 
-                return Response::new(req_id, ResponseKind::Error(DsfError::Unimplemented));
+                Response::new(req_id, ResponseKind::Error(DsfError::Unimplemented))
             }
         }
     }
@@ -219,7 +219,7 @@ where
 
         // Force wake next tick
         if let Some(waker) = self.waker.as_ref() {
-            waker.clone().wake();
+            waker.wake_by_ref();
         }
 
         // Setup async rpc operation
@@ -234,6 +234,6 @@ where
             }
         });
 
-        return Ok(());
+        Ok(())
     }
 }

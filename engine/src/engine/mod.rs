@@ -382,8 +382,7 @@ where
         let known_peer = self
             .store
             .peers()
-            .find(|(_k, v)| v.addr.as_ref() == Some(addr))
-            .is_some();
+            .any(|(_k, v)| v.addr.as_ref() == Some(addr));
 
         if !known_peer {
             debug!("Unrecognised peer address, exchanging keys");
@@ -404,7 +403,7 @@ where
             .map_err(EngineError::Core)?;
 
         self.comms
-            .send(&addr, c.raw())
+            .send(addr, c.raw())
             .map_err(EngineError::Comms)?;
 
         Ok(())
@@ -699,7 +698,7 @@ where
                         defmt::Debug2Format(&from)
                     );
 
-                    let p = self
+                    self
                         .store
                         .update_peer(&resp.common.from, |p| {
                             p.subscribed = SubscribeState::Subscribed;
@@ -707,7 +706,7 @@ where
                         .map_err(EngineError::Store)?;
 
                     evt = EngineEvent::SubscribedTo(resp.common.from.clone());
-                    p
+                    
                 } else {
                     #[cfg(not(feature = "defmt"))]
                     info!("Subscribe failed for {} ({:?})", resp.common.from, from);
@@ -731,7 +730,7 @@ where
                         defmt::Debug2Format(&from)
                     );
 
-                    let p = self
+                    self
                         .store
                         .update_peer(&resp.common.from, |p| {
                             p.subscribed = SubscribeState::None;
@@ -739,7 +738,7 @@ where
                         .map_err(EngineError::Store)?;
 
                     evt = EngineEvent::UnsubscribedTo(resp.common.from.clone());
-                    p
+                    
                 } else {
                     #[cfg(not(feature = "defmt"))]
                     info!("Unsubscribe failed for {} ({:?})", resp.common.from, from);
@@ -798,7 +797,7 @@ where
                     .map_err(EngineError::Store)?;
 
                 // Attempt to decode page body
-                let _body = match A::Info::decode(page.body_raw()) {
+                match A::Info::decode(page.body_raw()) {
                     Ok(i) => debug!("Decode: {:?}", i),
                     Err(e) => error!("Failed to decode info: {:?}", e),
                 };
@@ -866,7 +865,7 @@ mod test {
         type Data = Vec<u8>;
 
         fn matches(info: &Self::Info, req: &[u8]) -> bool {
-            req.len() == 0 || info == req
+            req.is_empty() || info == req
         }
     }
 
@@ -882,7 +881,7 @@ mod test {
         let p = ServiceBuilder::generic().build().unwrap();
 
         // Setup memory store with pre-filled peer keys
-        let mut s = MemoryStore::<u8>::new();
+        let s = MemoryStore::<u8>::new();
         s.update(&p.id(), |k| *k = p.keys());
 
         // Setup service body

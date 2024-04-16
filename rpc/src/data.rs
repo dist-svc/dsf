@@ -79,7 +79,7 @@ impl DataInfo {
 
         let body = match &self.body {
             Cleartext(d) => {
-                let (b, _) = B::decode_owned(&d)?;
+                let (b, _) = B::decode_owned(d)?;
                 Cleartext(b)
             }
             Encrypted(e) => Encrypted(e.clone()),

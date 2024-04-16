@@ -72,7 +72,7 @@ pub trait Store: KeySource {
     ) -> Result<R, Self::Error>;
 
     // Iterate through known peers
-    fn peers<'a>(&'a self) -> Self::Iter<'a>;
+    fn peers(&self) -> Self::Iter<'_>;
 
     // Store an object, updating last object information
     fn store_page<T: ImmutableData>(&mut self, p: &Container<T>) -> Result<(), Self::Error>;
@@ -145,10 +145,6 @@ impl<Addr: Clone + Debug> Peer<Addr> {
 
         if let Subscribing(_) = self.subscribed {
             true
-        } else if self.subscribed == Subscribed {
-            true
-        } else {
-            false
-        }
+        } else { self.subscribed == Subscribed }
     }
 }

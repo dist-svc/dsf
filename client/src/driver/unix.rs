@@ -119,11 +119,11 @@ impl Driver for UnixDriver {
             // TODO: this seems like it should be a yield / retry point..?
             Ok(None) => {
                 error!("No response received");
-                Err(Error::None(()).into())
+                Err(Error::None(()))
             }
             Err(e) => {
                 error!("Response error: {:?}", e);
-                Err(Error::Timeout.into())
+                Err(Error::Timeout)
             }
         };
 

@@ -206,7 +206,7 @@ impl Core {
         // Service are cached so can be fetched from in-memory storage
         // TODO(low): improve searching for non-id queries?
         if let Some(id) = &ident.id {
-            return self.services.get(&id).map(|s| s.info.clone());
+            return self.services.get(id).map(|s| s.info.clone());
         }
 
         if let Some(short_id) = &ident.short_id {
@@ -234,9 +234,7 @@ impl Core {
 
         // TODO(low): apply bounds / filtering
         Ok(self
-            .services
-            .iter()
-            .map(|(_id, s)| s.info.clone())
+            .services.values().map(|s| s.info.clone())
             .collect())
     }
 

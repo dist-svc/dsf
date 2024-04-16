@@ -148,7 +148,7 @@ impl<T: Engine> NameService for T {
 
         // Generate search query
         let lookup = match (&opts.name, &opts.options, &opts.hash) {
-            (Some(n), _, _) => resolve(&ns, &Options::name(&n))?,
+            (Some(n), _, _) => resolve(&ns, &Options::name(n))?,
             (_, Some(o), _) => resolve(&ns, o)?,
             (_, _, Some(h)) => resolve(&ns, h)?,
             _ => {
@@ -164,7 +164,7 @@ impl<T: Engine> NameService for T {
             Ok(p) => p,
             Err(e) => {
                 error!("DHT lookup failed: {:?}", e);
-                return Err(e.into());
+                return Err(e);
             }
         };
 
@@ -183,7 +183,7 @@ impl<T: Engine> NameService for T {
             // TODO: check we have the keys for encrypted NS' before starting this
             if p.encrypted() {
                 if let Some(sk) = &ns.secret_key {
-                    if let Err(e) = p.decrypt(&sk) {
+                    if let Err(e) = p.decrypt(sk) {
                         error!("Failed to decrypt tertiary page: {:?}", e);
                         continue;
                     }
@@ -352,15 +352,15 @@ impl<T: Engine> NameService for T {
                         body: Some(body.clone()),
                         private_options: &private_options,
                         public_options: &[
-                            Options::issued(issued.clone()),
-                            Options::expiry(expiry.clone()),
+                            Options::issued(issued),
+                            Options::expiry(expiry),
                         ],
                         ..Default::default()
                     });
 
                     let d = match r {
                         Ok(v) => v.1,
-                        Err(e) => return CoreRes::Error(e.into()),
+                        Err(e) => return CoreRes::Error(e),
                     };
 
                     let mut pages = vec![d.to_owned()];
@@ -371,8 +371,8 @@ impl<T: Engine> NameService for T {
                             TertiaryLink::Service(target.id.clone()),
                             TertiaryOptions {
                                 index: d.header().index(),
-                                issued: issued.clone(),
-                                expiry: expiry.clone(),
+                                issued,
+                                expiry,
                             },
                             t.clone(),
                         );
@@ -392,7 +392,7 @@ impl<T: Engine> NameService for T {
 
         // Split data block and tertiary pages
         let (data, tps) = match res {
-            CoreRes::Pages(mut p, _) if p.len() > 0 => {
+            CoreRes::Pages(mut p, _) if !p.is_empty() => {
                 let d = p.remove(0);
                 (d, p)
             }

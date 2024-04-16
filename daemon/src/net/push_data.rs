@@ -88,7 +88,7 @@ pub(super) async fn push_data<T: Engine>(
     // TODO(med): we should be cleverer about this to avoid
     // loops etc. (and prolly add a TTL if it can be repeated?)
     let subscribers = core.subscriber_list(id.clone()).await?;
-    if subscribers.len() > 0 {
+    if !subscribers.is_empty() {
         // Generate data push message for subscribers
         let req = RequestBody::PushData(id.clone(), data);
 

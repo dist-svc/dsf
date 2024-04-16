@@ -55,7 +55,7 @@ impl<T: Engine> Bootstrap for T {
             .collect();
 
         // Skip bootstrap if no peer information is available
-        if peers.len() == 0 {
+        if peers.is_empty() {
             warn!("No peers available, skipping peer bootstrap");
 
             return Ok(BootstrapInfo {

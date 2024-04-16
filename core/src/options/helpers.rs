@@ -194,14 +194,14 @@ impl<'a, T: Iterator<Item = &'a Options> + Clone> Filters for T {
 
     fn issued(&self) -> Option<DateTime> {
         self.clone().find_map(|o| match o {
-            Options::Issued(t) => Some(t.clone()),
+            Options::Issued(t) => Some(*t),
             _ => None,
         })
     }
 
     fn expiry(&self) -> Option<DateTime> {
         self.clone().find_map(|o| match o {
-            Options::Expiry(t) => Some(t.clone()),
+            Options::Expiry(t) => Some(*t),
             _ => None,
         })
     }
@@ -258,18 +258,18 @@ impl FromStr for Options {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use OptionsParseError::*;
 
-        let mut p = s.split(":");
+        let mut p = s.split(':');
         let (prefix, data) = match (p.next(), p.next()) {
             (Some(p), Some(d)) => (p, d),
             _ => return Err(InvalidFormat),
         };
 
         let o = match prefix {
-            "pub_key" => Options::pub_key(PublicKey::from_str(&data).map_err(Parse)?),
-            "name" => Options::name(&data),
-            "kind" => Options::kind(&data),
-            "building" => Options::building(&data),
-            "room" => Options::room(&data),
+            "pub_key" => Options::pub_key(PublicKey::from_str(data).map_err(Parse)?),
+            "name" => Options::name(data),
+            "kind" => Options::kind(data),
+            "building" => Options::building(data),
+            "room" => Options::room(data),
             _ => return Err(Unsupported),
         };
 

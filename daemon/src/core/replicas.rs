@@ -49,7 +49,7 @@ impl Core {
             };
 
             // Find matching replica entry for service and peer
-            let svc_replicas = self.replicas.entry(service_id.clone()).or_insert(vec![]);
+            let svc_replicas = self.replicas.entry(service_id.clone()).or_default();
             let matching_replica = svc_replicas
                 .iter_mut()
                 .find(|r| &r.info.peer_id == &e.info.peer_id);
@@ -79,11 +79,11 @@ impl Core {
         peer_id: &Id,
         f: F,
     ) -> Result<(), ()> {
-        let replicas = self.replicas.entry(service_id.clone()).or_insert(vec![]);
+        let replicas = self.replicas.entry(service_id.clone()).or_default();
         let replica = replicas.iter_mut().find(|r| &r.info.peer_id == peer_id);
 
-        if let Some(mut r) = replica {
-            f(&mut r);
+        if let Some(r) = replica {
+            f(r);
         }
 
         Ok(())

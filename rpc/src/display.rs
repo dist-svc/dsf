@@ -70,7 +70,7 @@ impl Display for DataInfo {
         match &self.private_options {
             MaybeEncrypted::None => write!(f, "Empty")?,
             MaybeEncrypted::Cleartext(options) => {
-                if options.len() == 0 {
+                if options.is_empty() {
                     write!(f, "Empty")?;
                 }
                 for o in options {
@@ -137,7 +137,7 @@ impl Display for ServiceInfo {
 
         if let Some(sk) = &self.secret_key {
             if f.sign_plus() {
-                write!(f, "\n  - secret key: {}", sk.to_string())?;
+                write!(f, "\n  - secret key: {}", sk)?;
             } else {
                 write!(f, ", {}", sk)?;
             }

@@ -35,7 +35,7 @@ impl Add<core::time::Duration> for DateTime {
 
     /// Add a [`core::time::Duration`] to the provided [`DateTime`]
     fn add(self, rhs: core::time::Duration) -> Self::Output {
-        let secs = rhs.as_secs() as u64;
+        let secs = rhs.as_secs();
         Self(self.0 + secs)
     }
 }
@@ -55,9 +55,9 @@ impl fmt::Display for DateTime {
 }
 
 #[cfg(feature = "std")]
-impl Into<std::time::SystemTime> for DateTime {
-    fn into(self) -> std::time::SystemTime {
-        let u = Utc.timestamp_opt(self.0 as i64, 0);
+impl From<DateTime> for std::time::SystemTime {
+    fn from(val: DateTime) -> Self {
+        let u = Utc.timestamp_opt(val.0 as i64, 0);
         u.single().unwrap().into()
     }
 }
@@ -86,9 +86,9 @@ mod tests {
     fn date_time_system_conversions() {
         let d = DateTime::now();
 
-        let s: std::time::SystemTime = d.clone().into();
+        let s: std::time::SystemTime = d.into();
 
-        let d2: DateTime = s.clone().into();
+        let d2: DateTime = s.into();
 
         assert_eq!(d, d2);
     }

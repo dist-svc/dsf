@@ -242,9 +242,9 @@ impl<'a> Decode<'a> for Options {
 
         let r = match k {
             OptionKind::None => Ok(Options::None),
-            OptionKind::PubKey => PublicKey::try_from(d).map(|v| Options::PubKey(v)),
-            OptionKind::PeerId => Id::try_from(d).map(|v| Options::PeerId(v)),
-            OptionKind::PrevSig => Signature::try_from(d).map(|v| Options::PrevSig(v)),
+            OptionKind::PubKey => PublicKey::try_from(d).map(Options::PubKey),
+            OptionKind::PeerId => Id::try_from(d).map(Options::PeerId),
+            OptionKind::PrevSig => Signature::try_from(d).map(Options::PrevSig),
             OptionKind::Kind => OptionString::decode(d).map(|(v, _)| Options::Kind(v)),
             OptionKind::Name => OptionString::decode(d).map(|(v, _)| Options::Name(v)),
 
@@ -395,7 +395,7 @@ impl Encode for Options {
                 data[OPTION_HEADER_LEN + n..][..key.len()].copy_from_slice(key);
                 n += key.len();
 
-                data[OPTION_HEADER_LEN + n] = '|' as u8;
+                data[OPTION_HEADER_LEN + n] = b'|';
                 n += 1;
 
                 let val = value.as_bytes();
@@ -585,9 +585,9 @@ mod tests {
             let mut data = vec![0u8; 1024];
             let n1 = o
                 .encode(&mut data)
-                .expect(&format!("Error encoding {:?}", o));
+                .unwrap_or_else(|_| panic!("Error encoding {:?}", o));
 
-            let (decoded, n2) = Options::decode(&data).expect(&format!("Error decoding {:?}", o));
+            let (decoded, n2) = Options::decode(&data).unwrap_or_else(|_| panic!("Error decoding {:?}", o));
 
             assert_eq!(
                 n1, n2,

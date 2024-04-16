@@ -21,7 +21,7 @@ pub type Peer = PeerInfo;
 impl Core {
     pub fn peer_get(&self, ident: ServiceIdentifier) -> Option<PeerInfo> {
         if let Some(id) = &ident.id {
-            return self.peers.get(id).map(|p| p.clone());
+            return self.peers.get(id).cloned();
         }
 
         if let Some(short_id) = &ident.short_id {
@@ -137,7 +137,7 @@ impl Core {
         // TODO(low): this should probably also execute periodically otherwise
         // we ignore packet counts etc. indefinitely / until state changes
         if p.state != old_peer.state || p.address != old_peer.address || p.flags != old_peer.flags {
-            if let Err(e) = self.store.peer_update(&p).await {
+            if let Err(e) = self.store.peer_update(p).await {
                 error!("Failed to update peer information: {e:?}");
                 return Err(DsfError::Store);
             }
