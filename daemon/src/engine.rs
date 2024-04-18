@@ -171,16 +171,22 @@ impl Engine {
         // Create new store
         let s = Store::new_rc(&options.database_file, Default::default())?;
 
+        debug!("Loading peer service");
+
         // Fetch or create new peer service
-        let mut service = match s.load_peer_service()? {
-            Some(s) => {
+        let mut service = match s.load_peer_service() {
+            Ok(Some(s)) => {
                 info!("Loaded existing peer service: {}", s.id());
                 s
             }
-            None => {
+            Ok(None) => {
                 let s = ServiceBuilder::peer().build().unwrap();
                 info!("Created new peer service: {}", s.id());
                 s
+            },
+            Err(e) => {
+                error!("Failed to load peer service: {e:?}");
+                return Err(e.into());
             }
         };
 

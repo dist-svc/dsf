@@ -1,18 +1,23 @@
-use crate::log::{debug, error, info, trace, warn, Debug};
-use crate::store::{ObjectFilter, SubscribeState};
-use dsf_core::api::Application;
-use dsf_core::options::Filters;
-use dsf_core::types::{DateTime, ImmutableData, Kind};
-use dsf_core::wire::Container;
 
-use dsf_core::base::Decode;
-use dsf_core::service::Net;
-use dsf_core::{net::Status, options::Options, prelude::*};
+#[cfg(feature = "alloc")]
+use alloc::vec;
+
+use dsf_core::{
+    prelude::*,
+    api::Application,
+    options::{Filters, Options},
+    types::{DateTime, ImmutableData, Kind},
+    wire::Container,
+    base::Decode,
+    service::Net,
+    net::Status,
+};
 
 use crate::{
     comms::Comms,
     error::EngineError,
-    store::{Peer, Store},
+    store::{Peer, Store, ObjectFilter, SubscribeState},
+    log::{debug, error, info, trace, warn, Debug}
 };
 
 #[cfg(feature = "std")]
@@ -257,7 +262,9 @@ where
         trace!("Generated new page: {:?} sig: {}", p, sig);
 
         // Store page, updating last published information
-        self.store.store_page(&p).map_err(EngineError::Store)?;
+        if let Err(e) = self.store.store_page(&p) {
+            warn!("Failed to store primary page: {e:?}");
+        }
 
         self.pri = sig;
         self.expiry = p.public_options_iter().expiry();
@@ -293,7 +300,9 @@ where
         debug!("Publishing object: {:02x?}", p);
 
         // Store object, updating last published information
-        self.store.store_page(&p).map_err(EngineError::Store)?;
+        if let Err(e) = self.store.store_page(&p) {
+            warn!("Failed to store published object: {:?}", e);
+        };
 
         // Send updated page to subscribers
         for (id, peer) in self.store.peers() {
@@ -357,7 +366,7 @@ where
         #[cfg(feature = "std")]
         if let Some(exp) = &self.expiry {
             if exp < &DateTime::now() {
-                debug!("Expiring primary page ({:?})", exp);
+                debug!("Expiring primary page ({exp:?})");
                 self.generate_primary()?;
             }
         }

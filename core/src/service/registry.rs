@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 use core::ops::Add;
 
 use encdec::{Decode, DecodeOwned, Encode};

@@ -46,7 +46,12 @@ impl<T: ImmutableData> core::fmt::Debug for Container<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut d = f.debug_struct("Container");
 
-        d.field("id", &self.id()).field("header", &self.header());
+        d.field("id", &self.id())
+            .field("header", &self.header())
+            .field("len", &self.len());
+        
+        #[cfg(broken)]
+        {
 
         match self.encrypted() {
             true => d.field("body (encrypted)", &self.body_raw()),
@@ -62,14 +67,20 @@ impl<T: ImmutableData> core::fmt::Debug for Container<T> {
         d.field("public_opts", &self.public_options_iter());
         //d.field("public_opts", &self.public_options_raw());
 
+
         d.field("tag", &self.tag())
             .field("sig", &self.signature())
             .field("len", &self.len())
             .field("decrypted", &self.decrypted)
-            .field("verified", &self.verified)
+            .field("verified", &self.verified);
             // TODO: work out how to make this optional / force this to format as hex?
             //.field("raw", &self.raw())
-            .finish()
+        
+        }   
+
+        
+
+        d.finish()
     }
 }
 

@@ -5,7 +5,7 @@ use core::convert::TryFrom;
 use core::fmt::Debug;
 use core::ops::Deref;
 
-use sha2::{digest::FixedOutput, Sha512Trunc256};
+use sha2::{digest::FixedOutput, Sha512_256};
 
 use crate::prelude::Keys;
 use crate::types::*;
@@ -65,13 +65,7 @@ pub trait PubKey {
         remote: &PublicKey,
     ) -> Result<(SecretKey, SecretKey), Self::Error>;
 
-    fn get_public(private_key: &PrivateKey) -> PublicKey {
-        let mut public_key = PublicKey::default();
-
-        public_key.copy_from_slice(&private_key[32..]);
-
-        public_key
-    }
+    fn get_public(private_key: &PrivateKey) -> PublicKey;
 }
 
 pub trait SecKey {
@@ -107,7 +101,7 @@ pub trait Hash {
     fn hash(data: &[u8]) -> Result<CryptoHash, ()> {
         use sha2::Digest;
 
-        let h = Sha512Trunc256::digest(data);
+        let h = Sha512_256::digest(data);
         Ok(CryptoHash::try_from(h.deref()).unwrap())
     }
 
@@ -130,15 +124,15 @@ pub trait Hash {
         };
 
         // Generate new identity hash
-        let mut h = Sha512Trunc256::new();
-        h.input(&seed);
+        let mut h = Sha512_256::new();
+        Digest::update(&mut h, &seed);
 
         if !o.hash(&mut h) {
             error!("Attempted to hash non-queryable type: {:?}", o);
             return Err(());
         }
 
-        let d = h.fixed_result();
+        let d = h.finalize();
         let d = CryptoHash::try_from(d.deref()).unwrap();
 
         // XOR with ns ID to give new location
@@ -146,11 +140,11 @@ pub trait Hash {
     }
 }
 
-impl CryptoHasher for Sha512Trunc256 {
+impl CryptoHasher for Sha512_256 {
     fn update(&mut self, buff: &[u8]) {
         use sha2::Digest;
 
-        self.input(buff)
+        Digest::update(self, buff)
     }
 }
 

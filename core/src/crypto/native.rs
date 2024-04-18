@@ -1,9 +1,8 @@
 use core::convert::{TryFrom, TryInto};
 use core::ops::Deref;
 
-use chacha20poly1305::aead::{AeadInPlace, NewAead};
-use chacha20poly1305::ChaCha20Poly1305;
-use ed25519_dalek::{Keypair, Signer};
+use chacha20poly1305::{ChaCha20Poly1305, aead::{AeadInPlace}, KeyInit};
+use ed25519_dalek::{Signer};
 
 use rand_core_0_6::{OsRng, RngCore as _};
 use sha2::Digest;
@@ -16,7 +15,7 @@ pub struct RustCrypto;
 /// Hacks to run two versions of rand_core because ed25519_dalek expects 0.5.x
 struct RandHelper(OsRng);
 
-impl rand_core_0_5::RngCore for RandHelper {
+impl rand_core_0_6::RngCore for RandHelper {
     fn next_u32(&mut self) -> u32 {
         self.0.next_u32()
     }
@@ -29,40 +28,42 @@ impl rand_core_0_5::RngCore for RandHelper {
         self.0.fill_bytes(dest)
     }
 
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core_0_5::Error> {
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core_0_6::Error> {
         match self.0.try_fill_bytes(dest) {
             Ok(()) => Ok(()),
             Err(e) => {
                 let code = e
                     .code()
-                    .unwrap_or(rand_core_0_5::Error::CUSTOM_START.try_into().unwrap());
-                Err(rand_core_0_5::Error::from(code))
+                    .unwrap_or(rand_core_0_6::Error::CUSTOM_START.try_into().unwrap());
+                Err(rand_core_0_6::Error::from(code))
             }
         }
     }
 }
 
-impl rand_core_0_5::CryptoRng for RandHelper {}
+impl rand_core_0_6::CryptoRng for RandHelper {}
 
 impl PubKey for RustCrypto {
     type Error = ();
 
     fn new_pk() -> Result<(PublicKey, PrivateKey), Self::Error> {
-        let keys = ed25519_dalek::Keypair::generate(&mut RandHelper(OsRng));
+        // Generate keys
+        let pri_key = ed25519_dalek::SigningKey::generate(&mut RandHelper(OsRng));
+        let pub_key = ed25519_dalek::VerifyingKey::from(&pri_key);
 
-        let public_key = PublicKey::from(keys.public.to_bytes());
-
+        // Convert to DSF types
         // Our private keys contain both the public and private components
         let mut private_key = PrivateKey::default();
-        private_key[..32].copy_from_slice(&keys.secret.to_bytes());
-        private_key[32..].copy_from_slice(&keys.public.to_bytes());
+        private_key.copy_from_slice(&pri_key.to_keypair_bytes());
+
+        let public_key = PublicKey::from(pub_key.to_bytes());
 
         Ok((public_key, private_key))
     }
 
     fn pk_sign(private_key: &PrivateKey, data: &[u8]) -> Result<Signature, Self::Error> {
         // Regenerate keypair from private key
-        let keys = Keypair::from_bytes(private_key).map_err(|_| ())?;
+        let keys = ed25519_dalek::SigningKey::from_keypair_bytes(private_key.as_bytes()).map_err(|_e| ())?;
 
         // Perform sign operation
         let sig = keys.sign(data);
@@ -71,14 +72,22 @@ impl PubKey for RustCrypto {
         Ok(Signature::from(sig.to_bytes()))
     }
 
+    fn get_public(private_key: &PrivateKey) -> PublicKey {
+        // Regenerate keypair from private key
+        let pri_key = ed25519_dalek::SigningKey::from_keypair_bytes(private_key.as_bytes()).unwrap();
+
+        let pub_key = ed25519_dalek::VerifyingKey::from(&pri_key);
+        PublicKey::from(pub_key.to_bytes())
+    }
+
     fn pk_verify(
         public_key: &PublicKey,
         signature: &Signature,
         data: &[u8],
     ) -> Result<bool, Self::Error> {
         // Coerce public key and signature types
-        let public_key = ed25519_dalek::PublicKey::from_bytes(public_key).map_err(|_e| ())?;
-        let signature = ed25519_dalek::Signature::from_bytes(signature).map_err(|_e| ())?;
+        let public_key = ed25519_dalek::VerifyingKey::from_bytes(public_key.as_bytes()).map_err(|_e| ())?;
+        let signature = ed25519_dalek::Signature::from_bytes(signature.as_bytes());
 
         // Perform verification
         match public_key.verify_strict(data, &signature) {
@@ -95,14 +104,14 @@ impl PubKey for RustCrypto {
         remote: &PublicKey,
     ) -> Result<(SecretKey, SecretKey), Self::Error> {
         // Parse initial keys
-        let our_pri_key = ed25519_dalek::Keypair::from_bytes(pri_key).unwrap();
-        let their_pub_key = ed25519_dalek::PublicKey::from_bytes(remote).unwrap();
+        let our_pri_key = ed25519_dalek::SigningKey::from_keypair_bytes(pri_key.as_bytes()).map_err(|_e| ())?;
+        let their_pub_key = ed25519_dalek::VerifyingKey::from_bytes(remote.as_bytes()).unwrap();
 
         // Convert into kx form
-        let our_pri_key = pri_ed26619_to_x25519(&our_pri_key.secret).unwrap();
+        let our_pri_key = pri_ed26619_to_x25519(&our_pri_key).unwrap();
         let their_pub_key = pub_ed26619_to_x25519(&their_pub_key).unwrap();
 
-        let our_keys = crypto_kx::KeyPair::from(our_pri_key);
+        let our_keys = crypto_kx::Keypair::from(our_pri_key);
 
         // TODO: why bother doing this twice when we could... not?
         let k1 = our_keys.session_keys_to(&their_pub_key);
@@ -234,17 +243,17 @@ impl Hash for RustCrypto {
 
 /// Creates a curve25519 key from an ed25519 public key.
 /// See: https://github.com/dalek-cryptography/x25519-dalek/issues/53
-fn pub_ed26619_to_x25519(pk: &ed25519_dalek::PublicKey) -> Result<crypto_kx::PublicKey, ()> {
+fn pub_ed26619_to_x25519(pk: &ed25519_dalek::VerifyingKey) -> Result<crypto_kx::PublicKey, ()> {
     use curve25519_dalek::edwards::CompressedEdwardsY;
 
     // Verify it's a valid public key
-    if let Err(_e) = ed25519_dalek::PublicKey::from_bytes(pk.as_bytes()) {
+    if let Err(_e) = ed25519_dalek::VerifyingKey::from_bytes(pk.as_bytes()) {
         return Err(());
     }
 
     // PublicKey is a CompressedEdwardsY in dalek. So we decompress it to get the
     // EdwardsPoint which can then be used convert to the Montgomery Form.
-    let cey = CompressedEdwardsY::from_slice(pk.as_bytes());
+    let cey = CompressedEdwardsY::from_slice(pk.as_bytes()).unwrap();
     let pub_key = match cey.decompress() {
         Some(ep) => ep.to_montgomery(),
         None => return Err(()),
@@ -255,11 +264,8 @@ fn pub_ed26619_to_x25519(pk: &ed25519_dalek::PublicKey) -> Result<crypto_kx::Pub
 
 /// Creates a curve25519 key from an ed25519 private key.
 // See: https://github.com/dalek-cryptography/x25519-dalek/issues/53
-fn pri_ed26619_to_x25519(sk: &ed25519_dalek::SecretKey) -> Result<crypto_kx::SecretKey, ()> {
-    // Verify we have a valid secret key
-    if let Err(_e) = ed25519_dalek::SecretKey::from_bytes(sk.as_bytes()) {
-        return Err(());
-    }
+fn pri_ed26619_to_x25519(sk: &ed25519_dalek::SigningKey) -> Result<crypto_kx::SecretKey, ()> {
+    // TODO: do we need to check signing key is valid?
 
     // hash secret
     let hash = sha2::Sha512::digest(&sk.as_bytes()[..32]);

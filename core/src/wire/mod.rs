@@ -116,7 +116,7 @@ impl<'a, T: MutableData> Container<T> {
 
         trace!("Parsing object: {:02x?}", container.hex_dump());
 
-        let (id, flags, _kind, index) = {
+        let (id, flags, kind, index) = {
             let header = container.header();
             trace!("Parsed header: {:02x?}", header);
 
@@ -128,6 +128,9 @@ impl<'a, T: MutableData> Container<T> {
             )
         };
 
+        debug!("id: {id} flags: {flags:?} kind: {kind:?} index: {index}");
+
+        #[cfg(broken)]
         trace!("Parse container: {:?}", container);
 
         // Fetch signature for page
@@ -190,7 +193,7 @@ impl<'a, T: MutableData> Container<T> {
             _ => Err(Error::NoPeerId),
         }?;
 
-        trace!(
+        debug!(
             "Peer id: {:?} pub_key: {:?} prev: {:?} signing_id: {:?}",
             peer_id,
             pub_key,
