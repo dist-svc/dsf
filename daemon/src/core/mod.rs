@@ -576,7 +576,6 @@ impl AsyncCore {
 
         // Await operation completion
         let r = rx.await;
-        warn!("rx: {r:?}");
 
         match r {
             Ok(CoreRes::Peer(info)) => Ok(info),

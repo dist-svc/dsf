@@ -152,9 +152,10 @@ impl NetIf for Dsf<ByteSink> {
                     pri_key: Some(signing_key.clone()),
                     // target public key for asymmetric encryption
                     pub_key,
-                    // Symmetric key must be in key cache
-                    sec_key: peer_keys.and_then(|k| k.sec_key.clone()),
-                    ..Default::default()
+                    // TODO: why do we need the secret key?
+                    sec_key: peer_keys.as_ref().and_then(|k| k.sec_key.clone()),
+                    // Symmetric key if enabled
+                    sym_keys: peer_keys.as_ref().and_then(|k| k.sym_keys.clone()),
                 };
 
                 // Enable symmetric mode if supported
@@ -286,6 +287,8 @@ where
 
             // DELEGATION: Handle unwrapped objects for constrained / delegated services
             if !container.header().kind().is_message() {
+                let req_id = container.header().index();
+
                 // Handle raw object
                 let resp = match crate::net::handle_net_raw(
                     &engine,
@@ -302,7 +305,14 @@ where
                     }
                 };
 
-                // TODO(high): Send response
+                // Send response
+                let resp = net::Response::new(our_id, req_id as u16, resp, Flags::default());
+                if let Err(e) = net.net_send(vec![(addr, Some(id.clone()))], resp.into()).await {
+                    error!("Failed to forward net response: {e:?}");
+                }
+
+                // Stop processing
+                return;
             }
 
             let message = match message {
@@ -346,7 +356,7 @@ where
                         &message.from(),
                         Box::new(move |p| {
                             if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
-                                warn!("Enabling symmetric message crypto for peer: {}", p.id);
+                                info!("Enabling symmetric encryption for peer: {}", p.id);
                                 p.flags |= PeerFlags::SYMMETRIC_ENABLED;
                             }
                         }),

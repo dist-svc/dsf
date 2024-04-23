@@ -105,12 +105,14 @@ impl<T: Engine> PubSub for T {
         // Issue subscription requests
         let subs = do_subscribe(self, target.id.clone(), &peers).await?;
 
+        debug!("Updating service {}", target.id);
+
         // Update local service state
         self.svc_update(
             target.id.clone(),
             Box::new(|svc, info| {
                 info.state = ServiceState::Subscribed;
-                CoreRes::Id(svc.id())
+                CoreRes::Service(info.clone())
             }),
         )
         .await?;
@@ -118,6 +120,8 @@ impl<T: Engine> PubSub for T {
         // TODO: track subscriptions in local store
 
         // TODO: replicate if enabled
+
+        debug!("Subscribe okay!");
 
         Ok(subs)
     }

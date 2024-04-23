@@ -180,10 +180,15 @@ impl Core {
     where
         F: FnMut(&mut Service, &mut ServiceInfo) -> CoreRes,
     {
+        debug!("Updating service: {id}");
+
         // Look for matching peer
         let s = match self.services.get_mut(id) {
             Some(s) => s,
-            None => return CoreRes::NotFound,
+            None => {
+                error!("Service {id} not found");
+                return CoreRes::NotFound
+            },
         };
 
         // Run update function
