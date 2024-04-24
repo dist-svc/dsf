@@ -271,6 +271,7 @@ where
         // TODO: propagate this, in a better manner
 
         // Always wake (terrible for CPU use but helps response times)
+        #[cfg(nope)]
         ctx.waker().wake_by_ref();
 
         // Store waker

@@ -501,6 +501,7 @@ where
                 }
             }
 
+            // Force wake next tick
             ctx.waker().wake_by_ref();
         }
 
