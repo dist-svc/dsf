@@ -204,6 +204,9 @@ jobs:
         target:  ${{ matrix.target }}
         override: true
 
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Install cargo-sweep
       uses: actions-rs/install@v0.1
       with:
