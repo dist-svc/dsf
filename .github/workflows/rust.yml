@@ -205,6 +205,7 @@ jobs:
         override: true
 
     - name: Set up Docker Buildx
+      if: ${{ matrix.os == 'ubuntu-latest' }}
       uses: docker/setup-buildx-action@v3
 
     - name: Install cargo-sweep
