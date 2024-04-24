@@ -1,7 +1,7 @@
 //! Helpers for encoding/decoding types to and from strings
 
 #[cfg(feature = "alloc")]
-use alloc::{vec::Vec, string::String};
+use alloc::{string::String, vec::Vec};
 
 /// Encode bytes to printable string
 #[cfg(feature = "alloc")]

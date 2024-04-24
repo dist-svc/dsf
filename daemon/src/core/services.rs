@@ -187,8 +187,8 @@ impl Core {
             Some(s) => s,
             None => {
                 error!("Service {id} not found");
-                return CoreRes::NotFound
-            },
+                return CoreRes::NotFound;
+            }
         };
 
         // Run update function
@@ -238,9 +238,7 @@ impl Core {
         // Service are cached so can be fetched from in-memory storage
 
         // TODO(low): apply bounds / filtering
-        Ok(self
-            .services.values().map(|s| s.info.clone())
-            .collect())
+        Ok(self.services.values().map(|s| s.info.clone()).collect())
     }
 
     /// Helper to load services from the [AsyncStore], called at start

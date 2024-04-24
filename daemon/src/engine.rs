@@ -183,7 +183,7 @@ impl Engine {
                 let s = ServiceBuilder::peer().build().unwrap();
                 info!("Created new peer service: {}", s.id());
                 s
-            },
+            }
             Err(e) => {
                 error!("Failed to load peer service: {e:?}");
                 return Err(e.into());

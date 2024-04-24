@@ -1,6 +1,6 @@
-//! Core provides the core functionality of DSF, 
+//! Core provides the core functionality of DSF,
 //! managing services and peers as well as interacting with the database.
-//! 
+//!
 //! Core is a singleton wrapped in [AsyncCore] for shared use, while
 //! methods are re-exported via the [Engine] interface for use in higher-level logic.
 
@@ -142,7 +142,9 @@ impl core::fmt::Debug for CoreOp {
                 .field(sub_kind)
                 .finish(),
 
-            CoreOp::ListData(id, bounds) => f.debug_tuple("ListData").field(id).field(bounds).finish(),
+            CoreOp::ListData(id, bounds) => {
+                f.debug_tuple("ListData").field(id).field(bounds).finish()
+            }
             CoreOp::GetData(id, ident) => f.debug_tuple("GetData").field(id).field(ident).finish(),
             CoreOp::StoreData(id, _objects) => f.debug_tuple("StoreData").field(id).finish(),
 
@@ -265,7 +267,7 @@ impl Core {
                 .await
                 .map(CoreRes::Objects)
                 .unwrap_or(CoreRes::NotFound),
-        
+
             CoreOp::GetData(service_id, object_ident) => self
                 .get_object(&service_id, object_ident)
                 .await
@@ -709,10 +711,10 @@ impl AsyncCore {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation
-        if let Err(e) = self
-            .tasks
-            .send((CoreOp::GetObject(service_id.clone(), object_ident.into()), tx))
-        {
+        if let Err(e) = self.tasks.send((
+            CoreOp::GetObject(service_id.clone(), object_ident.into()),
+            tx,
+        )) {
             error!("Failed to enqueue service list operation: {e:?}");
             return Err(DsfError::IO);
         }
@@ -746,7 +748,11 @@ impl AsyncCore {
         }
     }
 
-    pub async fn data_list(&self, ident: &ServiceIdentifier, bounds: &PageBounds) -> Result<Vec<(DataInfo, Container)>, DsfError> {
+    pub async fn data_list(
+        &self,
+        ident: &ServiceIdentifier,
+        bounds: &PageBounds,
+    ) -> Result<Vec<(DataInfo, Container)>, DsfError> {
         let (tx, rx) = oneshot::channel();
 
         // Enqueue put operation

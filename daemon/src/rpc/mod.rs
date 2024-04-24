@@ -1,4 +1,4 @@
-//! RPC contains high-level DSF functionality, implemented on top of the 
+//! RPC contains high-level DSF functionality, implemented on top of the
 //! [Engine] abstraction to allow unit testing of each function.
 
 use std::{
@@ -22,8 +22,8 @@ use crate::{
     daemon::{net::NetIf, Dsf},
     error::{CoreError, Error},
     rpc::{
-        bootstrap::Bootstrap, connect::Connect, create::CreateService, discover::Discover,
-        locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService, data::PublishData,
+        bootstrap::Bootstrap, connect::Connect, create::CreateService, data::PublishData,
+        discover::Discover, locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService,
         register::RegisterService, replicate::ReplicateService, subscribe::PubSub, sync::SyncData,
     },
 };
@@ -35,16 +35,15 @@ pub use ops::*;
 pub mod bootstrap;
 pub mod connect;
 pub mod create;
+pub mod data;
 pub mod discover;
 pub mod locate;
 pub mod lookup;
 pub mod ns;
-pub mod data;
 pub mod register;
 pub mod replicate;
 pub mod subscribe;
 pub mod sync;
-
 
 /// Async RPC handler abstraction
 #[allow(async_fn_in_trait)]
@@ -76,16 +75,20 @@ impl<T: Engine> Rpc for T {
                 debug!("Starting async peer op");
 
                 let r = match c {
-                    PeerCommands::Search(opts) => {
-                        self.peer_lookup(opts).await.map(|p| ResponseKind::Peers(vec![p]))
-                    }
+                    PeerCommands::Search(opts) => self
+                        .peer_lookup(opts)
+                        .await
+                        .map(|p| ResponseKind::Peers(vec![p])),
                     PeerCommands::Connect(opts) => {
                         self.connect(opts).await.map(ResponseKind::Connected)
                     }
                     PeerCommands::Block(_) => todo!("Block command not yet implemented"),
                     PeerCommands::Unblock(_) => todo!("Unblock command not yet implemented"),
                     PeerCommands::List(opts) => self.peer_list(opts).await.map(ResponseKind::Peers),
-                    PeerCommands::Info(opts) => self.peer_info(opts).await.map(|p| ResponseKind::Peers(vec![p])),
+                    PeerCommands::Info(opts) => self
+                        .peer_info(opts)
+                        .await
+                        .map(|p| ResponseKind::Peers(vec![p])),
                     PeerCommands::Remove(_) => todo!("Remove command not yet implemented"),
                 };
 
@@ -105,8 +108,14 @@ impl<T: Engine> Rpc for T {
                         .await
                         .map(ResponseKind::Services)
                         .map_err(DsfError::from),
-                    ServiceCommands::Info(opts) => self.svc_get(opts.service).await.map(|s| ResponseKind::Services(vec![s])),
-                    ServiceCommands::Create(opts) => self.service_create(opts).await.map(|s| ResponseKind::Services(vec![s])),
+                    ServiceCommands::Info(opts) => self
+                        .svc_get(opts.service)
+                        .await
+                        .map(|s| ResponseKind::Services(vec![s])),
+                    ServiceCommands::Create(opts) => self
+                        .service_create(opts)
+                        .await
+                        .map(|s| ResponseKind::Services(vec![s])),
                     ServiceCommands::Locate(opts) => self
                         .service_locate(opts)
                         .await
@@ -119,9 +128,15 @@ impl<T: Engine> Rpc for T {
                         .service_replicate(opts)
                         .await
                         .map(ResponseKind::Registered),
-                    ServiceCommands::Subscribe(opts) => self.subscribe(opts).await.map(ResponseKind::Subscribed),
-                    ServiceCommands::Unsubscribe(opts) => self.unsubscribe(opts).await.map(|_| ResponseKind::None),
-                    ServiceCommands::Discover(opts) => self.discover(opts).await.map(ResponseKind::Services),
+                    ServiceCommands::Subscribe(opts) => {
+                        self.subscribe(opts).await.map(ResponseKind::Subscribed)
+                    }
+                    ServiceCommands::Unsubscribe(opts) => {
+                        self.unsubscribe(opts).await.map(|_| ResponseKind::None)
+                    }
+                    ServiceCommands::Discover(opts) => {
+                        self.discover(opts).await.map(ResponseKind::Services)
+                    }
                     ServiceCommands::SetKey(opts) => todo!("SetKey not yet implemented"),
                     ServiceCommands::Remove(opts) => todo!("Remove not yet implemented"),
                     ServiceCommands::GetKey(_) => todo!("GetKey not yet implemented"),
@@ -138,13 +153,22 @@ impl<T: Engine> Rpc for T {
             RequestKind::Data(c) => {
                 debug!("Starting async data rpc: {:?}", c);
                 let r = match c {
-                    DataCommands::Publish(opts) => self.data_publish(opts).await.map(ResponseKind::Published),
+                    DataCommands::Publish(opts) => {
+                        self.data_publish(opts).await.map(ResponseKind::Published)
+                    }
                     DataCommands::Sync(opts) => self.sync(opts).await.map(ResponseKind::Sync),
-                    DataCommands::List(opts) => self.object_list(opts.service, opts.page_bounds).await.map(ResponseKind::Objects),
-                    DataCommands::Get(opts) => self.object_get(opts.service, opts.page_sig).await.map(|o| ResponseKind::Objects(vec![o])),
+                    DataCommands::List(opts) => self
+                        .object_list(opts.service, opts.page_bounds)
+                        .await
+                        .map(ResponseKind::Objects),
+                    DataCommands::Get(opts) => self
+                        .object_get(opts.service, opts.page_sig)
+                        .await
+                        .map(|o| ResponseKind::Objects(vec![o])),
                     DataCommands::Query {} => todo!("Data Query not yet implemented"),
-                    DataCommands::Push(opts) => self.data_push(opts).await.map(ResponseKind::Published),
-                    
+                    DataCommands::Push(opts) => {
+                        self.data_push(opts).await.map(ResponseKind::Published)
+                    }
                 };
 
                 debug!("Async data rpc result: {:?}", r);
@@ -159,10 +183,14 @@ impl<T: Engine> Rpc for T {
                 debug!("Starting NS op: {:?}", c);
                 // Run NS operation
                 let r = match c {
-                    NsCommands::Create(opts) => {
-                        self.ns_create(opts).await.map(|s| ResponseKind::Services(vec![s]))
-                    }
-                    NsCommands::Adopt(opts) => self.ns_adopt(opts).await.map(|s| ResponseKind::Services(vec![s])),
+                    NsCommands::Create(opts) => self
+                        .ns_create(opts)
+                        .await
+                        .map(|s| ResponseKind::Services(vec![s])),
+                    NsCommands::Adopt(opts) => self
+                        .ns_adopt(opts)
+                        .await
+                        .map(|s| ResponseKind::Services(vec![s])),
                     NsCommands::Register(opts) => {
                         self.ns_register(opts).await.map(ResponseKind::NsRegister)
                     }

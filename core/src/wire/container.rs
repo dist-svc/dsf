@@ -49,36 +49,31 @@ impl<T: ImmutableData> core::fmt::Debug for Container<T> {
         d.field("id", &self.id())
             .field("header", &self.header())
             .field("len", &self.len());
-        
+
         #[cfg(broken)]
         {
+            match self.encrypted() {
+                true => d.field("body (encrypted)", &self.body_raw()),
+                false => d.field("body (cleartext)", &self.body_raw()),
+            };
 
-        match self.encrypted() {
-            true => d.field("body (encrypted)", &self.body_raw()),
-            false => d.field("body (cleartext)", &self.body_raw()),
-        };
+            match self.encrypted() {
+                true => d.field("private_opts", &self.private_options_raw()),
+                false => d.field("private_opts", &self.private_options_iter()),
+            };
 
-        match self.encrypted() {
-            true => d.field("private_opts", &self.private_options_raw()),
-            false => d.field("private_opts", &self.private_options_iter()),
-        };
+            // TODO: there seems to be a fault in here which can lead to an infinite loop!?
+            d.field("public_opts", &self.public_options_iter());
+            //d.field("public_opts", &self.public_options_raw());
 
-        // TODO: there seems to be a fault in here which can lead to an infinite loop!?
-        d.field("public_opts", &self.public_options_iter());
-        //d.field("public_opts", &self.public_options_raw());
-
-
-        d.field("tag", &self.tag())
-            .field("sig", &self.signature())
-            .field("len", &self.len())
-            .field("decrypted", &self.decrypted)
-            .field("verified", &self.verified);
+            d.field("tag", &self.tag())
+                .field("sig", &self.signature())
+                .field("len", &self.len())
+                .field("decrypted", &self.decrypted)
+                .field("verified", &self.verified);
             // TODO: work out how to make this optional / force this to format as hex?
             //.field("raw", &self.raw())
-        
-        }   
-
-        
+        }
 
         d.finish()
     }
@@ -342,8 +337,7 @@ impl<'a, T: ImmutableData> Container<T> {
     }
 
     pub fn tag(&self) -> Option<SecretMeta> {
-        self.tag_raw()
-            .and_then(|d| SecretMeta::try_from(d).ok())
+        self.tag_raw().and_then(|d| SecretMeta::try_from(d).ok())
     }
 
     /// Return the public options section data

@@ -206,9 +206,7 @@ fn parse_service(v: &ServiceFields) -> Result<ServiceInfo, StoreError> {
         replica_page: r_rp.as_ref().map(|v| Signature::from_str(v).unwrap()),
 
         public_key: PublicKey::from_str(r_pub_key)?,
-        private_key: r_pri_key
-            .as_ref()
-            .map(|v| PrivateKey::from_str(v).unwrap()),
+        private_key: r_pri_key.as_ref().map(|v| PrivateKey::from_str(v).unwrap()),
         secret_key: r_sec_key.as_ref().map(|v| SecretKey::from_str(v).unwrap()),
 
         last_updated: r_upd.as_ref().map(from_dt),

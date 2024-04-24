@@ -99,7 +99,6 @@ impl<O: Encode + Debug, E: ImmutableData + Debug> Encode for MaybeEncrypted<O, E
     }
 }
 
-
 impl<'a> MaybeEncrypted<&'a [Options], &'a [u8]> {
     pub fn to_vec(&self) -> MaybeEncrypted<Vec<Options>, Vec<u8>> {
         match self {

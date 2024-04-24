@@ -119,7 +119,9 @@ impl core::fmt::Debug for OpKind {
 
             Self::ObjectGet(id, sig) => f.debug_tuple("ObjectGet").field(id).field(sig).finish(),
             Self::ObjectPut(o) => f.debug_tuple("ObjectPut").field(o).finish(),
-            Self::ObjectList(id, bounds) => f.debug_tuple("ObjectList").field(id).field(bounds).finish(),
+            Self::ObjectList(id, bounds) => {
+                f.debug_tuple("ObjectList").field(id).field(bounds).finish()
+            }
 
             Self::Net(req, peers) => f.debug_tuple("Net").field(req).field(peers).finish(),
 
@@ -285,7 +287,11 @@ pub trait Engine: Sync + Send {
     }
 
     /// Fetch an object with the provided signature
-    async fn object_get(&self, ident: ServiceIdentifier, sig: Signature) -> Result<(DataInfo, Container), DsfError> {
+    async fn object_get(
+        &self,
+        ident: ServiceIdentifier,
+        sig: Signature,
+    ) -> Result<(DataInfo, Container), DsfError> {
         match self.exec(OpKind::ObjectGet(ident, sig)).await {
             CoreRes::Objects(d) if d.len() == 1 => Ok(d[0].clone()),
             CoreRes::Error(e) => Err(e),
@@ -302,8 +308,12 @@ pub trait Engine: Sync + Send {
         }
     }
 
-     /// List objects
-     async fn object_list(&self, ident: ServiceIdentifier, bounds: PageBounds) -> Result<Vec<(DataInfo, Container)>, DsfError> {
+    /// List objects
+    async fn object_list(
+        &self,
+        ident: ServiceIdentifier,
+        bounds: PageBounds,
+    ) -> Result<Vec<(DataInfo, Container)>, DsfError> {
         match self.exec(OpKind::ObjectList(ident, bounds)).await {
             CoreRes::Objects(p) => Ok(p),
             CoreRes::Error(e) => Err(e),

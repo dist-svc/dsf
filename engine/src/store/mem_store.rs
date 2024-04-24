@@ -60,10 +60,10 @@ impl<Addr: Clone + Debug + 'static> Store for MemoryStore<Addr> {
     /// Fetch previous object information
     fn get_last(&self) -> Result<Option<ObjectInfo>, Self::Error> {
         let i = self.last_sig.as_ref().map(|s| ObjectInfo {
-                page_index: self.last_page,
-                block_index: self.last_block,
-                sig: s.clone(),
-            });
+            page_index: self.last_page,
+            block_index: self.last_block,
+            sig: s.clone(),
+        });
 
         Ok(i)
     }
@@ -112,9 +112,7 @@ impl<Addr: Clone + Debug + 'static> Store for MemoryStore<Addr> {
         let p = match (f, &self.last_sig) {
             (ObjectFilter::Latest, Some(s)) => self.pages.get(s),
             (ObjectFilter::Sig(ref s), _) => self.pages.get(s),
-            (ObjectFilter::Index(n), _) => {
-                self.page_idx.get(&n).and_then(|s| self.pages.get(s))
-            }
+            (ObjectFilter::Index(n), _) => self.page_idx.get(&n).and_then(|s| self.pages.get(s)),
             _ => return Ok(None),
         };
 

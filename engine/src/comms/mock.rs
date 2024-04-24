@@ -8,7 +8,6 @@ pub struct MockComms {
     pub(crate) tx: Vec<(u8, Vec<u8>)>,
 }
 
-
 impl Comms for MockComms {
     type Address = u8;
 

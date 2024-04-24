@@ -351,10 +351,7 @@ impl<T: Engine> NameService for T {
                         data_kind: DataKind::Name.into(),
                         body: Some(body.clone()),
                         private_options: &private_options,
-                        public_options: &[
-                            Options::issued(issued),
-                            Options::expiry(expiry),
-                        ],
+                        public_options: &[Options::issued(issued), Options::expiry(expiry)],
                         ..Default::default()
                     });
 

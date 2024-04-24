@@ -203,14 +203,7 @@ pub(crate) async fn handle_net_raw<T: Engine>(
                 container.header().index()
             );
 
-            register(
-                engine,
-                core,
-                id,
-                header.flags(),
-                vec![container.to_owned()],
-            )
-            .await
+            register(engine, core, id, header.flags(), vec![container.to_owned()]).await
         }
         Kind::Data { .. } => {
             debug!(
@@ -219,14 +212,7 @@ pub(crate) async fn handle_net_raw<T: Engine>(
                 container.header().index()
             );
 
-            push_data(
-                engine,
-                core,
-                id,
-                header.flags(),
-                vec![container.to_owned()],
-            )
-            .await
+            push_data(engine, core, id, header.flags(), vec![container.to_owned()]).await
         }
         _ => Ok(ResponseBody::Status(net::Status::InvalidRequest)),
     }

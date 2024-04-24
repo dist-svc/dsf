@@ -104,9 +104,9 @@ pub(super) async fn push_data<T: Engine>(
                 _ => (),
             }
         }
-    
+
         info!("Sending data push message to: {:?}", peer_subs);
-    
+
         // Issue data push requests
         // TODO(low): we should probably wire the return here to send a delayed PublishInfo to the requester?
         match engine.net_req(req, peer_subs).await {

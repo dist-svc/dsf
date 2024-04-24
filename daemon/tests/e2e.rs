@@ -23,7 +23,7 @@ async fn end_to_end() {
 
     let _ = FmtSubscriber::builder()
         .compact()
-        .with_max_level(LevelFilter::DEBUG)
+        .with_max_level(LevelFilter::INFO)
         .try_init();
 
     let mut daemons = vec![];

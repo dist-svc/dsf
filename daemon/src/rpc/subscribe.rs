@@ -157,7 +157,8 @@ pub(super) async fn find_replicas<E: Engine>(
             let h = p.header();
             // TODO: expand these checks
             h.flags().contains(Flags::SECONDARY)
-        }).cloned()
+        })
+        .cloned()
         .collect();
 
     // Update replica tracking in engine

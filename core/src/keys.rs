@@ -5,7 +5,6 @@ use crate::types::{Id, PrivateKey, PublicKey, SecretKey};
 #[derive(Clone, PartialEq, Debug)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-
 #[derive(Default)]
 pub struct Keys {
     /// Service public key
@@ -24,7 +23,6 @@ pub struct Keys {
     #[cfg_attr(feature = "clap", clap(skip))]
     pub sym_keys: Option<(SecretKey, SecretKey)>,
 }
-
 
 impl Keys {
     pub fn new(pub_key: PublicKey) -> Self {

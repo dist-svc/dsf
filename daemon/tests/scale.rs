@@ -21,7 +21,7 @@ async fn smol_scale() {
 #[tokio::test]
 //#[ignore]
 async fn med_scale() {
-    scale(20, LevelFilter::DEBUG).await;
+    scale(20, LevelFilter::INFO).await;
 }
 
 #[tokio::test]

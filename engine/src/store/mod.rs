@@ -145,6 +145,8 @@ impl<Addr: Clone + Debug> Peer<Addr> {
 
         if let Subscribing(_) = self.subscribed {
             true
-        } else { self.subscribed == Subscribed }
+        } else {
+            self.subscribed == Subscribed
+        }
     }
 }

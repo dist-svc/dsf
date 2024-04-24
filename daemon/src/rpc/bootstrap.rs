@@ -44,7 +44,7 @@ impl<T: Engine> Bootstrap for T {
         let mut connected = 0;
 
         // Fetch peer list
-        let mut peers = self.peer_list(PeerListOptions{}).await?;
+        let mut peers = self.peer_list(PeerListOptions {}).await?;
 
         // Filter to remove constrained / transient peers
         let peers: Vec<_> = peers

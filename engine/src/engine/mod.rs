@@ -1,23 +1,22 @@
-
 #[cfg(feature = "alloc")]
 use alloc::vec;
 
 use dsf_core::{
-    prelude::*,
     api::Application,
+    base::Decode,
+    net::Status,
     options::{Filters, Options},
+    prelude::*,
+    service::Net,
     types::{DateTime, ImmutableData, Kind},
     wire::Container,
-    base::Decode,
-    service::Net,
-    net::Status,
 };
 
 use crate::{
     comms::Comms,
     error::EngineError,
-    store::{Peer, Store, ObjectFilter, SubscribeState},
-    log::{debug, error, info, trace, warn, Debug}
+    log::{debug, error, info, trace, warn, Debug},
+    store::{ObjectFilter, Peer, Store, SubscribeState},
 };
 
 #[cfg(feature = "std")]
@@ -411,9 +410,7 @@ where
             .encode_request_buff::<N>(&req, &Default::default())
             .map_err(EngineError::Core)?;
 
-        self.comms
-            .send(addr, c.raw())
-            .map_err(EngineError::Comms)?;
+        self.comms.send(addr, c.raw()).map_err(EngineError::Comms)?;
 
         Ok(())
     }
@@ -707,15 +704,13 @@ where
                         defmt::Debug2Format(&from)
                     );
 
-                    self
-                        .store
+                    self.store
                         .update_peer(&resp.common.from, |p| {
                             p.subscribed = SubscribeState::Subscribed;
                         })
                         .map_err(EngineError::Store)?;
 
                     evt = EngineEvent::SubscribedTo(resp.common.from.clone());
-                    
                 } else {
                     #[cfg(not(feature = "defmt"))]
                     info!("Subscribe failed for {} ({:?})", resp.common.from, from);
@@ -739,15 +734,13 @@ where
                         defmt::Debug2Format(&from)
                     );
 
-                    self
-                        .store
+                    self.store
                         .update_peer(&resp.common.from, |p| {
                             p.subscribed = SubscribeState::None;
                         })
                         .map_err(EngineError::Store)?;
 
                     evt = EngineEvent::UnsubscribedTo(resp.common.from.clone());
-                    
                 } else {
                     #[cfg(not(feature = "defmt"))]
                     info!("Unsubscribe failed for {} ({:?})", resp.common.from, from);

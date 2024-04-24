@@ -494,11 +494,13 @@ mod test {
             )
             .unwrap();
 
-        let pages = [svc_page.to_owned(),
+        let pages = [
+            svc_page.to_owned(),
             p1a.to_owned(),
             p1b.to_owned(),
             p2a.to_owned(),
-            p2b.to_owned()];
+            p2b.to_owned(),
+        ];
 
         let mut r = dht_reducer(svc.id(), pages.to_vec());
 

@@ -195,10 +195,7 @@ impl<'a, T: MutableData> Container<T> {
 
         debug!(
             "Peer id: {:?} pub_key: {:?} prev: {:?} signing_id: {:?}",
-            peer_id,
-            pub_key,
-            prev,
-            signing_id
+            peer_id, pub_key, prev, signing_id
         );
 
         // Fetch public key from public options if available
@@ -281,15 +278,14 @@ impl Container {
 
         while i < buff.len() {
             // TODO: validate signatures against existing services!
-            let c =
-                match Container::parse(buff[i..].to_vec(), &key_source.cached(last_key.clone()))
-                {
-                    Ok(v) => v,
-                    Err(e) => {
-                        debug!("Error parsing base message: {:?}", e);
-                        return Err(e);
-                    }
-                };
+            let c = match Container::parse(buff[i..].to_vec(), &key_source.cached(last_key.clone()))
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    debug!("Error parsing base message: {:?}", e);
+                    return Err(e);
+                }
+            };
 
             i += c.len();
 

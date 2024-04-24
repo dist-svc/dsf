@@ -1,8 +1,8 @@
 use core::convert::{TryFrom, TryInto};
 use core::ops::Deref;
 
-use chacha20poly1305::{ChaCha20Poly1305, aead::{AeadInPlace}, KeyInit};
-use ed25519_dalek::{Signer};
+use chacha20poly1305::{aead::AeadInPlace, ChaCha20Poly1305, KeyInit};
+use ed25519_dalek::Signer;
 
 use rand_core_0_6::{OsRng, RngCore as _};
 use sha2::Digest;
@@ -63,7 +63,8 @@ impl PubKey for RustCrypto {
 
     fn pk_sign(private_key: &PrivateKey, data: &[u8]) -> Result<Signature, Self::Error> {
         // Regenerate keypair from private key
-        let keys = ed25519_dalek::SigningKey::from_keypair_bytes(private_key.as_bytes()).map_err(|_e| ())?;
+        let keys = ed25519_dalek::SigningKey::from_keypair_bytes(private_key.as_bytes())
+            .map_err(|_e| ())?;
 
         // Perform sign operation
         let sig = keys.sign(data);
@@ -74,7 +75,8 @@ impl PubKey for RustCrypto {
 
     fn get_public(private_key: &PrivateKey) -> PublicKey {
         // Regenerate keypair from private key
-        let pri_key = ed25519_dalek::SigningKey::from_keypair_bytes(private_key.as_bytes()).unwrap();
+        let pri_key =
+            ed25519_dalek::SigningKey::from_keypair_bytes(private_key.as_bytes()).unwrap();
 
         let pub_key = ed25519_dalek::VerifyingKey::from(&pri_key);
         PublicKey::from(pub_key.to_bytes())
@@ -86,7 +88,8 @@ impl PubKey for RustCrypto {
         data: &[u8],
     ) -> Result<bool, Self::Error> {
         // Coerce public key and signature types
-        let public_key = ed25519_dalek::VerifyingKey::from_bytes(public_key.as_bytes()).map_err(|_e| ())?;
+        let public_key =
+            ed25519_dalek::VerifyingKey::from_bytes(public_key.as_bytes()).map_err(|_e| ())?;
         let signature = ed25519_dalek::Signature::from_bytes(signature.as_bytes());
 
         // Perform verification
@@ -104,7 +107,8 @@ impl PubKey for RustCrypto {
         remote: &PublicKey,
     ) -> Result<(SecretKey, SecretKey), Self::Error> {
         // Parse initial keys
-        let our_pri_key = ed25519_dalek::SigningKey::from_keypair_bytes(pri_key.as_bytes()).map_err(|_e| ())?;
+        let our_pri_key =
+            ed25519_dalek::SigningKey::from_keypair_bytes(pri_key.as_bytes()).map_err(|_e| ())?;
         let their_pub_key = ed25519_dalek::VerifyingKey::from_bytes(remote.as_bytes()).unwrap();
 
         // Convert into kx form
@@ -154,7 +158,6 @@ impl SecKey for RustCrypto {
             .encrypt_in_place_detached(&nonce, assoc.unwrap_or(&[]), message)
             .map_err(|e| {
                 error!("Failed to encrypt in place: {:?}", e);
-                
             })?;
 
         let d = tag.deref();
@@ -206,7 +209,6 @@ impl SecKey for RustCrypto {
             .encrypt_in_place_detached(nonce, assoc.unwrap_or(&[]), message)
             .map_err(|e| {
                 error!("Failed to encrypt in place: {:?}", e);
-                
             })?;
 
         let d = tag.deref();
@@ -381,8 +383,7 @@ mod test {
 
         b.iter(|| {
             let mut d = data;
-            RustCrypto::sk_decrypt(&sec_key, &sig, None, &mut d)
-                .expect("Error validating data");
+            RustCrypto::sk_decrypt(&sec_key, &sig, None, &mut d).expect("Error validating data");
         });
     }
 }

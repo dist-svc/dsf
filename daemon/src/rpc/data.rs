@@ -2,11 +2,11 @@
 //! distributing updates to any active subscribers
 
 use std::{
+    collections::HashMap,
     convert::TryFrom,
     future::Future,
     pin::Pin,
     task::{Context, Poll},
-    collections::HashMap,
 };
 
 use dsf_core::base::DataBody;

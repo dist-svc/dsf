@@ -16,8 +16,7 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct MessageOptions {
     pub append_public_key: bool,
 
@@ -25,7 +24,6 @@ pub struct MessageOptions {
 
     pub peer_keys: Keys,
 }
-
 
 pub trait Net {
     /// Encode a request using the provided peer keys and buffer
@@ -446,12 +444,7 @@ mod test {
                 ResponseBody::ValuesFound(target.id(), vec![page.clone()]),
                 flags,
             ),
-            Response::new(
-                source.id(),
-                request_id,
-                ResponseBody::NoResult,
-                flags,
-            ),
+            Response::new(source.id(), request_id, ResponseBody::NoResult, flags),
             Response::new(
                 source.id(),
                 request_id,

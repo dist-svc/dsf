@@ -587,7 +587,8 @@ mod tests {
                 .encode(&mut data)
                 .unwrap_or_else(|_| panic!("Error encoding {:?}", o));
 
-            let (decoded, n2) = Options::decode(&data).unwrap_or_else(|_| panic!("Error decoding {:?}", o));
+            let (decoded, n2) =
+                Options::decode(&data).unwrap_or_else(|_| panic!("Error decoding {:?}", o));
 
             assert_eq!(
                 n1, n2,

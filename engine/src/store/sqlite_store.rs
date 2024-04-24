@@ -116,10 +116,7 @@ impl<Addr: Clone + Debug + 'static> SqliteStore<Addr> {
         )
         .execute(&mut conn);
 
-        let _ = sql_query(
-            "CREATE INDEX peer_id ON peers (peer_id);",
-        )
-        .execute(&mut conn);
+        let _ = sql_query("CREATE INDEX peer_id ON peers (peer_id);").execute(&mut conn);
 
         let _ = sql_query(
             "CREATE TABLE objects (
@@ -131,15 +128,9 @@ impl<Addr: Clone + Debug + 'static> SqliteStore<Addr> {
         )
         .execute(&mut conn);
 
-        let _ = sql_query(
-            "CREATE INDEX objects_sig ON objects (signature);",
-        )
-        .execute(&mut conn);
+        let _ = sql_query("CREATE INDEX objects_sig ON objects (signature);").execute(&mut conn);
 
-        let _ = sql_query(
-            "CREATE INDEX objects_idx ON objects (object_index);",
-        )
-        .execute(&mut conn);
+        let _ = sql_query("CREATE INDEX objects_idx ON objects (object_index);").execute(&mut conn);
 
         Ok(())
     }

@@ -30,4 +30,3 @@ pub struct History {
     /// Last object signature
     pub last_sig: Option<Signature>,
 }
-

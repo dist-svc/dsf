@@ -129,10 +129,16 @@ impl NetIf for Dsf<ByteSink> {
                     None => None,
                 };
 
-                match (id, peer_info.as_ref().map(|k| k.state().clone() )) {
+                match (id, peer_info.as_ref().map(|k| k.state().clone())) {
                     (Some(id), Some(PeerState::Known(pub_key))) if peer_keys.is_none() => {
-                        keys.insert(id.clone(), Keys{ pub_key: Some(pub_key.clone()), ..Default::default()});
-                    },
+                        keys.insert(
+                            id.clone(),
+                            Keys {
+                                pub_key: Some(pub_key.clone()),
+                                ..Default::default()
+                            },
+                        );
+                    }
                     _ => (),
                 };
 
@@ -222,13 +228,12 @@ where
 
         // Spawn task to handle network operations in parallel
         tokio::task::spawn(async move {
-            
             // Grab un-parsed container to lookup peer id and credentials
             let id = match Container::try_from(msg.data.to_vec()) {
                 Ok(c) => c.id(),
                 Err(e) => {
                     error!("Failed to grab container ID: {e:?}");
-                    return
+                    return;
                 }
             };
 
@@ -307,7 +312,10 @@ where
 
                 // Send response
                 let resp = net::Response::new(our_id, req_id as u16, resp, Flags::default());
-                if let Err(e) = net.net_send(vec![(addr, Some(id.clone()))], resp.into()).await {
+                if let Err(e) = net
+                    .net_send(vec![(addr, Some(id.clone()))], resp.into())
+                    .await
+                {
                     error!("Failed to forward net response: {e:?}");
                 }
 
@@ -459,14 +467,9 @@ async fn handle_net_req2<T: Engine + 'static>(
 
     // Handle DSF requests
     } else {
-        let dsf_resp = crate::net::handle_dsf_req(
-            engine,
-            core.clone(),
-            peer,
-            req.data.clone(),
-            req.flags,
-        )
-        .await?;
+        let dsf_resp =
+            crate::net::handle_dsf_req(engine, core.clone(), peer, req.data.clone(), req.flags)
+                .await?;
 
         net::Response::new(own_id, req_id, dsf_resp, Flags::default())
     };

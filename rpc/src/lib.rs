@@ -238,7 +238,7 @@ pub enum ResponseKind {
     Peers(Vec<PeerInfo>),
 
     Services(Vec<ServiceInfo>),
-    
+
     Registered(RegisterInfo),
     Located(Vec<LocateInfo>),
     Subscribed(Vec<SubscriptionInfo>),
