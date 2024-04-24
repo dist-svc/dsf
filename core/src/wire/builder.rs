@@ -574,7 +574,7 @@ impl<T: MutableData> Builder<SetPublicOptions, T> {
     }
 
     pub fn encrypt_sk(mut self, secret_key: &SecretKey) -> Result<Container<T>, Error> {
-        trace!(
+        debug!(
             "SK Sign/Encrypt (AEAD) with key: {} ({} bytes)",
             secret_key,
             self.n

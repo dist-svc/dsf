@@ -237,9 +237,11 @@ where
                 }
             };
 
-            // Fetch peer information and update cache if found
+            // Check whether we have peer keys in the local cache
             if key_cache.keys(&id).is_none() {
                 trace!("Key cache miss (id: {id})");
+
+                // Otherwise, see if we have the keys in the database
                 if let Ok(keys) = core.keys_get(&id).await {
                     trace!("Fetched keys for net decode (id: {id})");
                     key_cache.create_update(&id, &keys);
@@ -262,19 +264,28 @@ where
 
             // Add newly discovered peer keys to cache, generating symmetric keys as we do
             if let Some(pub_key) = container.public_options_iter().pub_key() {
-                let sym_keys = Crypto::kx(
-                    our_keys.pub_key.as_ref().unwrap(),
-                    our_keys.pri_key.as_ref().unwrap(),
-                    &pub_key,
-                )
-                .unwrap();
-
-                let k = Keys {
-                    pub_key: Some(pub_key),
-                    sym_keys: Some(sym_keys),
-                    ..Default::default()
+                // Grab or create base key object
+                let mut keys = match key_cache.keys(&id) {
+                    Some(k) => k,
+                    None => Keys {
+                        pub_key: Some(pub_key.clone()),
+                        ..Default::default()
+                    },
                 };
-                key_cache.create_update(&id, &k);
+
+                // Generate symmetric keys -if- required (this is expensive)
+                if keys.sym_keys.is_none() {
+                    debug!("Generating symmetric keys for {id}");
+                    keys.sym_keys = Some(Crypto::kx(
+                        our_keys.pub_key.as_ref().unwrap(),
+                        our_keys.pri_key.as_ref().unwrap(),
+                        &pub_key,
+                    )
+                    .unwrap());
+                }
+
+                // Update cache
+                key_cache.create_update(&id, &keys);
             }
 
             // Convert container to message object if applicable
