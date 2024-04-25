@@ -90,9 +90,6 @@ simplelog = "0.11.1"
 tempdir = "0.3.7"
 tempfile = "3.8.0"
 
-[profile.release]
-debug = true
-
 [[bin]]
 name = "dsfd"
 path = "src/bin/dsfd.rs"
