@@ -276,12 +276,14 @@ where
                 // Generate symmetric keys -if- required (this is expensive)
                 if keys.sym_keys.is_none() {
                     debug!("Generating symmetric keys for {id}");
-                    keys.sym_keys = Some(Crypto::kx(
-                        our_keys.pub_key.as_ref().unwrap(),
-                        our_keys.pri_key.as_ref().unwrap(),
-                        &pub_key,
-                    )
-                    .unwrap());
+                    keys.sym_keys = Some(
+                        Crypto::kx(
+                            our_keys.pub_key.as_ref().unwrap(),
+                            our_keys.pri_key.as_ref().unwrap(),
+                            &pub_key,
+                        )
+                        .unwrap(),
+                    );
                 }
 
                 // Update cache
@@ -364,24 +366,8 @@ where
             // TODO: handle crypto mode errors
             // (eg. message encoded with SYMMETRIC but no pubkey for derivation)
 
-            // Upgrade to symmetric mode on incoming symmetric message
-            // TODO: there needs to be another transition for this in p2p comms
-
-            if message.flags().contains(Flags::SYMMETRIC_MODE) {
-                // TODO: compute and cache symmetric keys here?
-
-                let _ = core
-                    .peer_update(
-                        &message.from(),
-                        Box::new(move |p| {
-                            if !p.flags.contains(PeerFlags::SYMMETRIC_ENABLED) {
-                                info!("Enabling symmetric encryption for peer: {}", p.id);
-                                p.flags |= PeerFlags::SYMMETRIC_ENABLED;
-                            }
-                        }),
-                    )
-                    .await;
-            }
+            // TODO: handshake to upgrade to symmetric mode on incoming symmetric message
+            // (there needs to be another transition for this in p2p comms)
 
             // Route requests and responses to appropriate handlers
             match message {
@@ -495,7 +481,8 @@ async fn handle_net_req2<T: Engine + 'static>(
         resp.common.public_key = Some(our_pub_key);
     }
 
-    // Update peer info
+    // TODO: update peer packet counts
+    #[cfg(disabled)]
     let _ = core.peer_update(&from, Box::new(|p| p.sent += 1)).await;
 
     trace!("returning response (to: {:?})\n {:?}", from, &resp);

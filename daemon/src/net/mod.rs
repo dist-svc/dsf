@@ -248,6 +248,9 @@ pub(crate) async fn handle_base(
     if common.flags.contains(Flags::NO_PERSIST) {
         peer_flags |= PeerFlags::TRANSIENT;
     }
+    if common.flags.contains(Flags::SYMMETRIC_MODE) {
+        peer_flags |= PeerFlags::SYMMETRIC_ENABLED;
+    }
 
     // Find or create (and push) peer
     let peer = core

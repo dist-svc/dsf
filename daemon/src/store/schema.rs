@@ -165,7 +165,8 @@ pub(super) fn create_tables<C: Connection<Backend = Sqlite>>(
 
     sql_query("CREATE INDEX IF NOT EXISTS object_sig_idx ON object(signature);").execute(conn)?;
     sql_query("CREATE INDEX IF NOT EXISTS object_svc_idx ON object(service_id);").execute(conn)?;
-    sql_query("CREATE INDEX IF NOT EXISTS object_idx_idx ON object(object_index);").execute(conn)?;
+    sql_query("CREATE INDEX IF NOT EXISTS object_idx_idx ON object(object_index);")
+        .execute(conn)?;
 
     sql_query(
         "CREATE TABLE IF NOT EXISTS identity (

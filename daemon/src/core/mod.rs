@@ -20,6 +20,7 @@ use dsf_rpc::{
 
 use crate::{
     core::{
+        peers::PeerInst,
         replicas::ReplicaInst,
         services::{build_service_info, ServiceInst},
         store::{AsyncStore, DataStore},
@@ -46,7 +47,7 @@ pub struct Core {
     services: HashMap<Id, ServiceInst>,
 
     /// Peers known by the daemon
-    peers: HashMap<Id, PeerInfo>,
+    peers: HashMap<Id, PeerInst>,
 
     /// Replicas of known services, collected by service ID
     replicas: HashMap<Id, Vec<ReplicaInst>>,
@@ -219,7 +220,11 @@ impl Core {
 
         // Load peers
         let mut peers = store.peer_load().await?;
-        let peers = HashMap::from_iter(peers.drain(..).map(|s| (s.id.clone(), s)));
+        let peers = HashMap::from_iter(
+            peers
+                .drain(..)
+                .map(|info| (info.id.clone(), PeerInst { info, dirty: false })),
+        );
 
         // TODO(low): persist subscribers and replicas? though we can recover these from elsewhere
 
@@ -347,7 +352,7 @@ impl Core {
 
     fn get_keys(&self, id: &Id) -> Option<Keys> {
         if let Some(p) = self.peers.get(id) {
-            if let PeerState::Known(k) = &p.state {
+            if let PeerState::Known(k) = &p.info.state {
                 return Some(Keys {
                     pub_key: Some(k.clone()),
                     ..Default::default()
@@ -372,6 +377,8 @@ impl AsyncCore {
 
         // Spawn core event handler task
         tokio::task::spawn(async move {
+            // TODO: periodic sync task (update peers)
+
             // Wait for core operations
             while let Some((op, done)) = rx.recv().await {
                 if let CoreOp::Exit = op {

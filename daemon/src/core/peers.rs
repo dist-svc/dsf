@@ -18,26 +18,31 @@ use crate::error::Error;
 /// HACK: alias to mitigate breakage from Peer -> PeerInfo migration
 pub type Peer = PeerInfo;
 
+pub struct PeerInst {
+    pub info: PeerInfo,
+    pub dirty: bool,
+}
+
 impl Core {
     pub fn peer_get(&self, ident: ServiceIdentifier) -> Option<PeerInfo> {
         if let Some(id) = &ident.id {
-            return self.peers.get(id).cloned();
+            return self.peers.get(id).map(|p| p.info.clone());
         }
 
         if let Some(short_id) = &ident.short_id {
             return self
                 .peers
                 .iter()
-                .find(|(_id, s)| s.short_id == *short_id)
-                .map(|(_id, s)| s.clone());
+                .find(|(_id, s)| s.info.short_id == *short_id)
+                .map(|(_id, p)| p.info.clone());
         }
 
         if let Some(index) = &ident.index {
             return self
                 .peers
                 .iter()
-                .find(|(_id, s)| s.index == *index)
-                .map(|(_id, s)| s.clone());
+                .find(|(_id, s)| s.info.index == *index)
+                .map(|(_id, p)| p.info.clone());
         }
 
         None
@@ -45,7 +50,7 @@ impl Core {
 
     pub async fn peer_create_or_update(&mut self, info: PeerInfo) -> Result<PeerInfo, Error> {
         // Update and return existing peer
-        if let Some(p) = self.peers.get_mut(&info.id) {
+        if let Some(PeerInst { info: p, dirty }) = self.peers.get_mut(&info.id) {
             // Update address on change
             // TODO(med): support multiple peer addresses / peer address prioritisations
             p.update_address(info.address);
@@ -53,6 +58,16 @@ impl Core {
             if let PeerState::Known(k) = info.state {
                 p.set_state(PeerState::Known(k))
             }
+
+            // TODO(med) what other fields should we update here..? all of them..?
+
+            if let Some(seen) = info.seen {
+                p.seen = Some(seen);
+            }
+
+            p.flags = info.flags;
+
+            *dirty = true;
 
             return Ok(p.clone());
         }
@@ -63,9 +78,16 @@ impl Core {
             info.id, info.address, info.state
         );
 
-        self.peers.insert(info.id.clone(), info.clone());
+        // Store in peer cache
+        self.peers.insert(
+            info.id.clone(),
+            PeerInst {
+                info: info.clone(),
+                dirty: false,
+            },
+        );
 
-        // Write non-transient peers to store
+        // Write non-transient peers to store on creation
         #[cfg(feature = "store")]
         if !info.flags.contains(PeerFlags::TRANSIENT) {
             if let Err(e) = self.store.peer_update(&info).await {
@@ -83,11 +105,11 @@ impl Core {
         };
 
         #[cfg(feature = "store")]
-        if let Err(e) = self.store.peer_del(&peer.id).await {
+        if let Err(e) = self.store.peer_del(&peer.info.id).await {
             error!("Error removing peer from db: {:?}", e);
         }
 
-        Some(peer)
+        Some(peer.info)
     }
 
     pub fn peer_count(&self) -> usize {
@@ -97,21 +119,23 @@ impl Core {
     pub fn peer_seen_count(&self) -> usize {
         self.peers
             .iter()
-            .filter(|(_id, p)| p.seen.is_some() && !p.flags.contains(PeerFlags::CONSTRAINED))
+            .filter(|(_id, p)| {
+                p.info.seen.is_some() && !p.info.flags.contains(PeerFlags::CONSTRAINED)
+            })
             .count()
     }
 
     pub fn list_peers(&self) -> Vec<(Id, PeerInfo)> {
         self.peers
             .iter()
-            .map(|(id, p)| (id.clone(), p.clone()))
+            .map(|(id, p)| (id.clone(), p.info.clone()))
             .collect()
     }
 
     pub fn peer_index_to_id(&self, index: usize) -> Option<Id> {
         self.peers
             .iter()
-            .find(|(_id, p)| p.index == index)
+            .find(|(_id, p)| p.info.index == index)
             .map(|(id, _s)| id.clone())
     }
 
@@ -121,7 +145,7 @@ impl Core {
         F: FnMut(&mut PeerInfo),
     {
         // Look for matching peer
-        let p = match self.peers.get_mut(id) {
+        let PeerInst { info: p, dirty } = match self.peers.get_mut(id) {
             Some(p) => p,
             None => return Ok(None),
         };
@@ -132,16 +156,8 @@ impl Core {
         // Run update function
         f(p);
 
-        // Sync meaningful peer info updates to db
-        // We don't want to do this every call as it's a lot of overhead
-        // TODO(low): this should probably also execute periodically otherwise
-        // we ignore packet counts etc. indefinitely / until state changes
-        if p.state != old_peer.state || p.address != old_peer.address || p.flags != old_peer.flags {
-            if let Err(e) = self.store.peer_update(p).await {
-                error!("Failed to update peer information: {e:?}");
-                return Err(DsfError::Store);
-            }
-        }
+        // Set dirty flag
+        *dirty = true;
 
         // Return updated info
         Ok(Some(p.clone()))
