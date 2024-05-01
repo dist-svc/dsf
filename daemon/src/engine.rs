@@ -1,5 +1,5 @@
 use std::convert::TryFrom;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
@@ -24,6 +24,8 @@ use crate::daemon::net::NetIf;
 use crate::daemon::*;
 use crate::error::Error;
 use crate::io::*;
+use crate::plugins::address::AddressPlugin;
+use crate::plugins::upnp::UpnpPlugin;
 use crate::rpc::bootstrap::Bootstrap;
 use crate::store::*;
 
@@ -70,6 +72,10 @@ pub struct EngineOptions {
     /// point-to-point network latencies
     pub mock_rx_latency: Option<Duration>,
 
+    #[clap(long)]
+    /// Enable UPnP port forwarding
+    pub enable_upnp: bool,
+
     #[clap(flatten)]
     pub daemon_options: DaemonOptions,
 }
@@ -105,6 +111,7 @@ impl Default for EngineOptions {
                 ..Default::default()
             },
             mock_rx_latency: None,
+            enable_upnp: false,
         }
     }
 }
@@ -134,6 +141,7 @@ impl EngineOptions {
                 ..Default::default()
             },
             mock_rx_latency: None,
+            enable_upnp: false,
         }
     }
 }
@@ -307,6 +315,29 @@ impl Engine {
             });
         }
 
+        // TODO: plugin contexts should exist alongside engine
+        let mut plugin_addr = AddressPlugin::new();
+        let mut plugin_upnp = UpnpPlugin::new(dsf.id());
+        let upnp_enabled = options.enable_upnp;
+
+        if options.enable_upnp {
+            match plugin_addr.update().await {
+                // TODO: fix this for multiple bindings etc... maybe part of net actor?
+                Ok(addr) if addr.len() > 0 && options.bind_addresses.len() > 0 => {
+                    let upnp_addr = SocketAddr::new(addr[0], options.bind_addresses[0].port());
+                    info!("Bind UPnP for address: {upnp_addr}");
+                    if let Err(e) = plugin_upnp.register(upnp_addr.clone()).await {
+                        error!("Failed to bind UPnP addr {upnp_addr}: {e:?}");
+                    } else {
+                        info!("UPnP bound for: {upnp_addr}");
+                    }
+                }
+                _ => {
+                    warn!("Failed to resolve local address, UPnP aborted");
+                }
+            }
+        }
+
         // Create periodic timers
         let mut update_timer = interval(Duration::from_secs(30));
         let mut tick_timer = interval(Duration::from_millis(200));
@@ -331,6 +362,10 @@ impl Engine {
             // Send othert exists
             net_exit_tx.send(()).await.unwrap();
             dsf_exit_tx.send(()).await.unwrap();
+
+            if upnp_enabled {
+                let _ = plugin_upnp.deregister().await;
+            }
         });
 
         let mock_rx_latency = options.mock_rx_latency;
