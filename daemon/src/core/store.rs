@@ -11,7 +11,10 @@ use crate::store::{object::ObjectIdentifier, Backend, Store, StoreError};
 /// Async datastore wrapper
 ///
 /// This serialises sqlite database operations to avoid the need for connection
-/// pooling while using a dedicated thread to avoid blocking executor threads
+/// pooling while using a dedicated thread to avoid blocking executor threads.
+///
+/// (eg. allows core / RPC operations to keep moving without waiting on database writes,
+/// though this has both advantages and disadvantages...)
 #[derive(Clone)]
 pub struct AsyncStore {
     tasks: UnboundedSender<(StoreOp, OneshotSender<StoreRes>)>,

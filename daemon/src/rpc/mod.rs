@@ -137,9 +137,16 @@ impl<T: Engine> Rpc for T {
                     ServiceCommands::Discover(opts) => {
                         self.discover(opts).await.map(ResponseKind::Services)
                     }
-                    ServiceCommands::SetKey(opts) => todo!("SetKey not yet implemented"),
-                    ServiceCommands::Remove(opts) => todo!("Remove not yet implemented"),
-                    ServiceCommands::GetKey(_) => todo!("GetKey not yet implemented"),
+                    ServiceCommands::SetKey(_opts) => todo!("SetKey needs reimplementation"),
+                    ServiceCommands::Remove(_opts) => todo!("Remove not yet implemented"),
+                    ServiceCommands::GetKey(_opts) => todo!("GetKey needs reimplementation"),
+                    ServiceCommands::AuthList(opts) => {
+                        self.svc_auth_list(opts).await.map(ResponseKind::Auths)
+                    }
+                    ServiceCommands::AuthUpdate(opts) => self
+                        .svc_auth_update(opts.service, opts.peer_id, opts.role)
+                        .await
+                        .map(ResponseKind::Auths),
                 };
 
                 debug!("Async service rpc result: {:?}", r);
@@ -243,8 +250,6 @@ where
 {
     // Create a new RPC operation
     pub fn start_rpc(&mut self, req: Request, mut done: RpcSender) -> Result<(), Error> {
-        let req_id = req.req_id();
-
         // Force wake next tick
         if let Some(waker) = self.waker.as_ref() {
             waker.wake_by_ref();

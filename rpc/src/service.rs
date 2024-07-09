@@ -1,5 +1,5 @@
-use std::net::SocketAddr;
 use std::time::SystemTime;
+use std::{collections::HashMap, net::SocketAddr};
 
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
@@ -163,6 +163,14 @@ pub enum ServiceCommands {
     #[clap()]
     /// Remove a service from the service list (and database if specified)
     Remove(RemoveOptions),
+
+    #[clap()]
+    /// List authorisations for a service
+    AuthList(ServiceIdentifier),
+
+    #[clap()]
+    /// Add/Update/Remove authorisations for a service
+    AuthUpdate(AuthUpdateOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
@@ -394,4 +402,37 @@ pub struct RemoveOptions {
     #[clap(long)]
     /// Attempt to remove an owned service from the network
     pub purge: bool,
+}
+
+/// Authorisation information for a service
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AuthInfo {
+    /// Service referenced
+    pub service_id: Id,
+    /// List of authorisations
+    pub auths: HashMap<Id, AuthRole>,
+}
+
+/// Authorisation kind (read / write / etc.)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser, Display)]
+#[cfg_attr(feature = "std", derive(EnumString))]
+#[strum(serialize_all = "snake_case")]
+pub enum AuthRole {
+    None,
+    Read,
+    Write,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Parser)]
+pub struct AuthUpdateOptions {
+    /// Service to add authorisation to
+    #[clap(flatten)]
+    pub service: ServiceIdentifier,
+
+    /// Peer to authorise
+    pub peer_id: Id,
+
+    /// Authorisation type
+    #[clap(default_value_t=AuthRole::Write)]
+    pub role: AuthRole,
 }

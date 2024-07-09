@@ -9,10 +9,11 @@ use encdec::{Decode, Encode};
 use heapless::String;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
+use crate::crypto::{Crypto, PubKey};
 use crate::error::Error;
 use crate::types::{
-    Address, AddressV4, AddressV6, DateTime, Id, Ip, PublicKey, Queryable, Signature, ID_LEN,
-    PUBLIC_KEY_LEN, SIGNATURE_LEN,
+    Address, AddressV4, AddressV6, DateTime, Id, Ip, PrivateKey, PublicKey, Queryable, Signature,
+    ID_LEN, PUBLIC_KEY_LEN, SIGNATURE_LEN,
 };
 
 mod helpers;
@@ -50,6 +51,8 @@ pub enum Options {
     Room(OptionString),
 
     Index(u32),
+
+    DelegationProof(Signature),
 }
 
 #[derive(
@@ -67,23 +70,24 @@ pub enum Options {
 #[repr(u16)]
 pub enum OptionKind {
     None = 0x0000,
-    PubKey = 0x0001,       // Public Key
-    PeerId = 0x0002,       // ID of Peer responsible for secondary page
-    PrevSig = 0x0003,      // Previous object signature
-    Kind = 0x0004,         // Service KIND in utf-8
-    Name = 0x0005,         // Service NAME in utf-8
-    IpAddrV4 = 0x0006,     // IPv4 service address
-    IpAddrV6 = 0x0007,     // IPv6 service address
-    Issued = 0x0008,       // ISSUED option defines object creation time
-    Expiry = 0x0009,       // EXPIRY option defines object expiry time
-    Limit = 0x000a,        // LIMIT option defines maximum number of objects to return
-    Meta = 0x000b,         // META option supports generic metadata key:value pairs
-    Building = 0x000c,     // Building name / number (string)
-    Room = 0x000d,         // Room name / number (string)
-    Coord = 0x000e,        // Coordinates (lat, lng, alt)
-    Manufacturer = 0x000f, // Manufacturer name (string)
-    Serial = 0x0010,       // Device serial (string)
-    Index = 0x0011,        // Object index
+    PubKey = 0x0001,          // Public Key
+    PeerId = 0x0002,          // Peer ID, owner of secondary page or delegated origin
+    PrevSig = 0x0003,         // Previous object signature
+    Kind = 0x0004,            // Service KIND in utf-8
+    Name = 0x0005,            // Service NAME in utf-8
+    IpAddrV4 = 0x0006,        // IPv4 service address
+    IpAddrV6 = 0x0007,        // IPv6 service address
+    Issued = 0x0008,          // ISSUED option defines object creation time
+    Expiry = 0x0009,          // EXPIRY option defines object expiry time
+    Limit = 0x000a,           // LIMIT option defines maximum number of objects to return
+    Meta = 0x000b,            // META option supports generic metadata key:value pairs
+    Building = 0x000c,        // Building name / number (string)
+    Room = 0x000d,            // Room name / number (string)
+    Coord = 0x000e,           // Coordinates (lat, lng, alt)
+    Manufacturer = 0x000f,    // Manufacturer name (string)
+    Serial = 0x0010,          // Device serial (string)
+    Index = 0x0011,           // Object index
+    DelegationProof = 0x0012, // Delegation proof
 }
 
 impl From<&Options> for OptionKind {
@@ -108,6 +112,7 @@ impl From<&Options> for OptionKind {
             Options::Manufacturer(_) => OptionKind::Manufacturer,
             Options::Serial(_) => OptionKind::Serial,
             Options::Index(_) => OptionKind::Index,
+            Options::DelegationProof(_) => OptionKind::DelegationProof,
         }
     }
 }
@@ -183,6 +188,10 @@ impl Options {
 
     pub fn room(value: impl AsRef<str>) -> Options {
         Options::Room(value.as_ref().into())
+    }
+
+    pub fn proof(sig: Signature) -> Options {
+        Options::DelegationProof(sig.clone())
     }
 
     /// Indicates an option is filterable and should be considered
@@ -296,6 +305,7 @@ impl<'a> Decode<'a> for Options {
             }
             OptionKind::Serial => OptionString::decode(d).map(|(v, _)| Options::Serial(v)),
             OptionKind::Index => Ok(Options::Index(LittleEndian::read_u32(d))),
+            OptionKind::DelegationProof => Signature::try_from(d).map(Options::DelegationProof),
         };
 
         let o = match r {
@@ -335,6 +345,7 @@ impl Encode for Options {
             Options::Metadata(m) => m.key.len() + m.value.len() + 1,
             Options::Coord(_) => 3 * 4,
             Options::Index(_) => 4,
+            Options::DelegationProof(_) => SIGNATURE_LEN,
         };
 
         Ok(OPTION_HEADER_LEN + n)
@@ -415,6 +426,10 @@ impl Encode for Options {
                 LittleEndian::write_u32(&mut data[4..], *n);
                 4
             }
+            Options::DelegationProof(sig) => {
+                data[OPTION_HEADER_LEN..][..SIGNATURE_LEN].copy_from_slice(sig);
+                SIGNATURE_LEN
+            }
             _ => todo!(),
         };
 
@@ -472,6 +487,30 @@ impl defmt::Format for Metadata {
     fn format(&self, fmt: defmt::Formatter) {
         let (k, v): (&str, &str) = (&self.key, &self.value);
         defmt::write!(fmt, "{}:{}", k, v)
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct DelegationProof(pub Signature);
+
+impl DelegationProof {
+    /// Sign a delegation proof for the provided peer and origin service version
+    pub fn sign(svc_pri_key: &PrivateKey, svc_version: u32, peer_id: &Id) -> DelegationProof {
+        let mut b = [0u8; ID_LEN + 4];
+        b[..ID_LEN].copy_from_slice(peer_id.as_bytes());
+        b[ID_LEN..].copy_from_slice(&svc_version.to_le_bytes());
+
+        Self(Crypto::pk_sign(svc_pri_key, &b).unwrap())
+    }
+
+    /// Verify a delegation proof for the provided peer and origin service version
+    pub fn verify(&self, svc_pub_key: &PublicKey, svc_version: u32, peer_id: &Id) -> bool {
+        let mut b = [0u8; ID_LEN + 4];
+        b[..ID_LEN].copy_from_slice(peer_id.as_bytes());
+        b[ID_LEN..].copy_from_slice(&svc_version.to_le_bytes());
+
+        Crypto::pk_verify(svc_pub_key, &self.0, &b).unwrap()
     }
 }
 
@@ -577,6 +616,7 @@ mod tests {
             Options::expiry(SystemTime::now()),
             Options::Limit(13),
             Options::Index(1234),
+            Options::DelegationProof([3u8; SIGNATURE_LEN].into()),
         ];
 
         for o in tests.iter() {
@@ -638,5 +678,27 @@ mod tests {
             &tests, &decoded,
             "Mismatch between original and decode vectors"
         );
+    }
+
+    #[test]
+    fn sign_verify_delegation_proof() {
+        let (svc_pub_key, svc_pri_key) = Crypto::new_pk().unwrap();
+        let svc_version = 1234u32;
+
+        let peer_id = Id::from([2u8; ID_LEN]);
+
+        let proof = DelegationProof::sign(&svc_pri_key, svc_version, &peer_id);
+
+        // Succeds with valid inputs
+        assert_eq!(proof.verify(&svc_pub_key, svc_version, &peer_id), true);
+
+        // Fails with invalid inputs
+        assert_eq!(
+            proof.verify(&svc_pub_key, svc_version, &Id::from([3u8; ID_LEN])),
+            false
+        );
+        assert_eq!(proof.verify(&svc_pub_key, svc_version + 1, &peer_id), false);
+        let (wrong_pub_key, _) = Crypto::new_pk().unwrap();
+        assert_eq!(proof.verify(&wrong_pub_key, svc_version, &peer_id), false);
     }
 }

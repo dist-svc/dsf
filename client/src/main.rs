@@ -117,6 +117,16 @@ fn handle_response(resp: ResponseKind, no_trunc: bool) {
             println!("Data:");
             print_objects(&data, no_trunc);
         }
+        ResponseKind::Auths(info) => {
+            if info.auths.len() == 0 {
+                println!("No authorisations for service: {}", info.service_id);
+            } else {
+                println!("Authorisations for service: {}", info.service_id);
+                for (peer_id, role) in info.auths.iter() {
+                    println!("\t{peer_id}: {role}");
+                }
+            }
+        }
         ResponseKind::Error(e) => error!("{:?}", e),
         ResponseKind::Unrecognised => warn!("command not yet implemented"),
         _ => warn!("unhandled response: {:?}", resp),

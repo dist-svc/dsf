@@ -44,7 +44,7 @@ pub trait Net {
 }
 
 impl<T: Engine> Net for T {
-    async fn handle_net(&mut self, req: Request) -> Response {
+    async fn handle_net(&mut self, _req: Request) -> Response {
         todo!()
     }
 }

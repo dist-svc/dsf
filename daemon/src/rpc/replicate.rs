@@ -13,7 +13,7 @@ use log::{debug, error, info, trace, warn};
 use rpc::ServiceInfo;
 use tracing::{span, Level};
 
-use dsf_core::options::Options;
+use dsf_core::options::{DelegationProof, Options};
 use dsf_core::prelude::*;
 use dsf_rpc::{self as rpc, RegisterInfo, RegisterOptions};
 
@@ -101,6 +101,19 @@ pub(super) async fn fetch_replica<E: Engine>(
     let target_id = info.id.clone();
     let page_signature = info.primary_page.clone().unwrap();
 
+    // Build delegation / origin proof for owned services
+    // TODO: might be useful to genericise this for call-response interactions via delegation
+    // NOTE: can also be specified using peer_id in the primary page for delegation
+    let proof = info
+        .private_key
+        .as_ref()
+        .map(|pri_key| DelegationProof::sign(pri_key, info.index as u32, &e.id()));
+
+    let mut private_options = vec![];
+    if let Some(proof) = proof {
+        private_options.push(Options::DelegationProof(proof.0.clone()));
+    }
+
     let r = e
         .svc_update(
             e.id(),
@@ -111,6 +124,7 @@ pub(super) async fn fetch_replica<E: Engine>(
                     body: Some(SecondaryData {
                         sig: page_signature.clone(),
                     }),
+                    private_options: &private_options,
                     // TODO: could include peer id here?
                     ..Default::default()
                 };
@@ -124,6 +138,7 @@ pub(super) async fn fetch_replica<E: Engine>(
                 let opts = SecondaryOptions {
                     page_kind: PageKind::Replica.into(),
                     version: p.header().index(),
+                    private_options: &private_options,
                     public_options: &[Options::public_key(svc.public_key())],
                     ..Default::default()
                 };

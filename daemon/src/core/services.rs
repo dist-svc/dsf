@@ -1,9 +1,11 @@
-use std::time::SystemTime;
+use std::{collections::HashMap, time::SystemTime};
 
 use tracing::{debug, error, info, warn};
 
 use dsf_core::{prelude::*, types::ShortId};
-use dsf_rpc::{PageBounds, ServiceFlags, ServiceIdentifier, ServiceInfo, ServiceState};
+use dsf_rpc::{
+    AuthInfo, AuthRole, PageBounds, ServiceFlags, ServiceIdentifier, ServiceInfo, ServiceState,
+};
 
 use super::{store::AsyncStore, Core, CoreRes};
 use crate::{core::store::DataStore, error::Error, store::object::ObjectIdentifier};
@@ -21,6 +23,9 @@ pub struct ServiceInst {
 
     // Our most recent replica page (if replicated)
     pub replica_page: Option<Container>,
+
+    // Authorisations
+    pub authorisations: HashMap<Id, AuthRole>,
 }
 
 impl Core {
@@ -52,6 +57,7 @@ impl Core {
             info: info.clone(),
             primary_page: primary_page.clone(),
             replica_page: None,
+            authorisations: HashMap::new(),
         };
         self.services.insert(id.clone(), inst);
 
@@ -129,6 +135,7 @@ impl Core {
                     info: info.clone(),
                     primary_page: primary_page.clone(),
                     replica_page: None,
+                    authorisations: HashMap::new(),
                 };
                 self.services.insert(id.clone(), inst);
 
@@ -241,6 +248,52 @@ impl Core {
         Ok(self.services.values().map(|s| s.info.clone()).collect())
     }
 
+    pub async fn service_auth_list(&self, service: &ServiceIdentifier) -> Result<AuthInfo, Error> {
+        let service_id = match self.resolve_service_ident(service) {
+            Some(id) => id,
+            None => return Err(Error::NotFound),
+        };
+
+        let auths = self
+            .services
+            .get(&service_id)
+            .map(|s| s.authorisations.clone())
+            .unwrap();
+
+        Ok(AuthInfo { service_id, auths })
+    }
+
+    pub async fn service_auth_update(
+        &mut self,
+        service: &ServiceIdentifier,
+        peer_id: &Id,
+        role: AuthRole,
+    ) -> Result<AuthInfo, Error> {
+        let service_id = match self.resolve_service_ident(service) {
+            Some(id) => id,
+            None => return Err(Error::NotFound),
+        };
+
+        let s = match self.services.get_mut(&service_id) {
+            Some(s) => s,
+            None => return Err(Error::NotFound),
+        };
+
+        if role == AuthRole::None {
+            s.authorisations.remove(peer_id);
+        } else {
+            s.authorisations.insert(peer_id.clone(), role);
+        }
+
+        // TODO(high): update authorisations in database
+
+        // Return updated authorisations
+        Ok(AuthInfo {
+            service_id,
+            auths: s.authorisations.clone(),
+        })
+    }
+
     /// Helper to load services from the [AsyncStore], called at start
     pub(super) async fn load_services(store: &AsyncStore) -> Result<Vec<ServiceInst>, Error> {
         // Load service info from databases
@@ -285,6 +338,9 @@ impl Core {
                 Err(_) => (),
             }
 
+            // TODO(high): Fetch authorisations from database
+            let authorisations = HashMap::new();
+
             // TODO(med): Setup replication if enabled
             if let Some(_rp_sig) = &info.replica_page {}
 
@@ -294,10 +350,36 @@ impl Core {
                 info,
                 primary_page,
                 replica_page: None,
+                authorisations,
             });
         }
 
         Ok(services)
+    }
+
+    /// Helper to resolve a [ServiceIdentifier] into an [Id] for indexing the services map
+    fn resolve_service_ident(&self, ident: &ServiceIdentifier) -> Option<Id> {
+        if let Some(id) = &ident.id {
+            return self.services.get(id).map(|_s| id.clone());
+        }
+
+        if let Some(short_id) = &ident.short_id {
+            return self
+                .services
+                .iter()
+                .find(|(_id, s)| s.info.short_id == *short_id)
+                .map(|(_id, s)| s.info.id.clone());
+        }
+
+        if let Some(index) = &ident.index {
+            return self
+                .services
+                .iter()
+                .find(|(_id, s)| s.info.index == *index)
+                .map(|(_id, s)| s.info.id.clone());
+        }
+
+        None
     }
 }
 

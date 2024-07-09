@@ -15,7 +15,7 @@ use dsf_rpc::{self as rpc};
 
 #[tokio::test]
 async fn smol_scale() {
-    scale(3, LevelFilter::DEBUG).await;
+    scale(3, LevelFilter::INFO).await;
 }
 
 #[tokio::test]

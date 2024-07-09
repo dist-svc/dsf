@@ -14,8 +14,8 @@ use tracing::{debug, error, info, trace, warn};
 
 use dsf_core::prelude::*;
 use dsf_rpc::{
-    DataInfo, PageBounds, PeerInfo, PeerState, ReplicaInfo, ServiceIdentifier, ServiceInfo,
-    ServiceState, SubscriptionInfo, SubscriptionKind, TimeBounds,
+    AuthInfo, AuthRole, DataInfo, PageBounds, PeerInfo, PeerState, ReplicaInfo, ServiceIdentifier,
+    ServiceInfo, ServiceState, SubscriptionInfo, SubscriptionKind, TimeBounds,
 };
 
 use crate::{
@@ -104,7 +104,14 @@ pub enum CoreOp {
     GetObject(ServiceIdentifier, ObjectIdentifier),
     StoreObject(Id, Container),
 
+    /// Fetch key information for a service or peer, used in network encode / decode etc.
     GetKeys(Id),
+
+    /// List authorisations for a service
+    ListAuth(ServiceIdentifier),
+
+    /// Update (or remove) a service authorisation
+    UpdateAuth(ServiceIdentifier, Id, AuthRole),
 
     /// Exit core task
     Exit,
@@ -158,6 +165,13 @@ impl core::fmt::Debug for CoreOp {
                 .field(object)
                 .finish(),
             CoreOp::GetKeys(id) => f.debug_tuple("GetKeys").field(id).finish(),
+            CoreOp::UpdateAuth(s_id, p_id, role) => f
+                .debug_tuple("UpdateAuth")
+                .field(s_id)
+                .field(p_id)
+                .field(role)
+                .finish(),
+            CoreOp::ListAuth(s_id) => f.debug_tuple("ListAuth").field(s_id).finish(),
 
             CoreOp::Exit => f.debug_tuple("Exit").finish(),
         }
@@ -191,6 +205,7 @@ pub enum CoreRes {
 
     Keys(Keys),
     Sig(Signature),
+    Auths(AuthInfo),
 
     /// Network request responses by peer ID
     Responses(HashMap<Id, NetResponse>),
@@ -342,6 +357,18 @@ impl Core {
                 .subscriber_remove(&service_id, &sub_kind)
                 .map(|_s| CoreRes::Ok)
                 .unwrap_or(CoreRes::NotFound),
+
+            CoreOp::UpdateAuth(service_id, peer_id, role) => self
+                .service_auth_update(&service_id, &peer_id, role)
+                .await
+                .map(|a| CoreRes::Auths(a))
+                .unwrap_or(CoreRes::NotFound),
+            CoreOp::ListAuth(service_id) => self
+                .service_auth_list(&service_id)
+                .await
+                .map(|a| CoreRes::Auths(a))
+                .unwrap_or(CoreRes::NotFound),
+
             CoreOp::Exit => unimplemented!(),
         };
 
@@ -791,6 +818,53 @@ impl AsyncCore {
         // Await operation completion
         match rx.await {
             Ok(CoreRes::Keys(k)) => Ok(k),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            _ => Err(DsfError::Unknown),
+        }
+    }
+
+    pub async fn service_auth_list(
+        &self,
+        service: &ServiceIdentifier,
+    ) -> Result<AuthInfo, DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((CoreOp::ListAuth(service.clone()), tx)) {
+            error!("Failed to enqueue auth list operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Auths(k)) => Ok(k),
+            Ok(CoreRes::Error(e)) => Err(e),
+            Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
+            _ => Err(DsfError::Unknown),
+        }
+    }
+
+    pub async fn service_auth_update(
+        &self,
+        service: &ServiceIdentifier,
+        peer_id: &Id,
+        role: AuthRole,
+    ) -> Result<AuthInfo, DsfError> {
+        let (tx, rx) = oneshot::channel();
+
+        // Enqueue put operation
+        if let Err(e) = self.tasks.send((
+            CoreOp::UpdateAuth(service.clone(), peer_id.clone(), role),
+            tx,
+        )) {
+            error!("Failed to enqueue auth update operation: {e:?}");
+            return Err(DsfError::IO);
+        }
+
+        // Await operation completion
+        match rx.await {
+            Ok(CoreRes::Auths(k)) => Ok(k),
             Ok(CoreRes::Error(e)) => Err(e),
             Ok(CoreRes::NotFound) => Err(DsfError::NotFound),
             _ => Err(DsfError::Unknown),

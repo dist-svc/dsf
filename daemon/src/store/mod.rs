@@ -28,6 +28,7 @@ use tokio::sync::{
     oneshot::Sender as OneshotSender,
 };
 
+pub mod auth;
 pub mod ident;
 pub mod object;
 pub mod peers;

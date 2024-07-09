@@ -81,6 +81,7 @@ pub trait Filters {
     fn address(&self) -> Option<Address>;
     fn name(&self) -> Option<OptionString>;
     fn index(&self) -> Option<u32>;
+    fn delegation_proof(&self) -> Option<Signature>;
 }
 
 /// Filter implementation for [`OptionsIter`]
@@ -174,6 +175,17 @@ impl<T: AsRef<[u8]>> Filters for OptionsIter<T> {
             _ => None,
         })
     }
+
+    fn delegation_proof(&self) -> Option<Signature> {
+        let mut s = OptionsIter {
+            index: 0,
+            buff: self.buff.as_ref(),
+        };
+        s.find_map(|o| match o {
+            Options::DelegationProof(s) => Some(s.clone()),
+            _ => None,
+        })
+    }
 }
 
 /// [`Filters`] implementation for types implementing Iterator over Options
@@ -231,6 +243,13 @@ impl<'a, T: Iterator<Item = &'a Options> + Clone> Filters for T {
     fn index(&self) -> Option<u32> {
         self.clone().find_map(|o| match o {
             Options::Index(v) => Some(*v),
+            _ => None,
+        })
+    }
+
+    fn delegation_proof(&self) -> Option<Signature> {
+        self.clone().find_map(|o| match o {
+            Options::DelegationProof(sig) => Some(sig.clone()),
             _ => None,
         })
     }

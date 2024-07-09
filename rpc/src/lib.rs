@@ -255,6 +255,8 @@ pub enum ResponseKind {
 
     Sync(SyncInfo),
 
+    Auths(AuthInfo),
+
     //Value(String),
     Unrecognised,
 

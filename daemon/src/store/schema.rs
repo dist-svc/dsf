@@ -99,6 +99,14 @@ table! {
     }
 }
 
+table! {
+    auth (service_id, peer_id) {
+        service_id -> Text,
+        peer_id -> Text,
+        role -> Text,
+    }
+}
+
 /// Initialise database tables
 ///
 /// This is called automatically in the `new` function
@@ -181,6 +189,17 @@ pub(super) fn create_tables<C: Connection<Backend = Sqlite>>(
     )
     .execute(conn)?;
 
+    sql_query(
+        "CREATE TABLE IF NOT EXISTS auth (
+        service_id TEXT NOT NULL,
+        peer_id TEXT NOT NULL,
+        role TEXT,
+        
+        PRIMARY KEY (service_id, peer_id)
+    );",
+    )
+    .execute(conn)?;
+
     Ok(())
 }
 
@@ -195,6 +214,8 @@ pub(super) fn drop_tables<C: Connection<Backend = Sqlite>>(conn: &mut C) -> Resu
     sql_query("DROP TABLE IF EXISTS object;").execute(conn)?;
 
     sql_query("DROP TABLE IF EXISTS identity;").execute(conn)?;
+
+    sql_query("DROP TABLE IF EXISTS auth;").execute(conn)?;
 
     Ok(())
 }

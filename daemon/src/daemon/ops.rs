@@ -421,7 +421,7 @@ where
                         let r = match core.replica_list(id.clone()).await {
                             Ok(v) => CoreRes::Replicas(v),
                             Err(e) => {
-                                error!("Failed to locate replicas for service: {:?}", id);
+                                error!("Failed to locate replicas for service {id:?}: {e:?}");
                                 CoreRes::Error(CoreError::Unknown)
                             }
                         };
@@ -438,6 +438,38 @@ where
                             Err(e) => {
                                 // TODO: propagate error?
                                 error!("Failed to update replica: {:?}", e);
+                                CoreRes::Error(e)
+                            }
+                        };
+                        if let Err(e) = done.try_send(resp) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
+                }
+                OpKind::AuthList(service) => {
+                    tokio::task::spawn(async move {
+                        let resp = match core.service_auth_list(&service).await {
+                            // TODO: return updated replica info?
+                            Ok(r) => CoreRes::Auths(r),
+                            Err(e) => {
+                                // TODO: propagate error?
+                                error!("Failed to list authorisations: {:?}", e);
+                                CoreRes::Error(e)
+                            }
+                        };
+                        if let Err(e) = done.try_send(resp) {
+                            error!("Failed to send operation response: {:?}", e);
+                        };
+                    });
+                }
+                OpKind::AuthUpdate(service, peer_id, role) => {
+                    tokio::task::spawn(async move {
+                        let resp = match core.service_auth_update(&service, &peer_id, role).await {
+                            // TODO: return updated replica info?
+                            Ok(r) => CoreRes::Auths(r),
+                            Err(e) => {
+                                // TODO: propagate error?
+                                error!("Failed to list authorisations: {:?}", e);
                                 CoreRes::Error(e)
                             }
                         };
@@ -464,7 +496,7 @@ where
                                 );
                                 CoreRes::Responses(v)
                             }
-                            Err(e) => CoreRes::Error(CoreError::Unknown),
+                            Err(_e) => CoreRes::Error(CoreError::Unknown),
                         };
 
                         if let Err(e) = done.send(r).await {
@@ -491,7 +523,7 @@ where
                                 );
                                 CoreRes::Responses(v)
                             }
-                            Err(e) => CoreRes::Error(CoreError::Unknown),
+                            Err(_e) => CoreRes::Error(CoreError::Unknown),
                         };
 
                         if let Err(e) = done.send(r).await {

@@ -16,7 +16,7 @@ use dsf_rpc::{self as rpc};
 #[ignore]
 async fn test_ns() {
     let _ = FmtSubscriber::builder()
-        .with_max_level(LevelFilter::DEBUG)
+        .with_max_level(LevelFilter::INFO)
         .try_init();
 
     let d = TempDir::new("dsf-ns").unwrap();

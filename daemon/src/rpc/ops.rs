@@ -38,9 +38,13 @@ pub enum OpKind {
 
     /// Resolve a service identifier to a service instance
     ServiceGet(ServiceIdentifier),
+    /// Create a new service
     ServiceCreate(Service, Container),
+    /// Register a service
     ServiceRegister(Id, Vec<Container>),
+    /// Update service information
     ServiceUpdate(Id, ServiceUpdateFn),
+    /// List available services
     ServiceList(ServiceListOptions),
 
     Publish(Id, PageInfo),
@@ -74,6 +78,12 @@ pub enum OpKind {
 
     /// Issue a broadcast network request
     NetBcast(NetRequestBody),
+
+    /// List authorisations for a service
+    AuthList(ServiceIdentifier),
+
+    /// Update authorisations for a service
+    AuthUpdate(ServiceIdentifier, Id, AuthRole),
 
     /// Fetch or generate a new primary page for the peer service
     Primary,
@@ -126,6 +136,13 @@ impl core::fmt::Debug for OpKind {
             Self::Net(req, peers) => f.debug_tuple("Net").field(req).field(peers).finish(),
 
             Self::NetBcast(req) => f.debug_tuple("NetBcast").field(req).finish(),
+            Self::AuthList(s_id) => f.debug_tuple("AuthList").field(s_id).finish(),
+            Self::AuthUpdate(s_id, p_id, r) => f
+                .debug_tuple("AuthUpdate")
+                .field(s_id)
+                .field(p_id)
+                .field(r)
+                .finish(),
 
             Self::Primary => f.debug_tuple("Primary").finish(),
         }
@@ -283,6 +300,29 @@ pub trait Engine: Sync + Send {
             Err(e)
         } else {
             Ok(r)
+        }
+    }
+
+    /// Execute an update function on a mutable service instance
+    async fn svc_auth_list(&self, service: ServiceIdentifier) -> Result<AuthInfo, DsfError> {
+        match self.exec(OpKind::AuthList(service)).await {
+            CoreRes::Auths(d) => Ok(d.clone()),
+            CoreRes::Error(e) => Err(e),
+            _ => Err(DsfError::NotFound),
+        }
+    }
+
+    /// Execute an update function on a mutable service instance
+    async fn svc_auth_update(
+        &self,
+        service: ServiceIdentifier,
+        peer_id: Id,
+        role: AuthRole,
+    ) -> Result<AuthInfo, DsfError> {
+        match self.exec(OpKind::AuthUpdate(service, peer_id, role)).await {
+            CoreRes::Auths(a) => Ok(a),
+            CoreRes::Error(e) => Err(e),
+            _ => Err(DsfError::NotFound),
         }
     }
 
