@@ -72,7 +72,11 @@ pub enum RequestBody {
 
     Register(Id, Vec<Container>),
     Unregister(Id),
+
+    /// Discover request, includes application identifier, body, and options
     Discover(u16, Vec<u8>, Vec<Options>),
+    /// Control request, includes application identifier, target ID, control body
+    Control(u16, Id, Vec<u8>),
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -293,6 +297,7 @@ impl From<&RequestBody> for RequestKind {
             RequestBody::Register(_, _) => RequestKind::Register,
             RequestBody::Unregister(_) => RequestKind::Unregister,
             RequestBody::Discover(_, _, _) => RequestKind::Discover,
+            RequestBody::Control(_, _, _) => RequestKind::Control,
         }
     }
 }
@@ -426,6 +431,12 @@ impl Request {
             RequestKind::Discover => {
                 // TODO: pass through discover options
                 RequestBody::Discover(header.application_id(), body.to_vec(), public_options)
+            }
+            RequestKind::Control => {
+                let mut id = Id::default();
+                id.copy_from_slice(&body[0..ID_LEN]);
+
+                RequestBody::Control(header.application_id(), id, (&body[ID_LEN..]).to_vec())
             }
         };
 

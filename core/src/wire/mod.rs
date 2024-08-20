@@ -246,22 +246,26 @@ impl<T: ImmutableData> Container<T> {
         let mut i = 0;
 
         for p in pages {
-            // TODO: is there any way to have an invalid (non-signed/verified) container here?
-            // if so, handle this case
-            let b = p.raw();
-
-            // Check we have space
-            if b.len() >= buff.len() - i {
-                return Err(Error::BufferLength);
-            }
-
-            // Convert and encode, note these must be pre-signed / encrypted
-            buff[i..][..b.len()].copy_from_slice(b);
-
-            i += b.len();
+            i += Self::encode_page(p, &mut buff[i..])?;
         }
 
         Ok(i)
+    }
+
+    pub fn encode_page(page: &Container<T>, buff: &mut [u8]) -> Result<usize, Error> {
+        // TODO: is there any way to have an invalid (non-signed/verified) container here?
+        // if so, handle this case
+        let b = page.raw();
+
+        // Check we have space
+        if b.len() >= buff.len() {
+            return Err(Error::BufferLength);
+        }
+
+        // Convert and encode, note these must be pre-signed / encrypted
+        buff[..b.len()].copy_from_slice(b);
+
+        Ok(b.len())
     }
 }
 

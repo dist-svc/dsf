@@ -110,7 +110,7 @@ pub enum DataCommands {
     Query {},
 
     #[clap(name = "publish")]
-    /// Publish data to a service
+    /// Publish data using a managed service
     Publish(PublishOptions),
 
     #[clap(name = "push")]
@@ -152,7 +152,7 @@ pub struct PublishOptions {
     pub kind: u8,
 
     #[clap(short, long, value_parser = data_from_str)]
-    /// Data body as a string
+    /// Data body (base64 encoded for string parsing)
     pub data: Option<Data>,
 }
 

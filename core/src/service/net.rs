@@ -129,12 +129,32 @@ pub fn encode_request<B: MutableData>(
         | RequestBody::PushData(id, pages)
         | RequestBody::Register(id, pages) => b.with_body(|buff| {
             let mut n = id.encode(buff)?;
+
             n += Container::encode_pages(pages, &mut buff[n..])?;
+
             Ok(n)
         })?,
         RequestBody::Discover(app_id, body, _opts) => {
+            // Set application ID
             b.header_mut().set_application_id(*app_id);
+
+            // Write discovery body (application encoded)
             b.body(body.as_slice())?
+        }
+        RequestBody::Control(app_id, id, body) => {
+            // Set application ID
+            b.header_mut().set_application_id(*app_id);
+
+            b.with_body(|buff| {
+                // Write target ID first
+                let mut n = id.encode(buff)?;
+
+                // Then control message body (application encoded)
+                buff[n..][..body.len()].copy_from_slice(&body);
+                n += body.len();
+
+                Ok(n)
+            })?
         }
     };
 
@@ -341,6 +361,18 @@ mod test {
                 source.clone(),
                 request_id,
                 RequestBody::PushData(source.clone(), vec![page.clone()]),
+                flags,
+            ),
+            Request::new(
+                source.clone(),
+                request_id,
+                RequestBody::Discover(16, vec![11, 22, 33], vec![]),
+                flags,
+            ),
+            Request::new(
+                source.clone(),
+                request_id,
+                RequestBody::Control(17, source.clone(), vec![11, 22, 33]),
                 flags,
             ),
         ]

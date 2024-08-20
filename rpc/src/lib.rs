@@ -31,6 +31,9 @@ pub use subscriber::*;
 pub mod name;
 pub use name::*;
 
+pub mod control;
+pub use control::*;
+
 pub mod display;
 
 mod helpers;
@@ -185,13 +188,17 @@ pub enum RequestKind {
     #[clap(subcommand)]
     Ns(NsCommands),
 
-    /// Subcommand for managing objects
+    /// Subcommand for managing data objects
     #[clap(subcommand)]
     Data(DataCommands),
 
     /// Subcommand for managing subscribers
     #[clap(subcommand)]
     Subscriber(SubscriberCommands),
+
+    /// Subcommand for controlling services
+    #[clap(subcommand)]
+    Control(ControlCommands),
 
     /// Subcommand for managing runtime daemon configuration
     #[clap(subcommand)]

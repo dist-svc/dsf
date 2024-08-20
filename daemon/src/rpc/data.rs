@@ -50,7 +50,7 @@ impl<T: Engine> PublishData for T {
         }
 
         // Perform publish operation
-        let block = publish_data(self, &info, options.data.unwrap_or_default()).await?;
+        let block = publish_data(self, &info, options.data.unwrap_or_default(), vec![]).await?;
 
         // Forward to subscribers
         let resps = push_data(self, &info, vec![block.clone()]).await?;
@@ -85,6 +85,7 @@ pub(super) async fn publish_data<E: Engine, B: DataBody>(
     e: &E,
     info: &ServiceInfo,
     body: B,
+    private_options: Vec<Options>,
 ) -> Result<Container, DsfError> {
     // Pre-encode body
     let n = body.encode_len().map_err(|_| DsfError::EncodeFailed)?;
@@ -93,21 +94,24 @@ pub(super) async fn publish_data<E: Engine, B: DataBody>(
 
     debug!("Building data object");
 
-    // Setup publishing options
-    let data_options = DataOptions {
-        //data_kind: opts.kind.into(),
-        body: Some(b),
-        ..Default::default()
-    };
 
     // Build and sign data object
     let r = e
         .svc_update(
             info.id.clone(),
             Box::new(
-                move |svc, _state| match svc.publish_data_buff(data_options.clone()) {
-                    Ok((_n, c)) => CoreRes::Pages(vec![c.to_owned()], None),
-                    Err(e) => CoreRes::Error(e),
+                move |svc, _state| {
+                    // Setup publishing options
+                    let data_options = DataOptions {
+                        //data_kind: opts.kind.into(),
+                        body: Some(b.clone()),
+                        private_options: &private_options,
+                        ..Default::default()
+                    };
+                    match svc.publish_data_buff(data_options) {
+                        Ok((_n, c)) => CoreRes::Pages(vec![c.to_owned()], None),
+                        Err(e) => CoreRes::Error(e),
+                    }
                 },
             ),
         )

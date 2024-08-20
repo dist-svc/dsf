@@ -96,7 +96,7 @@ pub(super) async fn push_data<T: Engine>(
         for s in subscribers {
             let peer_id = match s.kind {
                 SubscriptionKind::Peer(id) => id,
-                // TODO: include RPC peers in data push
+                // TODO(high): include RPC peers in data push
                 _ => continue,
             };
             match core.peer_get(peer_id).await {

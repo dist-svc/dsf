@@ -117,6 +117,7 @@ impl TryFrom<&Container> for ReplicaInst {
             updated: SystemTime::now(),
 
             active: false,
+            authorative: false,
         };
 
         Ok(Self {

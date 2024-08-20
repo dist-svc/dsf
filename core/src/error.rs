@@ -58,6 +58,7 @@ pub enum Error {
     PageExpired,
     MissingSecretKey,
     Store,
+    NoResponse,
 }
 
 #[cfg(feature = "std")]

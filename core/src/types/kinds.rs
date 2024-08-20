@@ -341,6 +341,7 @@ pub enum RequestKind {
     Unregister = 0x0a,
     Discover = 0x0b,
     Locate = 0x0c,
+    Control = 0x0d,
 }
 
 impl From<RequestKind> for Kind {
@@ -504,6 +505,8 @@ mod tests {
             (RequestKind::Register, [0b1000_1001]),
             (RequestKind::Unregister, [0b1000_1010]),
             (RequestKind::Discover, [0b1000_1011]),
+            (RequestKind::Locate, [0b1000_1100]),
+            (RequestKind::Control, [0b1000_1101]),
         ];
 
         test_kind_coersions(&tests, |k| {

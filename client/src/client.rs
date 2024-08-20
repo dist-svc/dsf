@@ -302,6 +302,22 @@ impl Client {
         }
     }
 
+    /// Issue a control message to a known service
+    pub async fn control(
+        &mut self,
+        options: control::ControlWriteOptions,
+    ) -> Result<DataInfo, Error> {
+        let req = RequestKind::Control(ControlCommands::Write(options));
+
+        let resp = self.request(req).await?;
+
+        match resp {
+            ResponseKind::Objects(info) if info.len() == 1 => Ok(info[0].0.clone()),
+            ResponseKind::Error(e) => Err(Error::Remote(e)),
+            _ => Err(Error::UnrecognizedResult),
+        }
+    }
+
     /// Create a registry service
     pub async fn ns_create(
         &mut self,

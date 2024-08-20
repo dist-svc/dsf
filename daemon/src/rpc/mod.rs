@@ -34,6 +34,7 @@ pub use ops::*;
 
 pub mod bootstrap;
 pub mod connect;
+pub mod control;
 pub mod create;
 pub mod data;
 pub mod discover;
@@ -44,6 +45,7 @@ pub mod register;
 pub mod replicate;
 pub mod subscribe;
 pub mod sync;
+
 
 /// Async RPC handler abstraction
 #[allow(async_fn_in_trait)]
@@ -179,6 +181,23 @@ impl<T: Engine> Rpc for T {
                 };
 
                 debug!("Async data rpc result: {:?}", r);
+                let r = match r {
+                    Ok(r) => r,
+                    Err(e) => ResponseKind::Error(e),
+                };
+
+                Response::new(req_id, r)
+            }
+            RequestKind::Control(c) => {
+                debug!("Starting async control rpc: {:?}", c);
+
+                let r = match c {
+                    ControlCommands::Write(opts) => {
+                        todo!("implemnent write command");
+                    }
+                };
+
+                debug!("Async control rpc result: {:?}", r);
                 let r = match r {
                     Ok(r) => r,
                     Err(e) => ResponseKind::Error(e),
