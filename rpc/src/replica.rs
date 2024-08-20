@@ -7,7 +7,7 @@ use dsf_core::prelude::*;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReplicaInfo {
     //pub service_id: Id,
-    /// 
+    ///
     pub page_id: Id,
     /// ID of replicating peer
     pub peer_id: Id,

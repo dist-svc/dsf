@@ -46,7 +46,6 @@ pub mod replicate;
 pub mod subscribe;
 pub mod sync;
 
-
 /// Async RPC handler abstraction
 #[allow(async_fn_in_trait)]
 pub trait Rpc {

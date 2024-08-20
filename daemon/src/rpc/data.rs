@@ -94,26 +94,23 @@ pub(super) async fn publish_data<E: Engine, B: DataBody>(
 
     debug!("Building data object");
 
-
     // Build and sign data object
     let r = e
         .svc_update(
             info.id.clone(),
-            Box::new(
-                move |svc, _state| {
-                    // Setup publishing options
-                    let data_options = DataOptions {
-                        //data_kind: opts.kind.into(),
-                        body: Some(b.clone()),
-                        private_options: &private_options,
-                        ..Default::default()
-                    };
-                    match svc.publish_data_buff(data_options) {
-                        Ok((_n, c)) => CoreRes::Pages(vec![c.to_owned()], None),
-                        Err(e) => CoreRes::Error(e),
-                    }
-                },
-            ),
+            Box::new(move |svc, _state| {
+                // Setup publishing options
+                let data_options = DataOptions {
+                    //data_kind: opts.kind.into(),
+                    body: Some(b.clone()),
+                    private_options: &private_options,
+                    ..Default::default()
+                };
+                match svc.publish_data_buff(data_options) {
+                    Ok((_n, c)) => CoreRes::Pages(vec![c.to_owned()], None),
+                    Err(e) => CoreRes::Error(e),
+                }
+            }),
         )
         .await;
 

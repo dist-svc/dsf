@@ -25,4 +25,3 @@ pub struct ControlWriteOptions {
     /// Data body (base64 encoded for string parsing)
     pub data: Data,
 }
-

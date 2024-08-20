@@ -17,7 +17,10 @@ use tracing::{span, Level};
 use dsf_core::error::Error as CoreError;
 use dsf_core::net;
 use dsf_core::prelude::*;
-use dsf_rpc::{self as rpc, ControlWriteOptions, ServiceState, SubscribeOptions, SubscriptionInfo, SubscriptionKind};
+use dsf_rpc::{
+    self as rpc, ControlWriteOptions, ServiceState, SubscribeOptions, SubscriptionInfo,
+    SubscriptionKind,
+};
 
 use crate::rpc::data::{publish_data, push_data};
 use crate::{
@@ -40,15 +43,11 @@ pub enum SubscribeState {
 #[allow(async_fn_in_trait)]
 pub trait Control {
     /// Write a control message to a known service
-    async fn control(&self, options: ControlWriteOptions)
-        -> Result<(), DsfError>;
+    async fn control(&self, options: ControlWriteOptions) -> Result<(), DsfError>;
 }
 
 impl<T: Engine> Control for T {
-    async fn control(
-        &self,
-        options: ControlWriteOptions,
-    ) -> Result<(), DsfError> {
+    async fn control(&self, options: ControlWriteOptions) -> Result<(), DsfError> {
         info!("Sending control to service: {:?}", options);
 
         // Lookup local service information
@@ -70,7 +69,7 @@ impl<T: Engine> Control for T {
 
         // TODO: probably tidier to route via IPC for managed services / clients.
         // (handle case where a service holds it's own keys but uses the daemon for comms)
-        
+
         // For locally managed services we can directly apply the update.
         if target.private_key.is_some() {
             // TODO: this
@@ -78,7 +77,8 @@ impl<T: Engine> Control for T {
             debug!("Generating updated data block");
 
             // Generate and publish updated data block
-            let block = publish_data(self, &target, options.data, vec![Options::peer_id(our_id)]).await?;
+            let block =
+                publish_data(self, &target, options.data, vec![Options::peer_id(our_id)]).await?;
 
             debug!("Publishing updated data block {}", block.signature());
 
@@ -87,11 +87,10 @@ impl<T: Engine> Control for T {
 
             debug!("Data push complete");
 
-            return Ok(())
+            return Ok(());
         }
 
         // Otherwise use network communication
-
 
         // Find local peers or delegated replicas
         let target_peer = match self.peer_get(target.id.clone()).await {
@@ -99,7 +98,7 @@ impl<T: Engine> Control for T {
                 debug!("Found local peer matching service ID, attempting direct control");
 
                 p
-            },
+            }
             _ => {
                 debug!("No local peers, searching for delegated replicas.");
 
@@ -113,17 +112,20 @@ impl<T: Engine> Control for T {
                         debug!("Located authorative replica: {}", r.peer_id);
 
                         r.peer_id.clone()
-                    },
+                    }
                     None if replicas.len() == 1 => {
-                        debug!("No authorative replica, trying with only available peer: {}", replicas[0].page_id);
+                        debug!(
+                            "No authorative replica, trying with only available peer: {}",
+                            replicas[0].page_id
+                        );
 
                         replicas[0].peer_id.clone()
-                    },
+                    }
                     None => {
                         debug!("No authorative replica found ({} replicas)", replicas.len());
 
-                        return Err(DsfError::NoReplicasFound)
-                    },
+                        return Err(DsfError::NoReplicasFound);
+                    }
                 };
 
                 // Lookup non-local peer
@@ -153,7 +155,7 @@ impl<T: Engine> Control for T {
             net::ResponseBody::Status(s) if s == net::Status::Ok => {
                 debug!("Request OK!");
                 Ok(())
-            },
+            }
             _ => {
                 debug!("Request failed (response: {:?})", resp.data);
                 Err(DsfError::InvalidResponse)

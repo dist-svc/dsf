@@ -13,7 +13,7 @@ use crate::store::{object::ObjectIdentifier, Backend, Store, StoreError};
 /// This serialises sqlite database operations to avoid the need for connection
 /// pooling while using a dedicated thread to avoid blocking executor threads.
 ///
-/// (eg. allows store to be shared, and core / RPC operations to keep moving 
+/// (eg. allows store to be shared, and core / RPC operations to keep moving
 /// without waiting on database writes, though this has both advantages and disadvantages...)
 #[derive(Clone)]
 pub struct AsyncStore {
