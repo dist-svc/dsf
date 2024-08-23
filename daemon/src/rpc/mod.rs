@@ -22,7 +22,7 @@ use crate::{
     daemon::{net::NetIf, Dsf},
     error::{CoreError, Error},
     rpc::{
-        bootstrap::Bootstrap, connect::Connect, create::CreateService, data::PublishData,
+        bootstrap::Bootstrap, connect::Connect, control::Control, create::CreateService, data::PublishData,
         discover::Discover, locate::ServiceRegistry, lookup::PeerRegistry, ns::NameService,
         register::RegisterService, replicate::ReplicateService, subscribe::PubSub, sync::SyncData,
     },
@@ -192,7 +192,7 @@ impl<T: Engine> Rpc for T {
 
                 let r = match c {
                     ControlCommands::Write(opts) => {
-                        todo!("implemnent write command");
+                        self.control(opts).await.map(|_| ResponseKind::None)
                     }
                 };
 

@@ -1,6 +1,7 @@
 //! API module defines the DSF remote API
 //! This allows for limited capability devices to perform network operations via
 //! a full-featured device
+use core::fmt::Debug;
 
 use encdec::DecodeOwned;
 
@@ -15,10 +16,10 @@ pub trait Application {
     const APPLICATION_ID: u16;
 
     /// Service information (page body) encoding
-    type Info: PageBody + DecodeOwned<Output = Self::Info> + core::fmt::Debug;
+    type Info: PageBody + DecodeOwned<Output = Self::Info> + PartialEq + Debug;
 
     /// Service data (block body) encoding
-    type Data: DataBody + DecodeOwned<Output = Self::Data> + core::fmt::Debug;
+    type Data: DataBody + DecodeOwned<Output = Self::Data> + PartialEq + Debug;
 
     /// Helper function for info matching to support discovery
     fn matches(_info: &Self::Info, _req: &[u8]) -> bool {

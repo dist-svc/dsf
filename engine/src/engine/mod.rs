@@ -42,7 +42,7 @@ impl Allocator for Alloc {}
 
 #[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum EngineEvent {
+pub enum EngineEvent<A: Application> {
     None,
     Discover(Id),
     SubscribeFrom(Id),
@@ -51,6 +51,7 @@ pub enum EngineEvent {
     UnsubscribedTo(Id),
     ServiceUpdate(Id, Signature),
     ReceivedData(Id, Signature),
+    Control(Id, <A as Application>::Data),
 }
 
 #[derive(Debug, PartialEq)]
@@ -351,7 +352,7 @@ where
     /// Update internal state, handling incoming messages and updating peers and subscriptions
     pub fn update(
         &mut self,
-    ) -> Result<EngineEvent, EngineError<<C as Comms>::Error, <S as Store>::Error>> {
+    ) -> Result<EngineEvent<A>, EngineError<<C as Comms>::Error, <S as Store>::Error>> {
         let mut buff = [0u8; N];
 
         // Check for and handle received messages
@@ -420,7 +421,7 @@ where
         &mut self,
         from: Addr,
         data: T,
-    ) -> Result<EngineEvent, EngineError<<C as Comms>::Error, <S as Store>::Error>> {
+    ) -> Result<EngineEvent<A>, EngineError<<C as Comms>::Error, <S as Store>::Error>> {
         debug!("Received {} bytes from {:?}", data.as_ref().len(), from);
 
         // Parse base object, using the store for validation and decryption
@@ -498,7 +499,7 @@ where
         from: &Addr,
         req: NetRequest,
     ) -> Result<
-        (EngineResponse<[u8; N]>, EngineEvent),
+        (EngineResponse<[u8; N]>, EngineEvent<A>),
         EngineError<<C as Comms>::Error, <S as Store>::Error>,
     > {
         use NetRequestBody::*;
@@ -640,6 +641,18 @@ where
             Subscribe(_id) | Unsubscribe(_id) => {
                 NetResponseBody::Status(Status::InvalidRequest).into()
             }
+            Control(app_id, target_id, data) if *app_id == A::APPLICATION_ID && target_id == &self.id() => {
+                // TODO: would it be useful to build auth into the engine so apps don't need to implement this?
+
+                // Parse control data
+                let (c, _) = A::Data::decode(&data).map_err(|_e| EngineError::Decode)?;
+
+                // Pass control to caller via engine event
+                evt = EngineEvent::Control(req.common.from.clone(), c);
+
+                // TODO: change based on auth state
+                NetResponseBody::Status(Status::Ok).into()
+            }
             //PushData(id, pages) => ()
             _ => NetResponseBody::Status(Status::InvalidRequest).into(),
         };
@@ -652,7 +665,7 @@ where
         from: &Addr,
         resp: NetResponse,
     ) -> Result<
-        (EngineResponse<[u8; N]>, EngineEvent),
+        (EngineResponse<[u8; N]>, EngineEvent<A>),
         EngineError<<C as Comms>::Error, <S as Store>::Error>,
     > {
         //use NetResponseBody::*;
@@ -772,7 +785,7 @@ where
         from: &Addr,
         page: Container<T>,
     ) -> Result<
-        (EngineResponse<[u8; N]>, EngineEvent),
+        (EngineResponse<[u8; N]>, EngineEvent<A>),
         EngineError<<C as Comms>::Error, <S as Store>::Error>,
     > {
         debug!("Received page: {:?} from: {:?}", page, from);

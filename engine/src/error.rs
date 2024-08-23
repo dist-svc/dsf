@@ -24,4 +24,7 @@ pub enum EngineError<CommsError: Debug, StoreError: Debug> {
 
     #[cfg_attr(feature = "thiserror", error("Overrun in static vector"))]
     Overrun,
+
+    #[cfg_attr(feature = "thiserror", error("Object decode failed"))]
+    Decode,
 }

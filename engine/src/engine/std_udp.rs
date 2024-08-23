@@ -36,7 +36,7 @@ impl<A: Application, S: Store<Address = std::net::SocketAddr>, const N: usize>
     /// Tick function to update engine and poll on socket
     pub fn tick(
         &mut self,
-    ) -> Result<EngineEvent, EngineError<std::io::Error, <S as Store>::Error>> {
+    ) -> Result<EngineEvent<A>, EngineError<std::io::Error, <S as Store>::Error>> {
         let mut buff = [0u8; N];
 
         // Check for and handle received messages
